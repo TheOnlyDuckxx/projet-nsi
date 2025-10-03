@@ -11,7 +11,7 @@ grass_img = pygame.image.load('grass.png').convert()
 grass_img.set_colorkey((0, 0, 0))
 
 # Charger la carte
-f = open('map2.txt')
+f = open('map3.txt')
 map_data = [[int(c) for c in row] for row in f.read().split('\n')]
 f.close()
 
