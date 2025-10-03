@@ -1,5 +1,6 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
+
 class MainMenu:
     def __init__(self, app):
         self.app = app
