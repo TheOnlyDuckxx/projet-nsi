@@ -1,0 +1,13 @@
+{
+  "audio": {
+    "master_volume": 0.43
+  },
+  "video": {
+    "fullscreen": false,
+    "fps_cap": 60,
+    "vsync": false
+  },
+  "gameplay": {
+    "language": "fr"
+  }
+}

@@ -1,7 +1,7 @@
 import pygame
-from Game.core.config import WIDTH, HEIGHT, FPS, TITLE
+from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
 from Game.core.state import State
-from Game.ui.menu import MainMenu
+from Game.ui.menu import MainMenu,OptionsMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
 #from Game.gameplay.phase1 import Phase1
@@ -17,11 +17,13 @@ class App:
         self.clock = pygame.time.Clock()
         self.states = {}
         self.state = None
+        self.settings=Settings()
         self._register_states()
         self.change_state("MENU")
 
     def _register_states(self):
         self.states["MENU"] = MainMenu(self)
+        self.states["OPTIONS"] = OptionsMenu(self)
         #self.states["PHASE1"] = Phase1(self)
         # plus tard: self.states["PHASE2"] = Phase2(self)
     

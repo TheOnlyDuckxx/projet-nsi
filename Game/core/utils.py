@@ -276,3 +276,97 @@ class Button:
     # Hitbox (utile pour tooltips)
     def get_rect(self) -> pygame.Rect:
         return self.rect
+
+# ---- TOGGLE (ON/OFF) ----
+class Toggle:
+    def __init__(self, label, pos, get_value, set_value, font, anchor="center"):
+        self.label = label
+        self.pos = pos
+        self.font = font
+        self.anchor = anchor
+        self.get_value = get_value
+        self.set_value = set_value
+
+        style = ButtonStyle(draw_background=True, radius=14, padding_x=14, padding_y=8, font=font, hover_zoom=1.05)
+        self.btn = Button(self._compute_text(), pos, anchor=anchor, style=style, on_click=self._on_click)
+
+    def _compute_text(self):
+        return f"{self.label} : {'ON' if self.get_value() else 'OFF'}"
+
+    def _on_click(self, _btn):
+        self.set_value(not self.get_value())
+        self.btn.set_text(self._compute_text())
+
+    def handle(self, events):
+        self.btn.handle(events)
+
+    def draw(self, screen):
+        self.btn.draw(screen)
+
+# ---- SLIDER (0..1 ou 0..100) ----
+class Slider:
+    def __init__(self, label, pos, width, get_value, set_value, font, min_v=0.0, max_v=1.0, step=0.01, anchor="center"):
+        self.label = label
+        self.pos = pos
+        self.width = width
+        self.get_value = get_value
+        self.set_value = set_value
+        self.min_v, self.max_v, self.step = min_v, max_v, step
+        self.font = font
+        self.anchor = anchor
+
+        # Barre
+        self.height = 8
+        self.knob_r = 10
+        self.dragging = False
+
+        # calcul rects
+        self._rebuild_rects()
+
+    def _rebuild_rects(self):
+        x = self.pos[0]
+        y = self.pos[1]
+        # ancre "center" only pour concision; ajoute d'autres si besoin
+        self.bar_rect = pygame.Rect(x - self.width//2, y - self.height//2, self.width, self.height)
+        self.label_surf = self.font.render(self.label, True, (230,230,230))
+        self.label_pos = (self.bar_rect.centerx - self.label_surf.get_width()//2, self.bar_rect.top - 36)
+
+    def _val_to_x(self, v):
+        t = (v - self.min_v) / (self.max_v - self.min_v)
+        return self.bar_rect.left + int(t * self.bar_rect.width)
+
+    def _x_to_val(self, mx):
+        t = (mx - self.bar_rect.left) / max(1, self.bar_rect.width)
+        v = self.min_v + t * (self.max_v - self.min_v)
+        # snap au step
+        if self.step > 0:
+            v = round(v / self.step) * self.step
+        return max(self.min_v, min(self.max_v, v))
+
+    def handle(self, events):
+        mx, my = pygame.mouse.get_pos()
+        knob_x = self._val_to_x(self.get_value())
+        knob_rect = pygame.Rect(knob_x - self.knob_r, self.bar_rect.centery - self.knob_r, 2*self.knob_r, 2*self.knob_r)
+
+        for e in events:
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if knob_rect.collidepoint((mx, my)) or self.bar_rect.collidepoint((mx, my)):
+                    self.dragging = True
+                    self.set_value(self._x_to_val(mx))
+            elif e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                self.dragging = False
+            elif e.type == pygame.MOUSEMOTION and self.dragging:
+                self.set_value(self._x_to_val(mx))
+
+    def draw(self, screen):
+        # label
+        screen.blit(self.label_surf, self.label_pos)
+        # barre
+        pygame.draw.rect(screen, (80, 90, 110), self.bar_rect, border_radius=4)
+        # fill
+        fill_rect = self.bar_rect.copy()
+        cur_x = self._val_to_x(self.get_value())
+        fill_rect.width = max(0, cur_x - self.bar_rect.left)
+        pygame.draw.rect(screen, (40, 140, 240), fill_rect, border_radius=4)
+        # knob
+        pygame.draw.circle(screen, (230, 230, 230), (cur_x, self.bar_rect.centery), self.knob_r)
