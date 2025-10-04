@@ -8,9 +8,9 @@ class App:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.running = True
         pygame.display.set_caption(TITLE)
         self.clock = pygame.time.Clock()
-        self.running = True
         self.states = {}
         self.state = None
         self._register_states()
@@ -20,6 +20,9 @@ class App:
         self.states["MENU"] = MainMenu(self)
         #self.states["PHASE1"] = Phase1(self)
         # plus tard: self.states["PHASE2"] = Phase2(self)
+    
+    def quit_game(self):
+        self.running=False
 
     def change_state(self, key, **kwargs):
         self.state = self.states[key]
