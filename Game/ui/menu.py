@@ -10,6 +10,7 @@ class BaseMenu:
         self.title = title
         self.bg = pygame.transform.scale(app.assets.get_image("test_menu_background"),(WIDTH, HEIGHT))
         self.title_font = app.assets.get_font("MightySouly", 64)
+        self.btn_font = app.assets.get_font("MightySouly", 28)
         self.widgets = []  # chaque widget a: handle(events) -> bool, draw(screen)
 
         # overlay sombre pour lisibilité
@@ -106,12 +107,7 @@ class OptionsMenu(BaseMenu):
 class MainMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="EvoNSI")
-
-        # ---- Background + police titre ----
-        self.title_font = app.assets.get_font("MightySouly", 64)
-        btn_font        = app.assets.get_font("MightySouly", 28)
-
-       
+        
         # ---- Styles de boutons ----
         primary = ButtonStyle(
             draw_background=True,
@@ -122,7 +118,7 @@ class MainMenu(BaseMenu):
             border_color=(20, 30, 45),
             border_width=2,
             radius=14,
-            font=btn_font,
+            font=self.btn_font,
             text_color=(255, 255, 255),
             hover_text_color=(255, 255, 255),
             active_text_color=(255, 255, 255),
@@ -137,7 +133,7 @@ class MainMenu(BaseMenu):
 
         ghost = ButtonStyle(
             draw_background=False,
-            font=btn_font,
+            font=self.btn_font,
             text_color=(230, 230, 230),
             hover_zoom=1.08,
             zoom_speed=0.22,
@@ -168,7 +164,7 @@ class MainMenu(BaseMenu):
             (WIDTH // 2, y0 + 2*gap),
             anchor="center",
             style=ghost,
-            on_click=lambda b: print("TODO: écran crédits"),
+            on_click=lambda b: self.app.change_state("CREDITS"),
         ))
 
         self.btn_quit = self.add(Button(
@@ -176,25 +172,50 @@ class MainMenu(BaseMenu):
             (WIDTH // 2, y0 + 3*gap),
             anchor="center",
             style=ghost,
-            on_click=lambda b: self._quit(),
+            on_click=lambda b: self.app.quit_game(),
         ))
 
     # --- Entrées : laisse BaseMenu propager aux widgets; ajoute tes raccourcis si besoin
     def handle_input(self, events):
         super().handle_input(events)
-        for e in events:
-            if e.type == pygame.KEYDOWN and e.key in (pygame.K_ESCAPE, pygame.K_q):
-                self._quit()
 
     # --- Rendu : BaseMenu dessine déjà bg + overlay + titre + widgets
     def render(self, screen):
         super().render(screen)
 
-    # --- Quitter proprement selon ce que tu as dans App ---
-    def _quit(self):
-        # Si tu as défini App.quit_game() (recommandé)
-        if hasattr(self.app, "quit_game"):
-            self.app.quit_game()
-        else:
-            # Fallback minimal
-            self.app.running = False
+
+class CreditMenu(BaseMenu):
+    def __init__(self,app):
+        super().__init__(app, title="Credits")
+        self.credit_font = app.assets.get_font("MightySouly", 20)
+        self.txt ="""
+        Jeu créé par : \n
+            - Romain Trohel\n
+            - Paul Juillet\n
+            - Timéo Barré--Golvet\n
+        Commencé le 2/10/25 et terminé le ...
+        """
+    def render(self, screen):
+        super().render(screen)
+
+        # Couleur du texte
+        color = (230, 230, 230)
+
+        # Découpe le texte par ligne
+        lines = self.txt.strip().split('\n')
+
+        # Position de départ verticale
+        start_y = 250
+
+        for i, line in enumerate(lines):
+            # On rend chaque ligne séparément
+            credit_line = self.credit_font.render(line.strip(), True, color)
+            # Centrage horizontal
+            x = WIDTH // 2 - credit_line.get_width() // 2
+            y = start_y + i*(credit_line.get_height()-5)
+            screen.blit(credit_line, (x, y))
+        
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
+        self.btn_back = Button("← Retour", (WIDTH//2, 560), anchor="center", style=ghost,
+                               on_click=lambda b: self.app.change_state("MENU"))
+        self.add(self.btn_back)
