@@ -1,14 +1,15 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import resource_path, Button, ButtonStyle
+from Game.core.assets import Assets
 
 class MainMenu:
     def __init__(self, app):
         self.app = app
-        self.title_font = pygame.font.Font(resource_path("Game/assets/sfx/MightySouly.ttf"), 64)
-        self.btn_font   = pygame.font.Font(resource_path("Game/assets/sfx/MightySouly.ttf"), 28)
-        self.start_rect = pygame.Rect(WIDTH//2-120, HEIGHT//2, 240, 60)
-        self.background = pygame.transform.scale(pygame.image.load(resource_path("Game/assets/sfx/test_menu_background.jpg")).convert(),(WIDTH, HEIGHT))
+        self.title_font = self.app.assets.get_font("MightySouly", 64)
+        self.btn_font   = self.app.assets.get_font("MightySouly", 28)
+        self.background = self.app.assets.get_image("test_menu_background")
+
         ghost_style = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.10)
         self.btn_start = Button("Continuer", (WIDTH//2, HEIGHT//2 -40), anchor="center", style=ghost_style)
         self.btn_ng = Button("Nouvelle Partie", (WIDTH//2, HEIGHT//2), anchor="center", style=ghost_style)

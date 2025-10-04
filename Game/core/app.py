@@ -2,12 +2,16 @@ import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE
 from Game.core.state import State
 from Game.ui.menu import MainMenu
+from Game.core.assets import Assets
+from Game.core.utils import resource_path
 #from Game.gameplay.phase1 import Phase1
 
 class App:
     def __init__(self):
         pygame.init()
+        
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.assets = Assets().load_all(resource_path("Game/assets"))
         self.running = True
         pygame.display.set_caption(TITLE)
         self.clock = pygame.time.Clock()
