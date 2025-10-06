@@ -1,9 +1,19 @@
+# MENU.PY
+# Gère le menu principal
+
+
+# --------------- IMPORTATION DES MODULES ---------------
+
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import resource_path, Button, ButtonStyle, Slider, Toggle
 from Game.core.assets import Assets
 
 
+# --------------- CLASSE PRINCIPALE ---------------
+
+
+# Classe de base pour l'hérédité des autres menus
 class BaseMenu:
     def __init__(self, app, title:str):
         self.app = app
@@ -11,24 +21,27 @@ class BaseMenu:
         self.bg = pygame.transform.scale(app.assets.get_image("test_menu_background"),(WIDTH, HEIGHT))
         self.title_font = app.assets.get_font("MightySouly", 64)
         self.btn_font = app.assets.get_font("MightySouly", 28)
-        self.widgets = []  # chaque widget a: handle(events) -> bool, draw(screen)
+        self.widgets = []
 
         # overlay sombre pour lisibilité
         self._overlay = pygame.Surface((WIDTH, HEIGHT))
         self._overlay.set_alpha(90)
         self._overlay.fill((0, 0, 0))
 
+    # Permet d'ajouter un widget
     def add(self, widget):
         self.widgets.append(widget)
         return widget
 
+    # Permet de prendre en charge les events (clics etc.)
     def handle_input(self, events):
         for w in self.widgets:
             w.handle(events)
 
     def update(self, dt):
         pass
-
+    
+    # Affiche le menu niveau moteur
     def render(self, screen):
         screen.blit(self.bg, (0, 0))
         screen.blit(self._overlay, (0, 0))
@@ -38,7 +51,7 @@ class BaseMenu:
             w.draw(screen)
 
 
-
+# Menu des options
 class OptionsMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="Options")

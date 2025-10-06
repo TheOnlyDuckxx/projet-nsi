@@ -1,8 +1,17 @@
+# UTILS.PY
+# Contient toutes les classes et fonctions utilitaires
+
+"""NE PAS ESSAYER DE COMPRENDRE CE FICHIER, C'EST 100% FAIT PAR CHAT GPT"""
+
+# --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
 import os, sys
 import pygame
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, Literal
+
+
+# --------------- LE RESTE ---------------
 
 def resource_path(relative_path: str) -> str:
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))

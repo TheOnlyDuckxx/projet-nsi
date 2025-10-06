@@ -1,8 +1,16 @@
+# ASSETS.PY
+# Gère le chargement des assets et ressources en tout genre
+
+
+# --------------- IMPORTATION DES MODULES ---------------
 import os
 import pygame
 from Game.core.utils import resource_path
 
+
+# --------------- CLASSE PRINCIPALE ---------------
 class Assets:
+    # Extension de fichier pour que la classe prennent en charge un peu tout
     IMG_EXTS  = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
     FONT_EXTS = {".ttf", ".otf"}
 
@@ -11,13 +19,10 @@ class Assets:
         self._fonts_by_size = {}
         self._font_paths = {}
 
-    # -------------------
-    # Chargeurs unitaires
-    # -------------------
+    # Charge l'image séléctionné
     def load_image(self, key: str, path: str):
         ext = os.path.splitext(path)[1].lower()
         surf = pygame.image.load(path)
-        # convert_alpha pour formats avec alpha, sinon convert
         if ext in {".png", ".gif"}:
             surf = surf.convert_alpha()
         else:
@@ -25,15 +30,15 @@ class Assets:
         self.images[key] = surf
         return surf
 
+    # Enregistre l'image chargé dans un dictionnaire
     def _register_font_path(self, key: str, path: str):
         self._font_paths[key] = path
 
-    # ---------------
-    # Accès aux assets
-    # ---------------
+    # Permet d'accèder aux images chargées
     def get_image(self, key: str) -> pygame.Surface:
         return self.images[key]
 
+    # Permet d'accèder aux polices chargées
     def get_font(self, key: str, size: int) -> pygame.font.Font:
         k = (key, int(size))
         if k not in self._fonts_by_size:
@@ -45,22 +50,14 @@ class Assets:
             self._fonts_by_size[k] = pygame.font.Font(self._font_paths[key], int(size))
         return self._fonts_by_size[k]
 
-    # ------------------------
-    # Chargement récursif total
-    # ------------------------
+    # Permet de charger toutes les ressources dans "Game/assets"
     def load_all(self, base_dir: str, strict_keys: bool = True):
-        """
-        Charge récursivement toutes les images et polices trouvées dans base_dir.
-        - base_dir: chemin relatif (ex: 'Game/assets') ou absolu
-        - strict_keys: si True, collision de clés -> ValueError
-        Clé = nom de fichier SANS extension (exactement le nom du fichier).
-        """
+        
         abs_base = resource_path(base_dir) if not os.path.isabs(base_dir) else base_dir
 
         if not os.path.isdir(abs_base):
             raise FileNotFoundError(f"Dossier assets introuvable: {abs_base}")
 
-        # init pygame si besoin (affichage pas obligatoire ici)
         if not pygame.get_init():
             pygame.init()
         if not pygame.font.get_init():
@@ -88,10 +85,10 @@ class Assets:
                         self._register_font_path(name_no_ext, full)
                         registered_fonts += 1
 
-                    # (Tu pourras ajouter plus tard: sons, musiques, JSON, etc.)
+                    # (ON pourras ajouter plus tard: sons, musiques, JSON, etc.)
 
                 except Exception as e:
-                    # On log proprement sans crasher tout le chargement
+                    # Petit log pour vérifier les erreurs
                     print(f"[Assets] Échec chargement '{full}': {e}")
 
         print(f"[Assets] Images chargées: {loaded_images} | Polices détectées: {registered_fonts}")
