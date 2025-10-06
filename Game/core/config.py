@@ -21,7 +21,8 @@ class Settings:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         if os.path.exists(self.path):
             with open(self.path, "r", encoding="utf-8") as f:
-                self.data = DEFAULTS | json.load(f)
+                #self.data = DEFAULTS | json.load(f)     #python3.9 or higher
+                self.data = {**DEFAULTS, **json.load(f)}
         else:
             self.data = DEFAULTS
             self.save()

@@ -4,7 +4,7 @@
   },
   "video": {
     "fullscreen": false,
-    "fps_cap": 60,
+    "fps_cap": 65,
     "vsync": false
   },
   "gameplay": {
