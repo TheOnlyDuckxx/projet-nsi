@@ -7,9 +7,12 @@ from Game.core.config import WIDTH, HEIGHT
 from Game.core.app import App
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 
-params = load_world_params_from_preset("Default")   # ou "Tropical"/"Arid"/"Glacial"
-gen = WorldGenerator(tiles_levels=6)
-world = gen.generate_island(params)
+#Création du monde commentée car met du temps à charger
+#params = load_world_params_from_preset("Default")   # ou "Tropical"/"Arid"/"Glacial"
+#gen = WorldGenerator(tiles_levels=6)
+#world = gen.generate_island(params)
+
+
 # Démarrage du jeu :)
 game=App()
 game.run()
