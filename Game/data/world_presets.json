@@ -1,0 +1,44 @@
+{
+  "presets": {
+    "Default": {
+      "planet_width": 256,
+      "planet_height": 256,
+      "water_pct": 62,
+      "temperature": "temperate",
+      "atmosphere_density": 1.0, 
+      "resource_density": 1.0,      
+      "seed": null,   
+      "world_name": "Gaia"
+    },
+    "Tropical": {
+      "planet_width": 320,
+      "planet_height": 240,
+      "water_pct": 70,
+      "temperature": "hot",
+      "atmosphere_density": 1.1,
+      "resource_density": 1.3,
+      "seed": null,
+      "world_name": "Zéphyr"
+    },
+    "Arid": {
+      "planet_width": 288,
+      "planet_height": 224,
+      "water_pct": 45,
+      "temperature": "hot",
+      "atmosphere_density": 0.9,
+      "resource_density": 0.8,
+      "seed": null,
+      "world_name": "Sirocco"
+    },
+    "Glacial": {
+      "planet_width": 256,
+      "planet_height": 256,
+      "water_pct": 55,
+      "temperature": "cold",
+      "atmosphere_density": 1.2,
+      "resource_density": 0.7,
+      "seed": null,
+      "world_name": "Borealis"
+    }
+  }
+}
