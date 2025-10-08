@@ -10,7 +10,7 @@ from Game.core.state import State
 from Game.ui.menu import MainMenu,OptionsMenu, CreditMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
-#from Game.gameplay.phase1 import Phase1
+from Game.gameplay.phase1 import Phase1
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
@@ -33,7 +33,7 @@ class App:
         self.states["MENU"] = MainMenu(self)
         self.states["OPTIONS"] = OptionsMenu(self)
         self.states["CREDITS"] = CreditMenu(self)
-        #self.states["PHASE1"] = Phase1(self)
+        self.states["PHASE1"] = Phase1(self)
         # plus tard: self.states["PHASE2"] = Phase2(self)
     
     #Fonction pour quitter le jeu
