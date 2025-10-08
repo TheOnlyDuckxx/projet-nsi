@@ -27,6 +27,7 @@ class Assets:
             surf = surf.convert_alpha()
         else:
             surf = surf.convert()
+        surf.set_colorkey((0, 0, 0))
         self.images[key] = surf
         return surf
 
