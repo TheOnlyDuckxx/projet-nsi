@@ -6,8 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT
-from Game.core.utils import resource_path, Button, ButtonStyle, Slider, Toggle
-from Game.core.assets import Assets
+from Game.core.utils import Button, ButtonStyle, Slider, Toggle
 
 
 # --------------- CLASSE PRINCIPALE ---------------
@@ -208,6 +207,9 @@ class CreditMenu(BaseMenu):
             - Timéo Barré--Golvet\n
         Commencé le 2/10/25 et terminé le ...
         """
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
+        self.btn_back = Button("← Retour", (WIDTH//2, 560), anchor="center", style=ghost,on_click=lambda b: self.app.change_state("MENU"))
+        self.add(self.btn_back)
     def render(self, screen):
         super().render(screen)
 
@@ -227,8 +229,3 @@ class CreditMenu(BaseMenu):
             x = WIDTH // 2 - credit_line.get_width() // 2
             y = start_y + i*(credit_line.get_height()-5)
             screen.blit(credit_line, (x, y))
-        
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
-        self.btn_back = Button("← Retour", (WIDTH//2, 560), anchor="center", style=ghost,
-                               on_click=lambda b: self.app.change_state("MENU"))
-        self.add(self.btn_back)

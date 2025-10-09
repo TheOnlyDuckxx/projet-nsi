@@ -347,7 +347,7 @@ class WorldGenerator:
         if b in ("forest", "rainforest", "grassland", "steppe", "taiga"):
             return "grass"
         if b in ("desert",):
-            return "sand" if hasattr(self, "_sand_exists") and self._sand_exists else "desert"
+            return "desert"
         if b in ("rock",):
             return "rock"
         if b == "beach":
@@ -355,7 +355,8 @@ class WorldGenerator:
         return "grass"
 
     def _sparsify_coast(self, overlay: List[List[Optional[int]]], levels: List[List[int]]):
-        H, W = len(levels), len(levels[0]) if levels else (0, 0)
+        H = len(levels)
+        W = len(levels[0]) if H > 0 else 0
         for y in range(1, H-1):
             for x in range(1, W-1):
                 if overlay[y][x] is None:
@@ -367,7 +368,8 @@ class WorldGenerator:
                         overlay[y][x] = None
 
     def _find_spawn(self, levels: List[List[int]], biome: List[List[str]], overlay: List[List[Optional[int]]]) -> Tuple[int, int]:
-        H, W = len(levels), len(levels[0]) if levels else (0, 0)
+        H = len(levels)
+        W = len(levels[0]) if H > 0 else 0
         best = None
         best_score = -1e9
         for y in range(2, H-2):

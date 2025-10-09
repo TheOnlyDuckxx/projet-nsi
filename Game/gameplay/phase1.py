@@ -16,8 +16,7 @@ class Phase1:
         self.assets = app.assets
 
         # Vue iso (bornes de zoom ajustables)
-        self.view = IsoMapView(self.assets, self.screen.get_size(),
-                               min_zoom=0.7, max_zoom=2.0, zoom_step=0.1)
+        self.view = IsoMapView(self.assets, self.screen.get_size())
 
         # Générateur
         self.gen = WorldGenerator(tiles_levels=6)
@@ -70,11 +69,8 @@ class Phase1:
                 if e.key == pygame.K_r:
                     mods = pygame.key.get_mods()
                     if mods & pygame.KMOD_SHIFT:
-                        # reroll: seed aléatoire → force rng_seed=None pour recalcul depuis params+random
-                        self.params.seed = None
-                        self.world = self.gen.generate_island(self.params, rng_seed=None)
+                        self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
                     else:
-                        # régénère strictement la même carte
                         self.world = self.gen.generate_island(self.params)
                     self.view.set_world(self.world)
 

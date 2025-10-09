@@ -3,7 +3,7 @@
     "master_volume": 0.0
   },
   "video": {
-    "fullscreen": false,
+    "fullscreen": true,
     "fps_cap": 130,
     "vsync": false
   },

@@ -71,9 +71,13 @@ class Settings:
     # Application des paramètres côté moteur
     def apply(self, path, value):
         if path == "audio.master_volume":
-            pygame.mixer.music.set_volume(value)
+            if pygame.mixer.get_init():
+                pygame.mixer.music.set_volume(value)
         elif path == "video.fullscreen":
-            pass
+            flags = pygame.FULLSCREEN if value else 0
+            scr = pygame.display.get_surface()
+            if scr:
+                pygame.display.set_mode(scr.get_size(), flags)
         elif path == "video.vsync":
             pass
         elif path == "video.fps_cap":

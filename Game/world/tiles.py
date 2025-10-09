@@ -1,10 +1,12 @@
-# world/tiles.py
+# TILES.PY
+# Gère les tiles
+
+
+# --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
 from typing import Dict, Optional, Tuple
 
-# -----------------------------------------------------------------------------
-# IDs de tuiles sol — stables pour la sauvegarde / logique
-# -----------------------------------------------------------------------------
+# --------------- ID DU TERRAIN ---------------
 OCEAN       = 0
 BEACH       = 1
 GRASS       = 2
@@ -15,11 +17,7 @@ DESERT      = 6
 RAINFOREST  = 7
 STEPPE      = 8
 
-# -----------------------------------------------------------------------------
-# Catalogue par défaut : id -> nom de sprite (clé Assets)
-# Le nom doit correspondre au NOM DE FICHIER (sans extension) dans ton dossier assets.
-# Exemple: Game/assets/tiles/tile_grass.png => clé "tile_grass"
-# -----------------------------------------------------------------------------
+# --------------- CATALOGUE ---------------
 _DEFAULT_GROUND_SPRITES: Dict[int, str] = {
     OCEAN:      "tile_ocean",
     BEACH:      "tile_beach",
@@ -32,7 +30,6 @@ _DEFAULT_GROUND_SPRITES: Dict[int, str] = {
     STEPPE:     "tile_steppe",
 }
 
-# Pour l’inverse (nom logique -> id)
 _DEFAULT_NAME_TO_ID: Dict[str, int] = {
     "ocean": OCEAN,
     "beach": BEACH,
@@ -45,27 +42,21 @@ _DEFAULT_NAME_TO_ID: Dict[str, int] = {
     "steppe": STEPPE,
 }
 
-# -----------------------------------------------------------------------------
-# Classe Tiles : accès centralisé aux informations de tileset
-# -----------------------------------------------------------------------------
+# --------------- CLASSE PRINCIPALE ---------------
 class Tiles:
     """
     Fournit:
       - mapping id <-> clé d'asset pour le sol
       - helpers pour récupérer la Surface depuis Assets
-      - (optionnel) sélection d’une variante d’autotile pour falaises/rives
+      - sélection d’une variante d’autotile pour falaises/rives
     """
 
     def __init__(self):
-        # on copie les defaults pour pouvoir les modifier à chaud
         self._id_to_sprite: Dict[int, str] = dict(_DEFAULT_GROUND_SPRITES)
         self._name_to_id: Dict[str, int]   = dict(_DEFAULT_NAME_TO_ID)
-
-        # si tu ajoutes des variantes (autotiles), tu peux les enregistrer ici :
-        # exemple: {"tile_grass": {"edge_n": "tile_grass_edge_n", "corner_ne": "tile_grass_corner_ne", ...}}
         self._autotile_variants: Dict[str, Dict[str, str]] = {}
 
-    # ----------------- Enregistrement / modification -----------------
+    #Enregistrement / modification
 
     def register_tile(self, tile_id: int, sprite_key: str, logical_name: Optional[str] = None) -> None:
         """Ajoute ou modifie une tuile (id -> sprite_key), et nom logique optionnel (name -> id)."""
@@ -136,7 +127,6 @@ class Tiles:
         edges.sort()
         return "corner_" + "".join(edges)  # ex: corner_en / corner_ns / corner_sw / corner_ens (T)
 
-    # Helper pour toi : sélectionne la clé sprite d’une variante si tu enregistres des assets
     def pick_autotile_sprite_key(self, base_tile_id: int, dn: int, de: int, ds: int, dw: int) -> Optional[str]:
         """
         Retourne la sprite key de la variante si enregistrée, sinon None.
@@ -144,4 +134,4 @@ class Tiles:
         base_key = self.get_ground_sprite_name(base_tile_id)
         code = self.cliff_code(dn, de, ds, dw)
         var = self._autotile_variants.get(base_key, {})
-        return var.get(code)  # peut renvoyer None si pas de variante correspondante
+        return var.get(code)

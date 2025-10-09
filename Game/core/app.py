@@ -6,7 +6,6 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
-from Game.core.state import State
 from Game.ui.menu import MainMenu,OptionsMenu, CreditMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
@@ -44,6 +43,8 @@ class App:
 
     # Permet de changer de "STATES"
     def change_state(self, key, **kwargs):
+        if self.state and hasattr(self.state, "leave"):
+            self.state.leave()
         self.state = self.states[key]
         if hasattr(self.state, "enter"):
             self.state.enter(**kwargs)
@@ -51,7 +52,8 @@ class App:
     # Boucle principale pygame
     def run(self):
         while self.running:
-            dt = self.clock.tick(FPS) / 1000.0
+            fps_cap = int(self.settings.get("video.fps_cap", FPS))
+            dt = self.clock.tick(fps_cap) / 1000.0
             events = pygame.event.get()
             for e in events:
                 if e.type == pygame.QUIT:

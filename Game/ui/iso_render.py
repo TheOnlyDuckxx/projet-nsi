@@ -33,8 +33,22 @@ class IsoMapView:
         self.zoom = 1.0
         self.min_zoom, self.max_zoom, self.zoom_step = min_zoom, max_zoom, zoom_step
 
-        self.cam_x = 0.0
-        self.cam_y = 0.0
+        self.cam_x = 0
+        self.cam_y = 0
+        self.zoom = 1.0
+        self.min_zoom = 0.5
+        self.max_zoom = 3.0
+
+        # métriques écran (fallback si display pas encore créé)
+        try:
+            sw, sh = pygame.display.get_surface().get_size()
+        except Exception:
+            sw, sh = (1280, 720)
+
+        self.screen_w = sw
+        self.screen_h = sh
+        self.cx = sw // 2
+        self.cy = sh // 2
 
         self.world = None
         self.max_levels = 6
@@ -101,42 +115,85 @@ class IsoMapView:
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:  self.cam_y += speed
 
     # ---------- Render ----------
-    def render(self, screen: pygame.Surface) -> None:
+    def _proj_consts(self):
+        # à appeler à chaque frame AVANT le rendu (zoom peut changer)
+        base = self.assets.get_image("tile_grass")
+        tw, th = base.get_width(), base.get_height()
+        dx = (tw * 0.5) * self.zoom
+        dy = dx * 0.5
+        wall_h = max(0, th * self.zoom - dy*2)  # si tu as des “murs” verticaux
+        return dx, dy, wall_h
+
+    def _world_to_screen(self, i, j, z, dx, dy, wall_h):
+        sx = self.cx + (i - j) * dx - self.cam_x
+        sy = self.cy + (i + j) * dy - self.cam_y - z * wall_h
+        return int(sx), int(sy)
+
+    def _screen_to_world_floor(self, sx, sy, dx, dy):
+        # inversion approx (z=0)
+        x = sx - self.cx + self.cam_x
+        y = sy - self.cy + self.cam_y
+        if dx <= 0 or dy <= 0:
+            return 0, 0
+        i = int((x/(2*dx)) + (y/(2*dy)))
+        j = int((y/(2*dy)) - (x/(2*dx)))
+        return i, j
+
+    def _visible_bounds(self, W, H):
+        dx, dy, wall_h = self._proj_consts()
+        corners = [(0,0),(self.screen_w,0),(0,self.screen_h),(self.screen_w,self.screen_h)]
+        ii, jj = [], []
+        for sx, sy in corners:
+            i, j = self._screen_to_world_floor(sx, sy, dx, dy)
+            ii.append(i); jj.append(j)
+        i_min = max(0, min(ii) - 2)
+        j_min = max(0, min(jj) - 2)
+        i_max = min(W-1, max(ii) + 2)
+        j_max = min(H-1, max(jj) + 2)
+        return i_min, i_max, j_min, j_max, dx, dy, wall_h
+
+    def render(self, screen):
         if not self.world: return
-
-        dx = self.base_dx * self.zoom
-        dy = self.base_dy * self.zoom
-        dz = self.base_dz * self.zoom
-
         W, H = self.world.width, self.world.height
+        i_min, i_max, j_min, j_max, dx, dy, wall_h = self._visible_bounds(W, H)
+        sw, sh = screen.get_size()
+        if (sw != self.screen_w) or (sh != self.screen_h):
+            self.screen_w, self.screen_h = sw, sh
+            self.cx = sw // 2
+            self.cy = sh // 2
 
-        # ordre iso: diagonales s = x+y
-        s_min, s_max = 0, (W - 1) + (H - 1)
-        for s in range(s_min, s_max + 1):
-            x_start = max(0, s - (H - 1))
-            x_end   = min(W - 1, s)
-            for x in range(x_start, x_end + 1):
-                y = s - x
-                levels = self.world.levels[y][x]
-                gid    = self.world.ground_id[y][x]
+        if not self.world:
+            return
+        # ORDRE ISO: (i+j) croissant pour empilements corrects
+        for s in range(i_min + j_min, i_max + j_max + 1):
+            i0 = max(i_min, s - j_max)
+            i1 = min(i_max, s - j_min)
+            for i in range(i0, i1 + 1):
+                j = s - i
+                # on vérifie qu’on reste dans la carte
+                if not (0 <= i < W and 0 <= j < H):
+                    continue
 
-                # piles de sols
-                for z in range(levels):
-                    sx, sy = self.world_to_screen(x, y, z, dx, dy, dz)
-                    sx = sx - self.cam_x + self.screen_w * 0.5
-                    sy = sy - self.cam_y + self.screen_h * 0.5
-                    img = self._get_scaled_ground(gid)
-                    screen.blit(img, (sx - img.get_width() * 0.5, sy - img.get_height()))
+                z = self.world.levels[j][i] if self.world.levels else 0
+                sx, sy = self._world_to_screen(i, j, z, dx, dy, wall_h)
 
-                # overlay sur le sommet
-                pid = self.world.overlay[y][x]
+                if sx < -200 or sx > self.screen_w + 200 or sy < -300 or sy > self.screen_h + 300:
+                    continue
+
+                # sol
+                gid = self.world.ground_id[j][i]
+                img = self._get_scaled_ground(gid)
+                if img:
+                    screen.blit(img, (sx - img.get_width() // 2, sy - img.get_height() + dy * 2))
+
+                # props
+                pid = self.world.overlay[j][i]
                 if pid:
-                    prop = self._get_scaled_prop(pid)
-                    if prop:
-                        sx, sy = self.world_to_screen(x, y, max(levels, 0), dx, dy, dz)
-                        sx = sx - self.cam_x + self.screen_w * 0.5
-                        sy = sy - self.cam_y + self.screen_h * 0.5
-                        screen.blit(prop, (sx - prop.get_width() * 0.5, sy - prop.get_height()))
+                    pimg = self._get_scaled_prop(pid)
+                    if pimg:
+                        psx, psy = sx, sy - (pimg.get_height() - dy * 2)
+                        if not (psx < -200 or psx > self.screen_w + 200 or psy < -300 or psy > self.screen_h + 300):
+                            screen.blit(pimg, (psx - pimg.get_width() // 2, psy))
 
     # ---------- Projection ----------
     def world_to_screen(self, x: float, y: float, z: float,
@@ -150,11 +207,39 @@ class IsoMapView:
         return sx, sy
 
     # ---------- Zoom ----------
-    def _apply_zoom(self, direction: int) -> None:
-        new_zoom = max(self.min_zoom, min(self.max_zoom, self.zoom + direction * self.zoom_step))
-        if abs(new_zoom - self.zoom) < 1e-6: return
+    def _apply_zoom(self, wheel_dir: int) -> None:
+        """
+        wheel_dir > 0  : zoom avant
+        wheel_dir < 0  : zoom arrière
+        """
+        # 1) point monde sous la souris AVANT zoom
+        dx, dy, _ = self._proj_consts()
+        mx, my = pygame.mouse.get_pos()
+        i0, j0 = self._screen_to_world_floor(mx, my, dx, dy)
+
+        # 2) calcule le nouveau zoom avec un facteur
+        #    ex: step=0.1 -> facteur = 1.1 ; dézoom = 1/1.1
+        factor = 1.0 + float(self.zoom_step)
+        if wheel_dir > 0:
+            new_zoom = min(self.zoom * factor, self.max_zoom)
+        else:
+            new_zoom = max(self.zoom / factor, self.min_zoom)
+
+        # si rien ne change (déjà à la borne), on quitte
+        if abs(new_zoom - self.zoom) < 1e-6:
+            return
+
+        old_zoom = self.zoom
         self.zoom = new_zoom
-        self._ground_cache.clear(); self._prop_cache.clear()
+
+        # 3) recalcule les constantes proj APRÈS zoom
+        dx2, dy2, _ = self._proj_consts()
+
+        # 4) ajuste la caméra pour que (i0,j0) reste sous le curseur
+        sx0, sy0 = self._world_to_screen(i0, j0, 0, dx2, dy2, 0)
+        self.cam_x += (sx0 - mx)
+        self.cam_y += (sy0 - my)
+
 
     # ---------- Assets ----------
     def _zoom_key(self) -> int:
