@@ -41,10 +41,20 @@ from typing import Callable
 ProgressCb = Optional[Callable[[float, str], None]]
 # --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
 # On les utilise si disponibles, sinon on a un fallback interne.
-from .tiles import get_tile_id  # attendu: get_tile_id("grass") -> int
-def get_prop_id(name: str) -> int:
-    _MAP = {"tree": 10, "rock": 11, "bush": 12}
-    return _MAP.get(name, None)
+try:
+    from .tiles import get_tile_id  # attendu: get_tile_id("grass") -> int
+except Exception:
+    def get_tile_id(name: str) -> int:
+        # mapping minimal par défaut
+        _MAP = {"ocean": 0, "beach": 1, "grass": 2, "forest": 3, "rock": 4, "taiga": 5, "desert": 6, "rainforest": 7, "steppe": 8}
+        return _MAP.get(name, 2)
+
+try:
+    from .ressource import get_prop_id  # attendu: get_prop_id("tree_small") -> int
+except Exception:
+    def get_prop_id(name: str) -> int:
+        _MAP = {"tree": 10, "rock": 11, "bush": 12}
+        return _MAP.get(name, None)
 
 
 # --------- Données & paramètres ---------
