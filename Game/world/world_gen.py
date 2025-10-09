@@ -35,23 +35,16 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Optional, Tuple, List, Dict, Any
 import json, os, random, math, hashlib, struct
+from typing import Callable
 
+# Type du callback: progress(fraction: float, label: str)
+ProgressCb = Optional[Callable[[float, str], None]]
 # --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
 # On les utilise si disponibles, sinon on a un fallback interne.
-try:
-    from .tiles import get_tile_id  # attendu: get_tile_id("grass") -> int
-except Exception:
-    def get_tile_id(name: str) -> int:
-        # mapping minimal par défaut
-        _MAP = {"ocean": 0, "beach": 1, "grass": 2, "forest": 3, "rock": 4, "taiga": 5, "desert": 6, "rainforest": 7, "steppe": 8}
-        return _MAP.get(name, 2)
-
-try:
-    from .ressource import get_prop_id  # attendu: get_prop_id("tree_small") -> int
-except Exception:
-    def get_prop_id(name: str) -> int:
-        _MAP = {"tree": 10, "rock": 11, "bush": 12}
-        return _MAP.get(name, None)
+from .tiles import get_tile_id  # attendu: get_tile_id("grass") -> int
+def get_prop_id(name: str) -> int:
+    _MAP = {"tree": 10, "rock": 11, "bush": 12}
+    return _MAP.get(name, None)
 
 
 # --------- Données & paramètres ---------
@@ -176,140 +169,139 @@ def fbm2d(x: float, y: float, octaves: int, seed: int) -> float:
 # --------- Générateur principal (île) ---------
 class WorldGenerator:
     def __init__(self, tiles_levels: int = 6):
-        """
-        tiles_levels = nombre de niveaux (étages de cubes) max après quantification.
-        """
         self.tiles_levels = tiles_levels
 
-    def generate_island(self, params: WorldParams, rng_seed: Optional[int]=None) -> WorldData:
-        """
-        Génère une île isométrique cohérente à partir de params.
-        - rng_seed : si fourni, override la seed finale (utile pour tests A/B)
-        """
+    def generate_island(self, params: WorldParams, rng_seed: Optional[int]=None,
+                        progress: ProgressCb=None) -> WorldData:
+        def report(p, label):
+            if progress:
+                progress(max(0.0, min(1.0, p)), label)
+
         final_seed = rng_seed if rng_seed is not None else make_final_seed(params.seed, params)
         rng = random.Random(final_seed)
 
         W, H = params.planet_width, params.planet_height
 
-        # --- 1) Heightmap brute (fBM) ---
-        # Échelle des features: planètes + grandes => features plus larges
+        # Petites pondérations de temps par phase (à la louche)
+        w_height  = 0.30
+        w_island  = 0.10
+        w_sea     = 0.05
+        w_quant   = 0.10
+        w_moist   = 0.15
+        w_biome   = 0.20
+        w_props   = 0.08
+        w_spawn   = 0.02
+
+        acc = 0.0
+        report(acc, "Initialisation…")
+
+        # [1] Heightmap brute
         base_scale = 0.012 if max(W, H) >= 300 else 0.02
         height_raw = [[0.0]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
                 n = fbm2d(x*base_scale, y*base_scale, octaves=4, seed=final_seed)
-                height_raw[y][x] = (n + 1.0) * 0.5  # 0..1
+                height_raw[y][x] = (n + 1.0) * 0.5
+            report(acc + w_height * ((y+1)/H), "Bruit de hauteur…")
+        acc += w_height
 
-        # --- 2) Masque Île (radial falloff) ---
+        # [2] Masque île
         cx, cy = (W - 1) * 0.5, (H - 1) * 0.5
         maxd = math.hypot(cx, cy) or 1.0
-        # Atmosphere_density adoucit/renforce le falloff
         atmo = params.atmosphere_density
-        falloff_strength = 0.85 + (1.2 - atmo) * 0.25   # tweakable
+        falloff_strength = 0.85 + (1.2 - atmo) * 0.25
         height_island = [[0.0]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
-                d = math.hypot(x - cx, y - cy) / maxd  # 0..1
-                # courbe en S, paramétrée par falloff_strength
+                d = math.hypot(x - cx, y - cy) / maxd
                 f = smoothstep(d ** falloff_strength)
-                h = clamp01(height_raw[y][x] - f*0.65)  # 0.65 règle la taille de l'île
+                h = clamp01(height_raw[y][x] - f*0.65)
                 height_island[y][x] = h
+            report(acc + w_island * ((y+1)/H), "Découpage de l’île…")
+        acc += w_island
 
-        # --- 3) Niveau de la mer par quantile (water_pct) ---
+        # [3] Niveau de la mer + renormalisation
         sea_level = self._sea_level_from_percent(height_island, params.water_pct)
+        report(acc + w_sea*0.5, "Calcul du niveau de la mer…")
         land_h = [[0.0]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
                 land_h[y][x] = max(0.0, height_island[y][x] - sea_level)
-
-        # Renormalisation 0..1 (au-dessus de la mer)
         maxh = max((v for row in land_h for v in row), default=1e-6)
-        if maxh < 1e-6:
-            maxh = 1e-6
+        if maxh < 1e-6: maxh = 1e-6
         for y in range(H):
             for x in range(W):
                 land_h[y][x] /= maxh
+        report(acc + w_sea, "Niveau de la mer…")
+        acc += w_sea
 
-        # --- 4) Quantification en étages ---
-        levels = [[self._quantize(land_h[y][x], self.tiles_levels) for x in range(W)] for y in range(H)]
+        # [4] Quantification en étages
+        levels = [[0]*W for _ in range(H)]
+        for y in range(H):
+            for x in range(W):
+                levels[y][x] = self._quantize(land_h[y][x], self.tiles_levels)
+            report(acc + w_quant * ((y+1)/H), "Étagement du relief…")
+        acc += w_quant
 
-        # --- 5) Moisture + Temp (biomes) ---
+        # [5] Humidité
         moist = [[0.0]*W for _ in range(H)]
         mscale = 0.03
         for y in range(H):
             for x in range(W):
                 m = fbm2d(x*mscale, y*mscale, octaves=3, seed=final_seed+1337)
-                moist[y][x] = (m + 1.0) * 0.5  # 0..1
+                moist[y][x] = (m + 1.0) * 0.5
+            report(acc + w_moist * ((y+1)/H), "Humidité…")
+        acc += w_moist
 
+        # [6] Biomes + ground_id
         temp_bias = {"cold": -0.25, "temperate": 0.0, "hot": +0.25}.get(params.temperature, 0.0)
         temp_global = clamp01(0.5 + temp_bias)
-
         biome = [["ocean"]*W for _ in range(H)]
         ground_id = [[get_tile_id("ocean")]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
                 if levels[y][x] <= 0:
-                    biome[y][x] = "ocean"
-                    ground_id[y][x] = get_tile_id("ocean")
+                    biome[y][x] = "ocean"; ground_id[y][x] = get_tile_id("ocean")
                 elif levels[y][x] == 1:
-                    biome[y][x] = "beach"
-                    ground_id[y][x] = get_tile_id("beach")
+                    biome[y][x] = "beach"; ground_id[y][x] = get_tile_id("beach")
                 else:
                     b = self._choose_biome(land_h[y][x], moist[y][x], temp_global)
                     biome[y][x] = b
-                    # mapping biome -> sol
                     ground_id[y][x] = get_tile_id(self._biome_to_ground(b))
+            report(acc + w_biome * ((y+1)/H), "Attribution des biomes…")
+        acc += w_biome
 
-        # --- 6) Props (arbres/rochers) selon biome + densité ---
+        # [7] Props
         overlay = [[None]*W for _ in range(H)]
-        base_tree = {
-            "forest": 0.22,
-            "rainforest": 0.28,
-            "taiga": 0.18,
-            "grassland": 0.08,
-            "steppe": 0.04,
-        }
-        base_rock = {
-            "rock": 0.12,
-            "beach": 0.02,
-            "desert": 0.03,
-            "taiga": 0.03,
-        }
-        density_mul = clamp01(params.resource_density) * 1.4  # boost léger
-
+        base_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08,"steppe":0.04}
+        base_rock = {"rock":0.12,"beach":0.02,"desert":0.03,"taiga":0.03}
+        density_mul = clamp01(params.resource_density) * 1.4
         for y in range(1, H-1):
             for x in range(1, W-1):
-                if levels[y][x] <= 0:
-                    continue  # mer
+                if levels[y][x] <= 0: continue
                 b = biome[y][x]
-                # arbres
                 tprob = base_tree.get(b, 0.0) * density_mul
                 if rng.random() < tprob:
-                    overlay[y][x] = get_prop_id("tree")
-                    continue
-                # rochers
+                    overlay[y][x] = get_prop_id("tree"); continue
                 rprob = base_rock.get(b, 0.0) * density_mul
                 if rng.random() < rprob:
                     overlay[y][x] = get_prop_id("rock")
-
-        # Évite d’en mettre trop près du bord de l’eau immédiat
+            report(acc + w_props * ((y+1)/H), "Placement des éléments…")
         self._sparsify_coast(overlay, levels)
+        acc += w_props
 
-        # --- 7) Spawn (zone “saine”) ---
+        # [8] Spawn
+        report(acc + w_spawn*0.5, "Recherche d’un bon spawn…")
         spawn = self._find_spawn(levels, biome, overlay)
+        acc += w_spawn
+        report(1.0, "Terminé !")
 
         return WorldData(
-            width=W,
-            height=H,
-            sea_level=sea_level,
-            heightmap=land_h,
-            levels=levels,
-            ground_id=ground_id,
-            moisture=moist,
-            biome=biome,
-            overlay=overlay,
-            spawn=spawn,
+            width=W, height=H, sea_level=sea_level, heightmap=land_h,
+            levels=levels, ground_id=ground_id, moisture=moist,
+            biome=biome, overlay=overlay, spawn=spawn
         )
+
 
     # --------- Helpers privés ---------
     def _sea_level_from_percent(self, heightmap: List[List[float]], water_pct: int) -> float:

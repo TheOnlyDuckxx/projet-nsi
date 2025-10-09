@@ -161,7 +161,7 @@ class MainMenu(BaseMenu):
             (WIDTH // 2, y0),
             anchor="center",
             style=primary,
-            on_click=lambda b: self.app.change_state("PHASE1"),
+            on_click=lambda b: self.app.change_state("LOADING"),
         ))
 
         self.btn_options = self.add(Button(

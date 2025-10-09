@@ -106,7 +106,7 @@ class Tiles:
 
     def get_autotile_image(self, base_sprite_key: str, variant_code: str, assets) -> Optional["pygame.Surface"]:
         """
-        Si une variante d’autotile a été enregistrée, renvoie sa Surface; sinon None.
+        Si une variante d'autotile a été enregistrée, renvoie sa Surface; sinon None.
         """
         var = self._autotile_variants.get(base_sprite_key, {})
         sprite_key = var.get(variant_code)

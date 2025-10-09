@@ -34,22 +34,21 @@ class Phase1:
     # Cycle de vie de l'état
     # -------------------------------------------------------------
     def enter(self, **kwargs):
-        """
-        Appelé quand on passe dans cet état.
-        kwargs possibles :
-          - preset: str (ex: "Default", "Tropical")
-          - seed: int | None (override)
-        """
-        preset = kwargs.get("preset", "Default")
+        # Si un monde est déjà prêt (loader), on l’utilise
+        pre_world = kwargs.get("world")
+        pre_params = kwargs.get("params")
+
+        if pre_world is not None and pre_params is not None:
+            self.world = pre_world
+            self.params = pre_params
+            self.view.set_world(self.world)
+            return
+
+        # Sinon, ancien comportement
+        preset = kwargs.get("preset", "Tropical")
         seed_override = kwargs.get("seed", None)
-
-        # Charge params depuis preset (peut inclure seed=None)
         self.params = load_world_params_from_preset(preset)
-
-        # Génère le monde (seed override si fourni)
         self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
-
-        # Installe la world dans la vue (centre caméra sur spawn)
         self.view.set_world(self.world)
 
     def leave(self):
