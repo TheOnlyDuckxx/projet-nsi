@@ -17,7 +17,7 @@ try:
     from world.ressource import get_prop_sprite_name
 except Exception:
     def get_prop_sprite_name(pid: int) -> Optional[str]:
-        return {10:"prop_tree", 11:"prop_rock", 12:"prop_bush"}.get(pid)
+        return {10:"prop_tree_2", 11:"prop_rock", 12:"prop_bush"}.get(pid)
 
 class IsoMapView:
     def __init__(self, assets, screen_size: Tuple[int,int],
