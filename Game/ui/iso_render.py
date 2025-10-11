@@ -182,18 +182,24 @@ class IsoMapView:
 
                 # sol
                 gid = self.world.ground_id[j][i]
-                img = self._get_scaled_ground(gid)
-                if img:
-                    screen.blit(img, (sx - img.get_width() // 2, sy - img.get_height() + dy * 2))
+                gimg = self._get_scaled_ground(gid)
+                if gimg:
+                    screen.blit(gimg, (sx - gimg.get_width() // 2, sy - gimg.get_height() + dy * 2))
 
                 # props
                 pid = self.world.overlay[j][i]
                 if pid:
                     pimg = self._get_scaled_prop(pid)
                     if pimg:
-                        psx, psy = sx, sy - (pimg.get_height() - dy * 2)
+                        # 1) y de la "surface" (haut du mur vertical de la tuile de sol)
+                        surface_y = sy - (gimg.get_height() - dy * 2)
+
+                        # 2) on pose le prop sur cette surface
+                        psx = sx - pimg.get_width() // 2
+                        psy = surface_y - (pimg.get_height() - dy * 2)  # même logique d’ancrage que les tuiles
+
                         if not (psx < -200 or psx > self.screen_w + 200 or psy < -300 or psy > self.screen_h + 300):
-                            screen.blit(pimg, (psx - pimg.get_width() // 2, psy))
+                            screen.blit(pimg, (psx, psy))
 
     # ---------- Projection ----------
     def world_to_screen(self, x: float, y: float, z: float,
