@@ -1,10 +1,10 @@
 {
   "audio": {
-    "master_volume": 0.0
+    "master_volume": 0.24
   },
   "video": {
     "fullscreen": true,
-    "fps_cap": 130,
+    "fps_cap": 115,
     "vsync": false
   },
   "gameplay": {
