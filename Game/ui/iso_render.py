@@ -252,7 +252,7 @@ class IsoMapView:
         name = get_ground_sprite_name(gid)
         base = self.assets.get_image(name)
         scale = (int(base.get_width()*self.zoom), int(base.get_height()*self.zoom))
-        surf = pygame.transform.smoothscale(base, scale).convert_alpha()
+        surf = pygame.transform.scale(base, scale).convert_alpha()
         self._ground_cache[key] = surf
         return surf
 
@@ -264,7 +264,7 @@ class IsoMapView:
         if not name: return None
         base = self.assets.get_image(name)
         scale = (int(base.get_width()*self.zoom), int(base.get_height()*self.zoom))
-        surf = pygame.transform.smoothscale(base, scale).convert_alpha()
+        surf = pygame.transform.scale(base, scale).convert_alpha()
         self._prop_cache[key] = surf
         return surf
 

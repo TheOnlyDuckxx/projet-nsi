@@ -7,7 +7,10 @@
 import json, os, pygame
 
 # --------------- VARIABLES GLOBALES ---------------
-WIDTH, HEIGHT = 1280, 720
+pygame.init()
+infoObject = pygame.display.Info()
+WIDTH = infoObject.current_w
+HEIGHT = infoObject.current_h
 FPS = 60
 TITLE = "EvoNSI"
 SCALE = 3  # pour sprites 16px → 48px
