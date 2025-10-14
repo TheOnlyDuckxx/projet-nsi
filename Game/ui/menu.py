@@ -7,7 +7,7 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import Button, ButtonStyle, Slider, Toggle
-
+from ui.world_creation import WorldCreationMenu
 
 # --------------- CLASSE PRINCIPALE ---------------
 

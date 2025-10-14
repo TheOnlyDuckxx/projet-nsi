@@ -379,3 +379,116 @@ class Slider:
         pygame.draw.rect(screen, (40, 140, 240), fill_rect, border_radius=4)
         # knob
         pygame.draw.circle(screen, (230, 230, 230), (cur_x, self.bar_rect.centery), self.knob_r)
+
+class ValueSelector:
+    def __init__(self, rect, label, min_value, max_value, step, start_value, font=None):
+        self.rect = pygame.Rect(rect)
+        self.label = label
+        self.min_value = min_value
+        self.max_value = max_value
+        self.step = step
+        self.value = start_value if start_value is not None else min_value
+        self.font = font or pygame.font.Font(None, 36)
+        
+        # Sous-rectangles pour les boutons + et -
+        self.minus_rect = pygame.Rect(self.rect.x + self.rect.width - 90, self.rect.y, 40, self.rect.height)
+        self.plus_rect = pygame.Rect(self.rect.x + self.rect.width - 45, self.rect.y, 40, self.rect.height)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            if self.minus_rect.collidepoint(mx, my):
+                self.value = max(self.min_value, self.value - self.step)
+            elif self.plus_rect.collidepoint(mx, my):
+                self.value = min(self.max_value, self.value + self.step)
+
+    def render(self, screen):
+        # fond principal
+        pygame.draw.rect(screen, (50, 50, 70), self.rect, border_radius=8)
+        pygame.draw.rect(screen, (100, 100, 130), self.rect, 2, border_radius=8)
+
+        # label
+        label_surf = self.font.render(self.label, True, (255, 255, 255))
+        screen.blit(label_surf, (self.rect.x + 10, self.rect.y + 8))
+
+        # valeur
+        value_surf = self.font.render(str(self.value), True, (200, 200, 255))
+        screen.blit(value_surf, (self.rect.centerx - 20, self.rect.y + 8))
+
+        # boutons + et -
+        pygame.draw.rect(screen, (80, 80, 110), self.minus_rect, border_radius=5)
+        pygame.draw.rect(screen, (80, 80, 110), self.plus_rect, border_radius=5)
+        minus_text = self.font.render("-", True, (255, 255, 255))
+        plus_text = self.font.render("+", True, (255, 255, 255))
+        screen.blit(minus_text, (self.minus_rect.centerx - 8, self.minus_rect.y + 4))
+        screen.blit(plus_text, (self.plus_rect.centerx - 6, self.plus_rect.y + 4))
+
+
+class OptionSelector:
+    def __init__(self, rect, label, options, start_index, font=None):
+        self.rect = pygame.Rect(rect)
+        self.label = label
+        self.options = options
+        self.selected_index = start_index
+        self.is_open = False
+        self.font = font or pygame.font.Font(None, 32)
+
+        # Couleurs
+        self.bg_color = (50, 50, 70)
+        self.border_color = (100, 100, 130)
+        self.hover_color = (80, 80, 110)
+
+    @property
+    def value(self):
+        return self.options[self.selected_index]
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+            # Si on clique sur la zone principale → ouvrir / fermer le menu
+            if self.rect.collidepoint(mx, my):
+                self.is_open = not self.is_open
+            # Si menu ouvert → vérifier si on clique sur une option
+            elif self.is_open:
+                for i, opt in enumerate(self.options):
+                    opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
+                                           self.rect.width, self.rect.height)
+                    if opt_rect.collidepoint(mx, my):
+                        self.selected_index = i
+                        self.is_open = False
+                        break
+                else:
+                    self.is_open = False  # clic à l’extérieur → fermer
+
+    def render(self, screen):
+        # --- Dessin de la zone principale ---
+        pygame.draw.rect(screen, self.bg_color, self.rect, border_radius=8)
+        pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
+
+        label_surf = self.font.render(self.label, True, (255, 255, 255))
+        value_surf = self.font.render(self.value, True, (200, 200, 255))
+
+        screen.blit(label_surf, (self.rect.x + 10, self.rect.y + 8))
+        screen.blit(value_surf, (self.rect.right - value_surf.get_width() - 10, self.rect.y + 8))
+
+        # Petite flèche ▼
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (self.rect.right - 20, self.rect.centery - 3),
+            (self.rect.right - 10, self.rect.centery - 3),
+            (self.rect.right - 15, self.rect.centery + 4)
+        ])
+
+        # --- Si ouvert : affichage des options ---
+        if self.is_open:
+            for i, opt in enumerate(self.options):
+                opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
+                                       self.rect.width, self.rect.height)
+                pygame.draw.rect(screen, self.bg_color, opt_rect, border_radius=8)
+                pygame.draw.rect(screen, self.border_color, opt_rect, 2, border_radius=8)
+
+                # Effet survol
+                if opt_rect.collidepoint(pygame.mouse.get_pos()):
+                    pygame.draw.rect(screen, self.hover_color, opt_rect, border_radius=8)
+
+                text_surf = self.font.render(opt, True, (255, 255, 255))
+                screen.blit(text_surf, (opt_rect.x + 10, opt_rect.y + 8))
