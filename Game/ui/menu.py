@@ -6,8 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT
-from Game.core.utils import Button, ButtonStyle, Slider, Toggle
-from ui.world_creation import WorldCreationMenu
+from Game.core.utils import Button, ButtonStyle, Slider, Toggle, ValueSelector, OptionSelector
 
 # --------------- CLASSE PRINCIPALE ---------------
 
@@ -239,3 +238,150 @@ class CreditMenu(BaseMenu):
             x = WIDTH // 2 - credit_line.get_width() // 2
             y = start_y + i*(credit_line.get_height()-5)
             screen.blit(credit_line, (x, y))
+
+
+class WorldCreationMenu(BaseMenu):
+    def __init__(self, app):
+        super().__init__(app, title="Paramètres du monde")
+
+        # --- Polices cohérentes avec le reste des menus ---
+        self.font = app.assets.get_font("MightySouly", 22)
+        self.btn_font = app.assets.get_font("MightySouly", 28)
+
+        # --- Etat local des paramètres (toujours à jour via les widgets) ---
+        self.params = {
+            "seed": "Aléatoire",
+            "age": 2000,                  # en millions d'années
+            "Taille": 40000,              # en km
+            "Climat": "Tempéré",
+            "Niveau des océans": 0,       # en mètres
+            "Ressources": "Normale",
+        }
+
+        # --- Styles de boutons (même look que MainMenu) ---
+        primary = ButtonStyle(
+            draw_background=True,
+            bg_color=(60, 80, 110),
+            hover_bg_color=(80, 110, 155),
+            active_bg_color=(40, 140, 240),
+            draw_border=True,
+            border_color=(20, 30, 45),
+            border_width=2,
+            radius=14,
+            font=self.btn_font,
+            text_color=(255, 255, 255),
+            hover_text_color=(255, 255, 255),
+            active_text_color=(255, 255, 255),
+            padding_x=26,
+            padding_y=14,
+            shadow=True,
+            shadow_offset=(3, 3),
+            shadow_alpha=90,
+            hover_zoom=1.10,
+            zoom_speed=0.22,
+        )
+        ghost = ButtonStyle(
+            draw_background=False,
+            font=self.btn_font,
+            text_color=(230, 230, 230),
+            hover_zoom=1.08,
+            zoom_speed=0.22,
+        )
+
+        center_x = WIDTH // 2
+        line_y  = 250
+        gap_y   = 65
+        width   = 540  # largeur visuelle des champs
+
+        # Age (1000..4000 Ma), pas 500
+        self.sel_age = self.add(ValueSelector(
+            rect=(center_x - width // 2, line_y, width, 50),
+            label="Âge du monde (Ma)",
+            min_value=1000,
+            max_value=4000,
+            step=500,
+            start_value=2000,
+            font=self.font
+        ))
+
+        # Niveau des océans (-50..100 m), pas 10
+        self.sel_ocean = self.add(ValueSelector(
+            rect=(center_x - width // 2, line_y + gap_y, width, 50),
+            label="Niveau des océans (m)",
+            min_value=-50,
+            max_value=100,
+            step=10,
+            start_value=self.params.get("Niveau des océans", 0),
+            font=self.btn_font
+        ))
+
+        # Taille du monde (20000..60000 km), pas 5000
+        self.sel_size = self.add(ValueSelector(
+            rect=(center_x - width // 2, line_y + 2 * gap_y, width, 50),
+            label="Taille du monde (km)",
+            min_value=20000,
+            max_value=60000,
+            step=5000,
+            start_value=self.params.get("Taille", 40000),
+            font=self.btn_font
+        ))
+
+        # Climat (Aride / Tempéré / Tropical)
+        self.sel_climate = self.add(OptionSelector(
+            rect=(center_x - width // 2, line_y + 3 * gap_y, width, 50),
+            label="Climat",
+            options=["Aride", "Tempéré", "Tropical"],
+            start_index=["Aride", "Tempéré", "Tropical"].index(self.params.get("Climat", "Tempéré")),
+            font=self.btn_font
+        ))
+
+        # Ressources (Éparse / Normale / Abondante)
+        self.sel_resources = self.add(OptionSelector(
+            rect=(center_x - width // 2, line_y + 4 * gap_y, width, 50),
+            label="Ressources",
+            options=["Éparse", "Normale", "Abondante"],
+            start_index=["Éparse", "Normale", "Abondante"].index(self.params.get("Ressources", "Normale")),
+            font=self.btn_font
+        ))
+
+        # --- Boutons bas de page ---
+        y_buttons = line_y + 4*gap_y + 90
+
+        self.btn_start = self.add(Button(
+            "Lancer la partie",
+            (center_x - 150, y_buttons),
+            anchor="center",
+            style=primary,
+            on_click=lambda b: self._on_start_clicked(),
+        ))
+
+        self.btn_back = self.add(Button(
+            "← Retour",
+            (center_x + 150, y_buttons),
+            anchor="center",
+            style=ghost,
+            on_click=lambda b: self.app.change_state("MENU"),
+        ))
+
+    # Petitte utilité pour centraliser la MAJ du dict
+    def _set(self, key, value):
+        self.params[key] = value
+
+    # Laisse BaseMenu propager aux widgets + ESC pour revenir
+    def handle_input(self, events):
+        super().handle_input(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+
+    # Pas besoin de surcharger update: les widgets bindent déjà get/set
+    def update(self, dt):
+        pass
+
+    # BaseMenu gère déjà fond + overlay + titre + draw des widgets
+    def render(self, screen):
+        super().render(screen)
+
+    # Clique sur "Lancer la partie"
+    def _on_start_clicked(self):
+        print("PAS FAIT : enregistrer les parametres dans le json world_presets et utiliser ces paramètres dans la génération du monde")

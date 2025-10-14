@@ -6,12 +6,11 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
-from Game.ui.menu import MainMenu,OptionsMenu, CreditMenu
+from Game.ui.menu import MainMenu,OptionsMenu, CreditMenu, WorldCreationMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
-from Game.ui.world_creation import WorldCreationMenu
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:

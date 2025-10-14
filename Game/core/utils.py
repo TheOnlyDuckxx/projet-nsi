@@ -394,15 +394,16 @@ class ValueSelector:
         self.minus_rect = pygame.Rect(self.rect.x + self.rect.width - 90, self.rect.y, 40, self.rect.height)
         self.plus_rect = pygame.Rect(self.rect.x + self.rect.width - 45, self.rect.y, 40, self.rect.height)
 
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            mx, my = event.pos
-            if self.minus_rect.collidepoint(mx, my):
-                self.value = max(self.min_value, self.value - self.step)
-            elif self.plus_rect.collidepoint(mx, my):
-                self.value = min(self.max_value, self.value + self.step)
+    def handle(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                if self.minus_rect.collidepoint(mx, my):
+                    self.value = max(self.min_value, self.value - self.step)
+                elif self.plus_rect.collidepoint(mx, my):
+                    self.value = min(self.max_value, self.value + self.step)
 
-    def render(self, screen):
+    def draw(self, screen):
         # fond principal
         pygame.draw.rect(screen, (50, 50, 70), self.rect, border_radius=8)
         pygame.draw.rect(screen, (100, 100, 130), self.rect, 2, border_radius=8)
@@ -442,25 +443,25 @@ class OptionSelector:
     def value(self):
         return self.options[self.selected_index]
 
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            mx, my = event.pos
-            # Si on clique sur la zone principale → ouvrir / fermer le menu
-            if self.rect.collidepoint(mx, my):
-                self.is_open = not self.is_open
-            # Si menu ouvert → vérifier si on clique sur une option
-            elif self.is_open:
-                for i, opt in enumerate(self.options):
-                    opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
-                                           self.rect.width, self.rect.height)
-                    if opt_rect.collidepoint(mx, my):
-                        self.selected_index = i
+    def handle(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                if self.rect.collidepoint(mx, my):
+                    self.is_open = not self.is_open
+                elif self.is_open:
+                    for i, opt in enumerate(self.options):
+                        opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
+                                            self.rect.width, self.rect.height)
+                        if opt_rect.collidepoint(mx, my):
+                            self.selected_index = i
+                            self.is_open = False
+                            break
+                    else:
                         self.is_open = False
-                        break
-                else:
-                    self.is_open = False  # clic à l’extérieur → fermer
 
-    def render(self, screen):
+
+    def draw(self, screen):
         # --- Dessin de la zone principale ---
         pygame.draw.rect(screen, self.bg_color, self.rect, border_radius=8)
         pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
