@@ -155,6 +155,15 @@ class MainMenu(BaseMenu):
         gap = 70
 
         # ---- Boutons (on_click appelle directement l'app) ----
+        self.btn_monde = self.add(Button(
+            "PARAMÈTRES DU MONDE",
+            (WIDTH // 2, y0 - gap),
+            anchor="center",
+            style=primary,
+            on_click=lambda b: self.app.change_state("CREATION"),
+        ))
+
+
         self.btn_start = self.add(Button(
             "NOUVELLE PARTIE",
             (WIDTH // 2, y0),
@@ -162,6 +171,7 @@ class MainMenu(BaseMenu):
             style=primary,
             on_click=lambda b: self.app.change_state("LOADING"),
         ))
+
 
         self.btn_options = self.add(Button(
             "OPTIONS",

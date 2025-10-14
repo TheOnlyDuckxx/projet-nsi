@@ -11,6 +11,7 @@ from Game.core.assets import Assets
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
+from Game.ui.world_creation import WorldCreationMenu
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
@@ -35,6 +36,7 @@ class App:
         self.states["CREDITS"] = CreditMenu(self)
         self.states["PHASE1"] = Phase1(self)
         self.states["LOADING"] = LoadingState(self)
+        self.states["CREATION"] = WorldCreationMenu(self)
         # plus tard: self.states["PHASE2"] = Phase2(self)
     
     #Fonction pour quitter le jeu

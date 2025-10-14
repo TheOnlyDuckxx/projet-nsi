@@ -1,5 +1,6 @@
 import pygame
-from core.state import State  
+from core.state import State
+from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import Button, ButtonStyle, Slider, Toggle, ValueSelector, OptionSelector
 
 class WorldCreationMenu(State):
@@ -19,8 +20,8 @@ class WorldCreationMenu(State):
 
         # Exemple de boutons
         self.buttons = [
-            Button((100, 400, 200, 50), "Lancer la partie", self.start_game),
-            Button((100, 470, 200, 50), "Retour", self.back_to_menu)
+            Button("Lancer la partie",(WIDTH//2,250 ), anchor="center", on_click= lambda b: self.start_game),
+            Button( "Retour", (WIDTH//2,300 ), anchor="center",on_click= lambda b:self.back_to_menu)
 
         ]
         self.selectors = [
@@ -28,7 +29,7 @@ class WorldCreationMenu(State):
             ValueSelector((100, 220, 300, 50), "Niveau des océans en mètres", -50, 100, 10, 0, self.font),
             ValueSelector((100, 290, 300, 50), "Taille du monde en kilomètres", 20000, 60000, 5000, 40000, self.font)
         ]
-        self.Optionselectors = [
+        self.option_selectors = [
             OptionSelector((200, 220, 300, 50), "Climat", ["Aride", "Tempéré", "Tropical"], start_index=1, font=self.font),
             OptionSelector((200, 290, 300, 50), "Ressources", ["Eparse", "Normale", "Abondante"], start_index=1, font=self.font)
         ]
