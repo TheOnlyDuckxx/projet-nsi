@@ -390,10 +390,11 @@ class ValueSelector:
         self.value = start_value if start_value is not None else min_value
         self.font = font or pygame.font.Font(None, 36)
         
-        # Sous-rectangles pour les boutons + et -
+    # Sous-rectangles pour les boutons + et -
         self.minus_rect = pygame.Rect(self.rect.x + self.rect.width - 90, self.rect.y, 40, self.rect.height)
         self.plus_rect = pygame.Rect(self.rect.x + self.rect.width - 45, self.rect.y, 40, self.rect.height)
-
+    def value(self):
+        return self.value
     def handle(self, events):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -423,6 +424,11 @@ class ValueSelector:
         plus_text = self.font.render("+", True, (255, 255, 255))
         screen.blit(minus_text, (self.minus_rect.centerx - 8, self.minus_rect.y + 4))
         screen.blit(plus_text, (self.plus_rect.centerx - 6, self.plus_rect.y + 4))
+    def get_value(self):
+        """Retourne la valeur entière actuelle."""
+        return int(getattr(self, "value", self.min_value))
+     
+
 
 
 class OptionSelector:
@@ -438,11 +444,11 @@ class OptionSelector:
         self.bg_color = (50, 50, 70)
         self.border_color = (100, 100, 130)
         self.hover_color = (80, 80, 110)
-
-    @property
     def value(self):
+        """Retourne l'option actuellement sélectionnée."""
         return self.options[self.selected_index]
-
+        
+    
 
     def draw(self, screen):
         # zone principale (fermée)
@@ -450,7 +456,7 @@ class OptionSelector:
         pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
 
         label_surf = self.font.render(self.label, True, (255, 255, 255))
-        value_surf = self.font.render(self.value, True, (200, 200, 255))
+        value_surf = self.font.render(self.value(), True, (200, 200, 255))
         screen.blit(label_surf, (self.rect.x + 10, self.rect.y + 8))
         screen.blit(value_surf, (self.rect.right - value_surf.get_width() - 30, self.rect.y + 8))
 

@@ -7,7 +7,8 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import Button, ButtonStyle, Slider, Toggle, ValueSelector, OptionSelector
-
+import json 
+import os 
 # --------------- CLASSE PRINCIPALE ---------------
 
 
@@ -354,7 +355,7 @@ class WorldCreationMenu(BaseMenu):
         # --- Boutons bas de page ---
         y_buttons = line_y + 4*gap_y + 90
 
-        self.btn_start = self.add(Button(
+        self.btn_start = self.add(Button(  
             "Lancer la partie",
             (center_x - 150, y_buttons),
             anchor="center",
@@ -391,4 +392,26 @@ class WorldCreationMenu(BaseMenu):
 
     # Clique sur "Lancer la partie"
     def _on_start_clicked(self):
-        print("PAS FAIT : enregistrer les parametres dans le json world_presets et utiliser ces paramètres dans la génération du monde")
+        """Met à jour le preset 'custom' dans le fichier JSON et lance la Phase 1."""
+        # Chemin du fichier JSON des presets
+        preset_path = os.path.join("Game", "data", "world_presets.json")
+        self._set("age", self.sel_age.get_value())
+        self._set("Niveau des océans", self.sel_ocean.get_value())
+        self._set("Taille", self.sel_size.get_value())
+        self._set("Ressources", self.sel_resources.value())
+        self._set("Climat", self.sel_climate.value())
+        
+        try:
+            with open(preset_path, "r", encoding="utf-8") as f:
+                presets = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            presets = {}
+
+        # Ajout / mise à jour du preset personnalisé
+        presets["Custom"] = self.params
+
+        # Sauvegarde dans le même fichier
+        with open(preset_path, "w", encoding="utf-8") as f:
+            json.dump(presets, f, indent=4, ensure_ascii=False)
+            # Change d'état pour lancer la partie
+        self.app.change_state("LOADING")
