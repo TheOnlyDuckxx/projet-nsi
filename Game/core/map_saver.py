@@ -1,10 +1,28 @@
 # MAP_SAVER.PY
 # Système pour sauvegarder et charger des maps préconstruites
 
-# --------------- IMPORTATION DES MODULES ---------------
+# --------------- CONFIGURATION DU PATH (EN PREMIER !) ---------------
+import sys
 import os
+
+# Pour que le script puisse être lancé depuis n'importe où
+script_dir = os.path.dirname(os.path.abspath(__file__))  # Game/core/
+game_dir = os.path.dirname(script_dir)                    # Game/
+project_root = os.path.dirname(game_dir)                  # racine
+
+# IMPORTANT : Ajouter le chemin AVANT tout import de Game.*
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# --------------- MAINTENANT ON PEUT IMPORTER ---------------
 from typing import Tuple
+
+print(f"DEBUG - Project root: {project_root}")
+print(f"DEBUG - sys.path[0]: {sys.path[0]}")
+
+# Import de Game APRÈS avoir configuré sys.path
 from Game.world.world_gen import WorldData, WorldParams
+print("✓ Import réussi!")
 
 
 # --------------- FONCTION DE SAUVEGARDE ---------------
@@ -72,7 +90,7 @@ def save_world_to_file(world: WorldData, params: WorldParams, filename: str, out
 if __name__ == "__main__":
     """
     Script pour générer et sauvegarder une map rapidement.
-    Usage: python map_saver.py
+    Usage: python Game/core/map_saver.py
     """
     print("=" * 60)
     print("  GÉNÉRATEUR DE MAP PRÉCONSTRUITE")
@@ -105,4 +123,4 @@ if __name__ == "__main__":
     print("  TERMINÉ!")
     print("=" * 60)
     print(f"\nVous pouvez maintenant lancer le jeu avec:")
-    print(f"  python launcher_prebuilt.py")
+    print(f"  python3 launcher_prebuilt.py")
