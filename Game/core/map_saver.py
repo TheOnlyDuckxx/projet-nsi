@@ -100,7 +100,7 @@ if __name__ == "__main__":
     
     # Choix du preset
     preset_name = "Tropical"  # Changez ici: "Tropical", "Desert", "Arctic", etc.
-    map_filename = "default_map"  # Nom du fichier de sortie
+    map_filename = "default_map1"  # Nom du fichier de sortie
     
     print(f"\n→ Génération d'une map avec le preset '{preset_name}'...")
     

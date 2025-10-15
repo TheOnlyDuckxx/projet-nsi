@@ -79,7 +79,7 @@ class PrebuiltApp(App):
 # --------------- LANCEMENT DU JEU ---------------
 if __name__ == "__main__":
     # Choix de la map (vous pouvez passer un argument en ligne de commande)
-    map_to_load = "default_map"
+    map_to_load = "default_map1"
     
     if len(sys.argv) > 1:
         map_to_load = sys.argv[1]
