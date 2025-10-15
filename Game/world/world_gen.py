@@ -42,12 +42,16 @@ ProgressCb = Optional[Callable[[float, str], None]]
 # --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
 # On les utilise si disponibles, sinon on a un fallback interne.
 from Game.world.tiles import get_tile_id
-try:
-    from .ressource import get_prop_id  # attendu: get_prop_id("tree_small") -> int
-except Exception:
-    def get_prop_id(name: str) -> int:
-        _MAP = {"tree": 10, "rock": 11, "bush": 12}
-        return _MAP.get(name, None)
+
+def get_prop_id(name: str) -> int:
+    _MAP = {
+        "tree_2": 10,
+        "tree_base": 11,
+        "tree_dead": 12,
+        "rock": 13,
+    }
+    # Si le nom n’est pas reconnu → renvoie une variante générique “tree”
+    return _MAP.get(name, _MAP["tree_2"])
 
 
 # --------- Données & paramètres ---------
@@ -293,28 +297,28 @@ class WorldGenerator:
 
         # Définition des variantes pondérées
         tree_variants = {
-            "forest": [("tree_1", 0.45), ("tree_2", 0.30), ("tree_3", 0.25)],
-            "rainforest": [("tree_tropical_1", 0.4), ("tree_tropical_2", 0.35), ("tree_tropical_3", 0.25)],
-            "taiga": [("pine_1", 0.5), ("pine_2", 0.3), ("pine_dead", 0.2)],
-            "grassland": [("bush_1", 0.5), ("tree_small", 0.5)],
+            "forest": [("tree_2", 0.6), ("tree_dead", 0.2), ("tree_base", 0.2)],
+            "rainforest": [("tree_2", 0.5), ("tree_dead", 0.3),("tree_base", 0.2)],
+            "taiga": [("tree_2", 0.3), ("tree_dead", 0.7)],
+            "grassland": [("tree_2", 0.8), ("tree_base", 0.2)],
         }
 
         rock_variants = {
-            "rock": [("rock_1", 0.5), ("rock_2", 0.3), ("rock_3", 0.2)],
-            "beach": [("rock_small", 1.0)],
-            "desert": [("rock_sand", 0.7), ("rock_small", 0.3)],
+            "rock": [("rock", 1.0)],
+            "beach": [("rock", 0.6)],
+            "desert": [("rock", 0.4)],
         }
 
-        base_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08,"steppe":0.04}
-        base_rock = {"rock":0.12,"beach":0.02,"desert":0.03,"taiga":0.03}
+        prob_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08,"steppe":0.04}
+        prob_rock = {"rock":0.12,"beach":0.02,"desert":0.03,"taiga":0.03}
 
         for y in range(1, H-1):
             for x in range(1, W-1):
                 if levels[y][x] <= 0: 
                     continue
                 b = biome[y][x]
-                tprob = base_tree.get(b, 0.0) * density_mul
-                rprob = base_rock.get(b, 0.0) * density_mul
+                tprob = prob_tree.get(b, 0.0) * density_mul
+                rprob = prob_rock.get(b, 0.0) * density_mul
 
                 # Arbres
                 if rng.random() < tprob and b in tree_variants:
@@ -326,7 +330,6 @@ class WorldGenerator:
                     name = self._weighted_choice(rock_variants[b], rng)
                     overlay[y][x] = get_prop_id(name)
             report(acc + w_props * ((y+1)/H), "Placement des éléments…")
-
         self._sparsify_coast(overlay, levels)
         acc += w_props
 

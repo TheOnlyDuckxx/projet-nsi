@@ -7,11 +7,15 @@ from typing import Optional, Tuple
 from Game.world.tiles import get_ground_sprite_name
 
 
-try:
-    from world.ressource import get_prop_sprite_name
-except Exception:
-    def get_prop_sprite_name(pid: int) -> Optional[str]:
-        return {10:"prop_tree_2", 11:"prop_rock", 12:"prop_bush"}.get(pid)
+def get_prop_sprite_name(pid: int) -> Optional[str]:
+    mapping = {
+        10: "prop_tree_2",
+        11: "prop_tree_base",
+        12: "prop_tree_dead",
+        13: "prop_rock",
+    }
+    # Si l’ID est inconnu, retourne “prop_tree” comme valeur par défaut
+    return mapping.get(pid, "prop_tree_2")
 
 class IsoMapView:
     def __init__(self, assets, screen_size: Tuple[int,int],zoom_step=0.1):
@@ -212,6 +216,7 @@ class IsoMapView:
 
                 # props
                 pid = self.world.overlay[j][i]
+
                 if pid:
                     pimg = self._get_scaled_prop(pid)
                     if pimg:
@@ -220,10 +225,14 @@ class IsoMapView:
 
                         # 2) on pose le prop sur cette surface
                         psx = sx - pimg.get_width() // 2
-                        psy = surface_y - (pimg.get_height() - dy * 2)  # même logique d’ancrage que les tuiles
+                        psy = surface_y - (pimg.get_height() - dy * 2)
 
-                        if (sx < -margin_x or sx > self.screen_w + margin_x or sy < -margin_y or sy > self.screen_h + margin_y):
+                        # Vérifie que le prop est dans la zone visible
+                        if not (-margin_x <= sx <= self.screen_w + margin_x and
+                                -margin_y <= sy <= self.screen_h + margin_y):
                             continue
+
+                        screen.blit(pimg, (psx, psy))
 
     # ---------- Projection ----------
     def world_to_screen(self, x: float, y: float, z: float,
@@ -289,11 +298,13 @@ class IsoMapView:
     def _get_scaled_prop(self, pid: int) -> Optional[pygame.Surface]:
         key = (pid, self._zoom_key())
         surf = self._prop_cache.get(key)
-        if surf is not None: return surf
+        if surf is not None:
+            return surf
         name = get_prop_sprite_name(pid)
-        if not name: return None
+        
         base = self.assets.get_image(name)
-        scale = (int(base.get_width()*self.zoom), int(base.get_height()*self.zoom))
+        
+        scale = (int(base.get_width() * self.zoom), int(base.get_height() * self.zoom))
         surf = pygame.transform.scale(base, scale).convert_alpha()
         self._prop_cache[key] = surf
         return surf
