@@ -45,8 +45,15 @@ class BaseMenu:
         screen.blit(self._overlay, (0, 0))
         title_surf = self.title_font.render(self.title, True, (230,230,230))
         screen.blit(title_surf, (WIDTH//2 - title_surf.get_width()//2, 120))
+
+        # 1) corps des widgets
         for w in self.widgets:
             w.draw(screen)
+
+        # 2) popups par-dessus
+        for w in self.widgets:
+            if hasattr(w, "draw_popup"):
+                w.draw_popup(screen)
 
 
 # Menu des options

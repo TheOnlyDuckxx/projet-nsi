@@ -4,14 +4,8 @@ import pygame, math
 from typing import Optional, Tuple
 
 # Fallbacks si helpers indisponibles
-try:
-    from world.tiles import get_ground_sprite_name
-except Exception:
-    def get_ground_sprite_name(gid: int) -> str:
-        return {
-            0:"tile_ocean",1:"tile_beach",2:"tile_grass",3:"tile_forest",
-            4:"tile_rock",5:"tile_taiga",6:"tile_desert",7:"tile_rainforest",8:"tile_steppe"
-        }.get(gid, "tile_grass")
+from Game.world.tiles import get_ground_sprite_name
+
 
 try:
     from world.ressource import get_prop_sprite_name

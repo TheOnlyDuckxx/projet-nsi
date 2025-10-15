@@ -443,53 +443,64 @@ class OptionSelector:
     def value(self):
         return self.options[self.selected_index]
 
-    def handle(self, events):
-        for event in events:
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mx, my = event.pos
-                if self.rect.collidepoint(mx, my):
-                    self.is_open = not self.is_open
-                elif self.is_open:
-                    for i, opt in enumerate(self.options):
-                        opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
-                                            self.rect.width, self.rect.height)
-                        if opt_rect.collidepoint(mx, my):
-                            self.selected_index = i
-                            self.is_open = False
-                            break
-                    else:
-                        self.is_open = False
-
 
     def draw(self, screen):
-        # --- Dessin de la zone principale ---
+        # zone principale (fermée)
         pygame.draw.rect(screen, self.bg_color, self.rect, border_radius=8)
         pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
 
         label_surf = self.font.render(self.label, True, (255, 255, 255))
         value_surf = self.font.render(self.value, True, (200, 200, 255))
-
         screen.blit(label_surf, (self.rect.x + 10, self.rect.y + 8))
         screen.blit(value_surf, (self.rect.right - value_surf.get_width() - 30, self.rect.y + 8))
 
-        # Petite flèche ▼
         pygame.draw.polygon(screen, (255, 255, 255), [
             (self.rect.right - 20, self.rect.centery - 3),
             (self.rect.right - 10, self.rect.centery - 3),
             (self.rect.right - 15, self.rect.centery + 4)
         ])
 
-        # --- Si ouvert : affichage des options ---
-        if self.is_open:
-            for i, opt in enumerate(self.options):
-                opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
-                                       self.rect.width, self.rect.height)
-                pygame.draw.rect(screen, self.bg_color, opt_rect, border_radius=8)
-                pygame.draw.rect(screen, self.border_color, opt_rect, 2, border_radius=8)
+    def draw_popup(self, screen):
+        if not self.is_open:
+            return
 
-                # Effet survol
-                if opt_rect.collidepoint(pygame.mouse.get_pos()):
-                    pygame.draw.rect(screen, self.hover_color, opt_rect, border_radius=8)
+        # couche transparente (facultatif: léger voile)
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        # overlay.fill((0,0,0,60))  # décommente pour un fond assombri
 
-                text_surf = self.font.render(opt, True, (255, 255, 255))
-                screen.blit(text_surf, (opt_rect.x + 10, opt_rect.y + 8))
+        for i, opt in enumerate(self.options):
+            opt_rect = pygame.Rect(
+                self.rect.x, self.rect.y + (i + 1) * self.rect.height,
+                self.rect.width, self.rect.height
+            )
+            pygame.draw.rect(overlay, self.bg_color, opt_rect, border_radius=8)
+            pygame.draw.rect(overlay, self.border_color, opt_rect, 2, border_radius=8)
+
+            if opt_rect.collidepoint(pygame.mouse.get_pos()):
+                pygame.draw.rect(overlay, self.hover_color, opt_rect, border_radius=8)
+
+            text_surf = self.font.render(opt, True, (255, 255, 255))
+            overlay.blit(text_surf, (opt_rect.x + 10, opt_rect.y + 8))
+
+        screen.blit(overlay, (0, 0))
+
+    def handle(self, events):
+        consumed = False
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                if self.rect.collidepoint(mx, my):
+                    self.is_open = not self.is_open
+                    consumed = True
+                elif self.is_open:
+                    clicked_option = False
+                    for i, _ in enumerate(self.options):
+                        opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
+                                               self.rect.width, self.rect.height)
+                        if opt_rect.collidepoint(mx, my):
+                            self.selected_index = i
+                            clicked_option = True
+                            break
+                    self.is_open = False
+                    consumed = True  # on absorbe le clic quand le menu était ouvert
+        return consumed
