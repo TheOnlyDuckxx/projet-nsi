@@ -3,7 +3,6 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 
 #Importation des modules
-from Game.core.config import WIDTH, HEIGHT
 from Game.core.app import App
 
 
