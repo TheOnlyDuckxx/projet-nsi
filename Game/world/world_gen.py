@@ -41,14 +41,7 @@ from typing import Callable
 ProgressCb = Optional[Callable[[float, str], None]]
 # --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
 # On les utilise si disponibles, sinon on a un fallback interne.
-try:
-    from .tiles import get_tile_id  # attendu: get_tile_id("grass") -> int
-except Exception:
-    def get_tile_id(name: str) -> int:
-        # mapping minimal par défaut
-        _MAP = {"ocean": 0, "beach": 1, "grass": 2, "forest": 3, "rock": 4, "taiga": 5, "desert": 6, "rainforest": 7, "steppe": 8}
-        return _MAP.get(name, 2)
-
+from Game.world.tiles import get_tile_id
 try:
     from .ressource import get_prop_id  # attendu: get_prop_id("tree_small") -> int
 except Exception:
@@ -186,7 +179,8 @@ class WorldGenerator:
         def report(p, label):
             if progress:
                 progress(max(0.0, min(1.0, p)), label)
-
+        if params.seed in (None, "Aléatoire", "random", ""):
+            params.seed = random.randint(0, 10**9)
         final_seed = rng_seed if rng_seed is not None else make_final_seed(params.seed, params)
         rng = random.Random(final_seed)
 
@@ -212,7 +206,7 @@ class WorldGenerator:
             for x in range(W):
                 n = fbm2d(x*base_scale, y*base_scale, octaves=4, seed=final_seed)
                 height_raw[y][x] = (n + 1.0) * 0.5
-            report(acc + w_height * ((y+1)/H), "Bruit de hauteur…")
+            report(acc + w_height * ((y+1)/H), "Génération du terrain…")
         acc += w_height
 
         # [2] Masque île
@@ -260,7 +254,7 @@ class WorldGenerator:
             for x in range(W):
                 m = fbm2d(x*mscale, y*mscale, octaves=3, seed=final_seed+1337)
                 moist[y][x] = (m + 1.0) * 0.5
-            report(acc + w_moist * ((y+1)/H), "Humidité…")
+            report(acc + w_moist * ((y+1)/H), "Ajout de vie…")
         acc += w_moist
 
         # [6] Biomes + ground_id
@@ -281,24 +275,61 @@ class WorldGenerator:
             report(acc + w_biome * ((y+1)/H), "Attribution des biomes…")
         acc += w_biome
 
+        for y in range(H):
+            for x in range(W):
+                if biome[y][x] == "ocean":
+                    # distance à la côte
+                    d = self._distance_to_land(x, y, levels)
+                    if d < 2:
+                        ground_id[y][x] = get_tile_id("water_shallow")
+                    elif d < 5:
+                        ground_id[y][x] = get_tile_id("water")
+                    else:
+                        ground_id[y][x] = get_tile_id("water_deep")
+
         # [7] Props
         overlay = [[None]*W for _ in range(H)]
+        density_mul = clamp01(params.resource_density) * 1.4
+
+        # Définition des variantes pondérées
+        tree_variants = {
+            "forest": [("tree_1", 0.45), ("tree_2", 0.30), ("tree_3", 0.25)],
+            "rainforest": [("tree_tropical_1", 0.4), ("tree_tropical_2", 0.35), ("tree_tropical_3", 0.25)],
+            "taiga": [("pine_1", 0.5), ("pine_2", 0.3), ("pine_dead", 0.2)],
+            "grassland": [("bush_1", 0.5), ("tree_small", 0.5)],
+        }
+
+        rock_variants = {
+            "rock": [("rock_1", 0.5), ("rock_2", 0.3), ("rock_3", 0.2)],
+            "beach": [("rock_small", 1.0)],
+            "desert": [("rock_sand", 0.7), ("rock_small", 0.3)],
+        }
+
         base_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08,"steppe":0.04}
         base_rock = {"rock":0.12,"beach":0.02,"desert":0.03,"taiga":0.03}
-        density_mul = clamp01(params.resource_density) * 1.4
+
         for y in range(1, H-1):
             for x in range(1, W-1):
-                if levels[y][x] <= 0: continue
+                if levels[y][x] <= 0: 
+                    continue
                 b = biome[y][x]
                 tprob = base_tree.get(b, 0.0) * density_mul
-                if rng.random() < tprob:
-                    overlay[y][x] = get_prop_id("tree"); continue
                 rprob = base_rock.get(b, 0.0) * density_mul
-                if rng.random() < rprob:
-                    overlay[y][x] = get_prop_id("rock")
+
+                # Arbres
+                if rng.random() < tprob and b in tree_variants:
+                    name = self._weighted_choice(tree_variants[b], rng)
+                    overlay[y][x] = get_prop_id(name)
+                    continue
+                # Rochers
+                if rng.random() < rprob and b in rock_variants:
+                    name = self._weighted_choice(rock_variants[b], rng)
+                    overlay[y][x] = get_prop_id(name)
             report(acc + w_props * ((y+1)/H), "Placement des éléments…")
+
         self._sparsify_coast(overlay, levels)
         acc += w_props
+
 
         # [8] Spawn
         report(acc + w_spawn*0.5, "Recherche d’un bon spawn…")
@@ -397,3 +428,23 @@ class WorldGenerator:
                     best_score = score
                     best = (x, y)
         return best if best else (W//2, H//2)
+    
+    def _weighted_choice(self, items, rng):
+        total = sum(w for _, w in items)
+        r = rng.random() * total
+        for name, w in items:
+            if r < w:
+                return name
+            r -= w
+        return items[-1][0]
+    
+    def _distance_to_land(self, x, y, levels):
+        H, W = len(levels), len(levels[0])
+        for r in range(1, 8):
+            for dy in range(-r, r+1):
+                for dx in range(-r, r+1):
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < W and 0 <= ny < H:
+                        if levels[ny][nx] > 0:
+                            return r
+        return 999

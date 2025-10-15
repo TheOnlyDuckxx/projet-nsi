@@ -20,8 +20,7 @@ except Exception:
         return {10:"prop_tree_2", 11:"prop_rock", 12:"prop_bush"}.get(pid)
 
 class IsoMapView:
-    def __init__(self, assets, screen_size: Tuple[int,int],
-                 min_zoom=0.7, max_zoom=2.0, zoom_step=0.1):
+    def __init__(self, assets, screen_size: Tuple[int,int],zoom_step=0.1):
         self.assets = assets
         self.screen_w, self.screen_h = screen_size
 
@@ -31,13 +30,13 @@ class IsoMapView:
         self.base_dz = 24.0
 
         self.zoom = 1.0
-        self.min_zoom, self.max_zoom, self.zoom_step = min_zoom, max_zoom, zoom_step
+        self.zoom_step = zoom_step
 
         self.cam_x = 0
         self.cam_y = 0
-        self.zoom = 1.0
-        self.min_zoom = 0.5
-        self.max_zoom = 3.0
+        self.zoom = 1.5
+        self.min_zoom = 1.5
+        self.max_zoom = 5.0
 
         # métriques écran (fallback si display pas encore créé)
         try:
@@ -60,6 +59,10 @@ class IsoMapView:
         self.mouse_pan_active = False
         self.mouse_pan_start = (0, 0)
         self.cam_start_at_drag = (0.0, 0.0)
+
+        self.cull_pad_tiles = 6          # marge en cases autour des coins (au lieu de 2)
+        self.cull_prop_extra_tiles = 3   # marge pour la hauteur des props
+        self.cull_screen_margin_px = None 
 
         # Auto-calibrage depuis un sprite "sol" de référence
         self._autocalibrate_from_sprite_key("tile_grass")
@@ -141,16 +144,36 @@ class IsoMapView:
 
     def _visible_bounds(self, W, H):
         dx, dy, wall_h = self._proj_consts()
-        corners = [(0,0),(self.screen_w,0),(0,self.screen_h),(self.screen_w,self.screen_h)]
+
+        # 1) coins écran -> approx (i,j) au niveau z=0
+        corners = [(0,0), (self.screen_w,0), (0,self.screen_h), (self.screen_w,self.screen_h)]
         ii, jj = [], []
         for sx, sy in corners:
             i, j = self._screen_to_world_floor(sx, sy, dx, dy)
             ii.append(i); jj.append(j)
-        i_min = max(0, min(ii) - 2)
-        j_min = max(0, min(jj) - 2)
-        i_max = min(W-1, max(ii) + 2)
-        j_max = min(H-1, max(jj) + 2)
+
+        i_min = min(ii); i_max = max(ii)
+        j_min = min(jj); j_max = max(jj)
+
+        # 2) marge supplémentaire en cases :
+        #    - padding fixe (culling)
+        #    - compensation relief (les "murs" font remonter/descendre visuellement)
+        #    - props qui peuvent dépasser
+        pad = int(self.cull_pad_tiles)
+
+        # combien de cases « verticales » pour couvrir un mur de hauteur wall_h ?
+        # 1 pas vertical ≈ 2*dy en pixels (car sy += (i+j)*dy)
+        relief_extra = int(math.ceil((wall_h / max(2*dy, 1e-6)) + 1))
+
+        total_pad = pad + relief_extra + int(self.cull_prop_extra_tiles)
+
+        i_min = max(0, i_min - total_pad)
+        j_min = max(0, j_min - total_pad)
+        i_max = min(W-1, i_max + total_pad)
+        j_max = min(H-1, j_max + total_pad)
+
         return i_min, i_max, j_min, j_max, dx, dy, wall_h
+
 
     def render(self, screen):
         if not self.world: return
@@ -161,6 +184,13 @@ class IsoMapView:
             self.screen_w, self.screen_h = sw, sh
             self.cx = sw // 2
             self.cy = sh // 2
+        
+        if self.cull_screen_margin_px is None:
+            base = self.assets.get_image("tile_grass")
+            margin_x = int(base.get_width()  * self.zoom)
+            margin_y = int(base.get_height() * self.zoom)
+        else:
+            margin_x = margin_y = int(self.cull_screen_margin_px)
 
         if not self.world:
             return
@@ -198,8 +228,8 @@ class IsoMapView:
                         psx = sx - pimg.get_width() // 2
                         psy = surface_y - (pimg.get_height() - dy * 2)  # même logique d’ancrage que les tuiles
 
-                        if not (psx < -200 or psx > self.screen_w + 200 or psy < -300 or psy > self.screen_h + 300):
-                            screen.blit(pimg, (psx, psy))
+                        if (sx < -margin_x or sx > self.screen_w + margin_x or sy < -margin_y or sy > self.screen_h + margin_y):
+                            continue
 
     # ---------- Projection ----------
     def world_to_screen(self, x: float, y: float, z: float,

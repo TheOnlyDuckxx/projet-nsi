@@ -414,7 +414,7 @@ class ValueSelector:
 
         # valeur
         value_surf = self.font.render(str(self.value), True, (200, 200, 255))
-        screen.blit(value_surf, (self.rect.centerx - 20, self.rect.y + 8))
+        screen.blit(value_surf, (self.rect.centerx + 50, self.rect.y + 8))
 
         # boutons + et -
         pygame.draw.rect(screen, (80, 80, 110), self.minus_rect, border_radius=5)
@@ -470,7 +470,7 @@ class OptionSelector:
         value_surf = self.font.render(self.value, True, (200, 200, 255))
 
         screen.blit(label_surf, (self.rect.x + 10, self.rect.y + 8))
-        screen.blit(value_surf, (self.rect.right - value_surf.get_width() - 10, self.rect.y + 8))
+        screen.blit(value_surf, (self.rect.right - value_surf.get_width() - 30, self.rect.y + 8))
 
         # Petite flèche ▼
         pygame.draw.polygon(screen, (255, 255, 255), [

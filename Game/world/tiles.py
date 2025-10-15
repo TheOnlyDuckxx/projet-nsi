@@ -42,6 +42,22 @@ _DEFAULT_NAME_TO_ID: Dict[str, int] = {
     "steppe": STEPPE,
 }
 
+WATER_SHALLOW = 9
+WATER         = 10
+WATER_DEEP    = 11
+
+_DEFAULT_GROUND_SPRITES.update({
+    WATER_SHALLOW: "tile_water_shallow",
+    WATER:         "tile_water",
+    WATER_DEEP:    "tile_water_deep",
+})
+
+_DEFAULT_NAME_TO_ID.update({
+    "water_shallow": WATER_SHALLOW,
+    "water": WATER,
+    "water_deep": WATER_DEEP,
+})
+
 # --------------- CLASSE PRINCIPALE ---------------
 class Tiles:
     """
@@ -135,3 +151,11 @@ class Tiles:
         code = self.cliff_code(dn, de, ds, dw)
         var = self._autotile_variants.get(base_key, {})
         return var.get(code)
+
+_tiles_singleton = Tiles()
+
+def get_tile_id(logical_name: str) -> int:
+    return _tiles_singleton.get_tile_id(logical_name)
+
+def get_ground_sprite_name(tile_id: int) -> str:
+    return _tiles_singleton.get_ground_sprite_name(tile_id)
