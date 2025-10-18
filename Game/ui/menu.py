@@ -257,15 +257,14 @@ class WorldCreationMenu(BaseMenu):
         self.btn_font = app.assets.get_font("MightySouly", 28)
 
         # --- Etat local des paramètres (toujours à jour via les widgets) ---
-        self.params = {
-            "seed": "Aléatoire",
-            "age": 2000,                  # en millions d'années
-            "Taille": 40000,              # en km
-            "Climat": "Tempéré",
-            "Niveau des océans": 0,       # en mètres
-            "Ressources": "Normale",
-        }
-
+        preset_path = os.path.join("Game", "data", "world_presets.json")
+        try:
+            with open(preset_path, "r", encoding="utf-8") as f:
+                presets = json.load(f)
+                self.params = presets.get("presets", {}).get("Custom", {})
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.params = {}
+            
         # --- Styles de boutons (même look que MainMenu) ---
         primary = ButtonStyle(
             draw_background=True,
@@ -408,7 +407,7 @@ class WorldCreationMenu(BaseMenu):
             presets = {}
 
         # Ajout / mise à jour du preset personnalisé
-        presets["Custom"] = self.params
+        presets["presets"]["Custom"] = self.params
 
         # Sauvegarde dans le même fichier
         with open(preset_path, "w", encoding="utf-8") as f:

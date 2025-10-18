@@ -39,7 +39,7 @@ class LoadingState:
 
         def worker():
             try:
-                preset = kwargs.get("preset", "Tropical")
+                preset = kwargs.get("preset", "Custom")
                 seed   = kwargs.get("seed", None)
                 self._params = load_world_params_from_preset(preset)
                 gen = WorldGenerator(tiles_levels=6)
@@ -64,7 +64,7 @@ class LoadingState:
 
     def update(self, dt):
         if self.failed:
-            # si tu veux logger: print(self.failed)
+            print(self.failed)
             self.app.change_state("MENU")
             return
         if self.done and self._world:

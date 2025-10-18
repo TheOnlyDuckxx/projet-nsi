@@ -12,19 +12,11 @@
         },
         "Custom": {
             "seed": "Aléatoire",
-            "age": 2500,
-            "Taille": 40000,
-            "Climat": "Tropical",
-            "Niveau des océans": 10,
-            "Ressources": "Normale"
+            "age": 2000,
+            "Taille": 20000,
+            "Climat": "Aride",
+            "Niveau des océans": -50,
+            "Ressources": "Éparse"
         }
-    },
-    "Custom": {
-        "seed": "Aléatoire",
-        "age": 2000,
-        "Taille": 25000,
-        "Climat": "Tempéré",
-        "Niveau des océans": 0,
-        "Ressources": "Normale"
     }
 }

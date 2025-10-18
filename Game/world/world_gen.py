@@ -58,25 +58,25 @@ def get_prop_id(name: str) -> int:
 @dataclass
 class WorldParams:
     seed: Optional[int]
-    planet_width: int
-    planet_height: int
-    water_pct: int                     # 0..100
-    temperature: str                   # "cold" | "temperate" | "hot"
-    atmosphere_density: float          # ~ 0.6..1.4
-    resource_density: float            # ~ 0.5..2.0
-    world_name: str = "New World"
+    Taille: int                 # ancien planet_width
+    Climat: str                 # ancien temperature
+    Niveau_des_océans: int      # ancien water_pct
+    Ressources: str             # ancien resource_density (valeur symbolique)
+    age: int
+    atmosphere_density: float = 1.0
+    world_name: str = "Nouveau Monde"
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "WorldParams":
         return WorldParams(
             seed=d.get("seed", None),
-            planet_width=int(d["planet_width"]),
-            planet_height=int(d["planet_height"]),
-            water_pct=int(d["water_pct"]),
-            temperature=str(d["temperature"]),
-            atmosphere_density=float(d["atmosphere_density"]),
-            resource_density=float(d["resource_density"]),
-            world_name=str(d.get("world_name", "New World")),
+            Taille=int(d.get("Taille", 256)),
+            Climat=str(d.get("Climat", "Tempéré")),
+            Niveau_des_océans=int(d.get("Niveau des océans", 50)),
+            Ressources=str(d.get("Ressources", "Normale")),
+            age=int(d.get("age", 2000)),
+            atmosphere_density=float(d.get("atmosphere_density", 1.0)),
+            world_name=str(d.get("world_name", "Nouveau Monde")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -112,17 +112,28 @@ def load_world_params_from_preset(preset_name: str, path: str="Game/data/world_p
     return WorldParams.from_dict(preset)
 
 
+def km_to_blocks(km: int) -> int:
+        km = max(20000, min(40000, km))
+        t = (km - 20000) / 20000
+        return int(256 + (256 * (t ** 1.3)))
+
 # --------- Seed finale (seed + signature params) ---------
 def _normalize_params_for_seed(params: WorldParams) -> str:
+    """Crée une signature stable des paramètres du monde (pour la graine)."""
+    res_map = {"Faible": 0.5, "Normale": 1.0, "Riche": 1.5}
+    ressources_val = res_map.get(str(params.Ressources).capitalize(), 1.0)
+    taille_blocs = km_to_blocks(params.Taille)
+
     # Ordre stable + arrondis raisonnables
     return "|".join([
-        f"w={params.planet_width}",
-        f"h={params.planet_height}",
-        f"water={params.water_pct}",
-        f"temp={params.temperature}",
+        f"taille_km={params.Taille}",
+        f"taille_blocs={taille_blocs}",
+        f"age={params.age}",
+        f"climat={params.Climat}",
+        f"eau={params.Niveau_des_océans}",
         f"atmo={round(params.atmosphere_density, 4)}",
-        f"res={round(params.resource_density, 4)}",
-        f"name={params.world_name}",
+        f"ressources={round(ressources_val, 4)}",
+        f"nom={params.world_name}",
     ])
 
 def make_final_seed(user_seed: Optional[int], params: WorldParams) -> int:
@@ -188,7 +199,7 @@ class WorldGenerator:
         final_seed = rng_seed if rng_seed is not None else make_final_seed(params.seed, params)
         rng = random.Random(final_seed)
 
-        W, H = params.planet_width, params.planet_height
+        W= H = km_to_blocks(params.Taille)
 
         # Petites pondérations de temps par phase (à la louche)
         w_height  = 0.30
@@ -229,7 +240,7 @@ class WorldGenerator:
         acc += w_island
 
         # [3] Niveau de la mer + renormalisation
-        sea_level = self._sea_level_from_percent(height_island, params.water_pct)
+        sea_level = self._sea_level_from_percent(height_island, params.Niveau_des_océans)
         report(acc + w_sea*0.5, "Calcul du niveau de la mer…")
         land_h = [[0.0]*W for _ in range(H)]
         for y in range(H):
@@ -262,7 +273,15 @@ class WorldGenerator:
         acc += w_moist
 
         # [6] Biomes + ground_id
-        temp_bias = {"cold": -0.25, "temperate": 0.0, "hot": +0.25}.get(params.temperature, 0.0)
+        temp_map = {
+            "Glaciaire": "cold",
+            "Froid": "cold",
+            "Tempéré": "temperate",
+            "Tropical": "hot",
+            "Aride": "hot"
+        }
+        temp_label = temp_map.get(params.Climat.capitalize(), "temperate")
+        temp_bias = {"cold": -0.25, "temperate": 0.0, "hot": +0.25}[temp_label]
         temp_global = clamp01(0.5 + temp_bias)
         biome = [["ocean"]*W for _ in range(H)]
         ground_id = [[get_tile_id("ocean")]*W for _ in range(H)]
@@ -293,7 +312,8 @@ class WorldGenerator:
 
         # [7] Props
         overlay = [[None]*W for _ in range(H)]
-        density_mul = clamp01(params.resource_density) * 1.4
+        res_map = {"Faible": 0.5, "Normale": 1.0, "Riche": 1.5}
+        density_mul = res_map.get(params.Ressources.capitalize(), 1.0) * 1.4
 
         # Définition des variantes pondérées
         tree_variants = {
@@ -451,3 +471,4 @@ class WorldGenerator:
                         if levels[ny][nx] > 0:
                             return r
         return 999
+ 
