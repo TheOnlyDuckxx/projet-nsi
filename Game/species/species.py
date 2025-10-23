@@ -5,9 +5,11 @@ from .reproduction import ReproductionSystem
 from .sensors import Sensors
 
 class Espece:
-    def __init__(self, nom):
+    def __init__(self, nom,x,y):
         self.nom = nom
-
+        self.x = x
+        self.y = y
+        
         # Groupes de stats
         self.physique = {
             "taille": 5,
@@ -95,7 +97,7 @@ class Espece:
         self.reproduction = ReproductionSystem(self)
         self.sensors = Sensors(self)
 
-        self.population = 10
+        self.population = 1
         self.autonomie = True
 
     def update(self, world):

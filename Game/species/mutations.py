@@ -16,11 +16,20 @@ class MutationManager:
         mutation = self.data.get(nom)
         if not mutation:
             return
-        for cat, effets in mutation["effets"].items():
+
+        for categorie, effets in mutation["effets"].items():
+            # On applique à la bonne catégorie de stats (physique, sens, mental, etc.)
+            cible = getattr(self.espece, categorie, None)
+            if not cible:
+                continue
             for stat, val in effets.items():
-                self.espece.stats[cat][stat] += val
+                if stat in cible:
+                    cible[stat] += val
+                else:
+                    print(f"⚠️ Stat inconnue '{stat}' dans catégorie '{categorie}'")
+
         self.actives.append(nom)
 
     def update(self):
-        # pourrait gérer des effets temporaires ou des mutations saisonnières
+        # Pour gérer des effets temporaires ou saisonniers
         pass
