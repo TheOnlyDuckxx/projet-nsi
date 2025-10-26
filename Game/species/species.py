@@ -1,8 +1,8 @@
-from .stats import init_stats
 from .mutations import MutationManager
 from .comportement import Comportement
 from .reproduction import ReproductionSystem
 from .sensors import Sensors
+from .sprite_assembler import EspeceRenderer
 
 class Espece:
     def __init__(self, nom,x,y):
@@ -92,10 +92,12 @@ class Espece:
 
 
         # Sous-systèmes
-        self.mutations = MutationManager(self)
+        #self.mutations = MutationManager(self)
+        self.mutations.active = []
         self.comportement = Comportement(self)
         self.reproduction = ReproductionSystem(self)
         self.sensors = Sensors(self)
+        self.renderer = EspeceRenderer(self)
 
         self.population = 1
         self.autonomie = True
@@ -104,3 +106,6 @@ class Espece:
         self.comportement.update(world)
         self.reproduction.update()
         self.mutations.update()
+    
+    def draw(self, screen):
+        self.renderer.render(screen, (self.x, self.y))

@@ -1,4 +1,6 @@
 import pygame
+from Game.core.assets import Assets
+
 
 class EspeceRenderer:
     """
@@ -7,14 +9,14 @@ class EspeceRenderer:
     """
     BASE_SIZE = (20, 24)
 
-    def __init__(self, espece, assets):
+    def __init__(self, espece):
         self.espece = espece
-        self.assets = assets
+        self.assets = Assets().load_all("Game/assets")
 
         # Chaque zone contient une liste de parties à afficher
         self.layers = {
-            "corps": ["corps_base"],  # toujours présent
-            "tete": ["yeux_normaux","bouche_normale"], # yeux par défaut
+            "corps": [],  # toujours présent
+            "tete": [], # yeux par défaut
             "appendices": [],         # ailes, branchies, bras, etc.
             "peau": [],               # poils, carapace...
             "effets": []              # phéromones, lueurs...
@@ -55,17 +57,19 @@ class EspeceRenderer:
             elif mutation == "Sécrétion de phéromones":
                 self.layers["effets"].append("pheromone")
 
+
         # Toujours au moins un corps et une tête
-        if not self.layers["corps"]:
-            self.layers["corps"] = ["corps_base"]
-        if not self.layers["tete"]:
-            self.layers["tete"] = ["yeux_normaux"]
+        
+        self.layers["corps"] = ["4_corps_base"]
+        self.layers["tete"] = ["4_yeux_normaux","4_bouche_normale"]
+        self.layers["appendices"] = ["4_jambe_base"]
 
     # ------------------------------------------------------------------
 
     def build_sprite(self):
         """Assemble le sprite complet à partir des listes de calques"""
         sprite = pygame.Surface(self.BASE_SIZE, pygame.SRCALPHA)
+        
 
         # Ordre d’empilement : appendices (derrière), corps, peau, tête, effets
         render_order = ["appendices", "corps", "peau", "tete", "effets"]
@@ -75,6 +79,7 @@ class EspeceRenderer:
                 if key not in self.assets.images:
                     continue
                 image = self.assets.get_image(key)
+                image = pygame.transform.scale(image, (int(image.get_width()*6), int(image.get_height()*6)))
                 x = (self.BASE_SIZE[0] - image.get_width()) // 2
                 y = (self.BASE_SIZE[1] - image.get_height()) // 2
                 sprite.blit(image, (x, y))
