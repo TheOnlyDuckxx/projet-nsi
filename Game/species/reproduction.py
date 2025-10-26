@@ -1,3 +1,4 @@
+# Game/espece/reproduction.py
 import random
 
 class ReproductionSystem:
@@ -9,15 +10,19 @@ class ReproductionSystem:
             self.reproduire()
 
     def reproduire(self):
-        enfant = self.espece.__class__(nom=f"{self.espece.nom}_descendant", x=self.espece.x, y=self.espece.y)
-
-        # Pour chaque catégorie de stats, on copie les valeurs avec variation
+        enfant = self.espece.__class__(nom=f"{self.espece.nom}_descendant",
+                                       x=self.espece.x, y=self.espece.y,
+                                       assets=self.espece.renderer.assets)
+        # variation ±5% sur chaque stat connue
         for cat in ["physique", "sens", "mental", "social", "environnement", "genetique"]:
-            d_parent = getattr(self.espece, cat)
-            d_enfant = getattr(enfant, cat)
+            d_parent = getattr(self.espece, cat, {})
+            d_enfant = getattr(enfant, cat, {})
             for stat, val in d_parent.items():
-                variation = random.uniform(-0.05, 0.05) * val
-                d_enfant[stat] = max(0, val + variation)
+                try:
+                    variation = random.uniform(-0.05, 0.05) * float(val)
+                except Exception:
+                    variation = 0.0
+                d_enfant[stat] = max(0, (val if isinstance(val, (int, float)) else 0) + variation)
 
         print(f"Nouvelle génération : {enfant.nom}")
         return enfant

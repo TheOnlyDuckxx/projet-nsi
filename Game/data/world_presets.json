@@ -12,7 +12,7 @@
         },
         "Custom": {
             "seed": "Aléatoire",
-            "age": 3000,
+            "age": 2000,
             "Taille": 20000,
             "Climat": "Aride",
             "Niveau des océans": 0,

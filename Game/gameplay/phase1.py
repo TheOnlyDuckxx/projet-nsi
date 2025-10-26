@@ -1,7 +1,11 @@
+# Game/gameplay/phase1.py
 import pygame
+import random
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 
+# + imports pour l'espèce
+from Game.species.species import Espece
 
 class Phase1:
     """
@@ -9,31 +13,30 @@ class Phase1:
     - Génère le monde depuis un preset (seed + params)
     - Rendu via IsoMapView (caméra + zoom + culling)
     """
-
     def __init__(self, app):
         self.app = app
         self.screen = app.screen
         self.assets = app.assets
 
-        # Vue iso (bornes de zoom ajustables)
+        # Vue iso
         self.view = IsoMapView(self.assets, self.screen.get_size())
 
         # Générateur
         self.gen = WorldGenerator(tiles_levels=6)
 
-        # Données de monde (définies dans enter)
+        # Données de monde
         self.params = None
         self.world = None
 
-        # Petits flags debug (si tu veux afficher texte/seed)
+        # Joueur / entités
+        self.joueur = None
+        self.entities = []
+
+        # Debug HUD
         self.show_info = True
         self.font = pygame.font.SysFont("consolas", 16)
 
-    # -------------------------------------------------------------
-    # Cycle de vie de l'état
-    # -------------------------------------------------------------
     def enter(self, **kwargs):
-        # Si un monde est déjà prêt (loader), on l’utilise
         pre_world = kwargs.get("world")
         pre_params = kwargs.get("params")
 
@@ -41,31 +44,36 @@ class Phase1:
             self.world = pre_world
             self.params = pre_params
             self.view.set_world(self.world)
-            return
+        else:
+            preset = kwargs.get("preset", "Tropical")
+            seed_override = kwargs.get("seed", None)
+            self.params = load_world_params_from_preset(preset)
+            self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
+            self.view.set_world(self.world)
 
-        # Sinon, ancien comportement
-        preset = kwargs.get("preset", "Tropical")
-        seed_override = kwargs.get("seed", None)
-        self.params = load_world_params_from_preset(preset)
-        self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
-        self.view.set_world(self.world)
+        # === CRÉATION DE L’ESPÈCE JOUEUR SUR LE SPAWN ===
+        try:
+            sx, sy = self.world.spawn  # cohérent avec le centrage caméra :contentReference[oaicite:5]{index=5}
+        except Exception:
+            sx, sy = 0, 0
+        self.joueur = Espece("Hominidé", x=sx, y=sy, assets=self.assets)
+
+        # démo visuelle : quelques mutations 'sûres'
+        self.joueur.mutations.actives = ["Carapace", "Ailes", "Mâchoire réduite"]
+
+        # si tu veux d'autres entités :
+        self.entities = [self.joueur]
 
     def leave(self):
-        """Optionnel : nettoyer si besoin."""
         pass
 
-    # -------------------------------------------------------------
-    # Événements
-    # -------------------------------------------------------------
     def handle_input(self, events):
         for e in events:
-            # Laisse la vue gérer molette et drag (clic milieu)
-            self.view.handle_event(e)
+            self.view.handle_event(e)  # molette/drag/keys déjà gérés
 
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_i:
                     self.show_info = not self.show_info
-                # R = régénère avec même seed; Shift+R = nouvelle seed
                 if e.key == pygame.K_r:
                     mods = pygame.key.get_mods()
                     if mods & pygame.KMOD_SHIFT:
@@ -73,28 +81,46 @@ class Phase1:
                     else:
                         self.world = self.gen.generate_island(self.params)
                     self.view.set_world(self.world)
+                    # repositionne le joueur sur le nouveau spawn
+                    try:
+                        sx, sy = self.world.spawn
+                    except Exception:
+                        sx, sy = 0, 0
+                    if self.joueur:
+                        self.joueur.x, self.joueur.y = float(sx), float(sy)
 
-    # -------------------------------------------------------------
-    # Update / Render
-    # -------------------------------------------------------------
     def update(self, dt):
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
+        # Update entités (non bloquant)
+        if self.joueur:
+            try:
+                self.joueur.update(self.world)
+            except Exception as ex:
+                print(f"[Phase1] Update joueur: {ex}")
+
     def render(self, screen):
         screen.fill((10, 12, 18))
-        self.view.render(screen)
+        self.view.render(screen)  # rendu du monde
+
+        # Rendu des entités, triées par (i+j) pour cohérence iso
+        if self.entities:
+            try:
+                sorted_entities = sorted(self.entities, key=lambda e: (e.x + e.y))
+                for ent in sorted_entities:
+                    ent.draw(screen, self.view, self.world)
+            except Exception as ex:
+                print(f"[Phase1] Render entités: {ex}")
+                # placeholder
+                pygame.draw.rect(screen, (255, 0, 255), (self.screen.get_width()//2-10,
+                                                         self.screen.get_height()//2-24, 20, 24), 1)
 
         if self.show_info:
             self._draw_info_panel(screen)
 
-    # -------------------------------------------------------------
-    # Utilitaires
-    # -------------------------------------------------------------
     def on_resize(self, new_size):
-        """À appeler si ton App gère VIDEORESIZE : on met à jour la vue."""
         self.view.screen_w, self.view.screen_h = new_size
-        # Tu peux recentrer la caméra si tu veux, sinon on garde la position.
 
     def _draw_info_panel(self, screen):
         lines = [
@@ -108,5 +134,4 @@ class Phase1:
             if not txt:
                 continue
             surf = self.font.render(txt, True, (220, 230, 240))
-            screen.blit(surf, (x, y))
-            y += 18
+            screen.blit(surf, (x, y)); y += 18
