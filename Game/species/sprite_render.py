@@ -2,9 +2,10 @@
 import pygame
 
 OFFSETS = {
-    "yeux_normaux": (0, -8),
-    "yeux_multiples": (0, -8),
-    "bouche_large": (0, -3),
+    "4_yeux_normaux": (0, -8),
+    "4_bouche_normale": (0, -3),
+    "4_jambe_base": (0, 5),
+    "4_corps_base": (0, 0),
     "ailes_grandes": (0, -6),
     "branchies": (0, -2),
     "carapace": (0, 0),
@@ -21,10 +22,10 @@ class EspeceRenderer:
         self.espece = espece
         self.assets = assets
         self.layers = {
-            "appendices": [],                # ailes, branchies...
+            "appendices": ["4_jambe_base"],                # ailes, branchies...
             "corps":      ["4_corps_base"],    # base obligatoire
             "peau":       [],                # poils, carapace...
-            "tete":       ["4_yeux_normaux"],  # yeux/bouche...
+            "tete":       ["4_bouche_normale", "4_yeux_normaux"],  # yeux/bouche...
             "effets":     [],                # camo, lueurs, phéromones
         }
 
@@ -51,10 +52,6 @@ class EspeceRenderer:
 
     # --- calques visuels dynamiques selon les mutations actives ---
     def update_from_mutations(self):
-        self.layers["appendices"].clear()
-        self.layers["peau"].clear()
-        self.layers["tete"] = ["4_yeux_normaux"]
-        self.layers["effets"].clear()
 
         for m in self.espece.mutations.actives:
             if m == "Carapace": self.layers["peau"].append("carapace")
@@ -86,7 +83,7 @@ class EspeceRenderer:
         tx,ty  : coordonnées tuile de l'espèce
         """
         # 1) calques depuis mutations
-        self.update_from_mutations()
+        #self.update_from_mutations()
 
         # 2) assemble un sprite 20x24, puis scale au zoom courant
         base = self._assemble_base_sprite()

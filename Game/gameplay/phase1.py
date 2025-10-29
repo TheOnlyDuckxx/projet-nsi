@@ -17,6 +17,7 @@ class Phase1:
         self.app = app
         self.screen = app.screen
         self.assets = app.assets
+        self.paused = False
 
         # Vue iso
         self.view = IsoMapView(self.assets, self.screen.get_size())
@@ -58,9 +59,6 @@ class Phase1:
             sx, sy = 0, 0
         self.joueur = Espece("Hominidé", x=sx, y=sy, assets=self.assets)
 
-        # démo visuelle : quelques mutations 'sûres'
-        self.joueur.mutations.actives = ["Carapace", "Ailes", "Mâchoire réduite"]
-
         # si tu veux d'autres entités :
         self.entities = [self.joueur]
 
@@ -69,27 +67,33 @@ class Phase1:
 
     def handle_input(self, events):
         for e in events:
-            self.view.handle_event(e)  # molette/drag/keys déjà gérés
-
+              # molette/drag/keys déjà gérés
             if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_i:
-                    self.show_info = not self.show_info
-                if e.key == pygame.K_r:
-                    mods = pygame.key.get_mods()
-                    if mods & pygame.KMOD_SHIFT:
-                        self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
-                    else:
-                        self.world = self.gen.generate_island(self.params)
-                    self.view.set_world(self.world)
-                    # repositionne le joueur sur le nouveau spawn
-                    try:
-                        sx, sy = self.world.spawn
-                    except Exception:
-                        sx, sy = 0, 0
-                    if self.joueur:
-                        self.joueur.x, self.joueur.y = float(sx), float(sy)
+                if e.key == pygame.K_ESCAPE:
+                    self.paused = not self.paused
+            if not self.paused :
+                self.view.handle_event(e)
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_i:
+                        self.show_info = not self.show_info
+                    if e.key == pygame.K_r:
+                        mods = pygame.key.get_mods()
+                        if mods & pygame.KMOD_SHIFT:
+                            self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
+                        else:
+                            self.world = self.gen.generate_island(self.params)
+                        self.view.set_world(self.world)
+                        # repositionne le joueur sur le nouveau spawn
+                        try:
+                            sx, sy = self.world.spawn
+                        except Exception:
+                            sx, sy = 0, 0
+                        if self.joueur:
+                            self.joueur.x, self.joueur.y = float(sx), float(sy)
 
     def update(self, dt):
+        if self.paused :
+            return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
@@ -118,6 +122,19 @@ class Phase1:
 
         if self.show_info:
             self._draw_info_panel(screen)
+        if self.paused:
+            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))  # fond noir transparent
+            screen.blit(overlay, (0, 0))
+
+            font = pygame.font.SysFont(None, 60)
+            text = font.render("PAUSE", True, (255, 255, 255))
+            resume_text = font.render("Appuyez sur Échap pour reprendre", True, (200, 200, 200))
+
+            text_rect = text.get_rect(center=(screen.get_width()/2, screen.get_height()/2 - 50))
+            resume_rect = resume_text.get_rect(center=(screen.get_width()/2, screen.get_height()/2 + 50))
+            screen.blit(text, text_rect)
+            screen.blit(resume_text, resume_rect)
 
     def on_resize(self, new_size):
         self.view.screen_w, self.view.screen_h = new_size

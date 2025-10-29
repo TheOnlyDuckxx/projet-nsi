@@ -58,8 +58,6 @@ class Espece:
         # === Rendu ===
         self.renderer = EspeceRenderer(self, assets)
 
-        # Démo : active quelques mutations sûres si tu veux voir un rendu direct
-        # self.mutations.actives = ["Carapace", "Ailes", "Mâchoire réduite"]
 
     def update(self, world):
         self.comportement.update(world)
