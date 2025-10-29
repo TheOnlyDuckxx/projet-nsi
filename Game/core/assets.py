@@ -24,10 +24,11 @@ class Assets:
         ext = os.path.splitext(path)[1].lower()
         surf = pygame.image.load(path)
         if ext in {".png", ".gif"}:
-            surf = surf.convert_alpha()
+            surf = surf.convert_alpha()  # garde la transparence PNG
         else:
             surf = surf.convert()
-        surf.set_colorkey((0, 0, 0))
+            surf.set_colorkey((0, 0, 0))  # seulement pour BMP/JPG
+
         self.images[key] = surf
         return surf
 

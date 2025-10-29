@@ -106,12 +106,21 @@ class Phase1:
 
     def render(self, screen):
         screen.fill((10, 12, 18))
-        self.view.render(screen)  # rendu du monde
+        def _draw_entities_on_tile(i, j, sx, sy, dx, dy, wall_h):
+            for e in self.entities:
+                if int(e.x) == i and int(e.y) == j:
+                    e.draw(screen, self.view, self.world)
+
+        self.view.render(screen, after_tile_cb=_draw_entities_on_tile)
+        # rendu du monde
 
         # Rendu des entités, triées par (i+j) pour cohérence iso
         if self.entities:
             try:
-                sorted_entities = sorted(self.entities, key=lambda e: (e.x + e.y))
+                sorted_entities = sorted(
+                        self.entities,
+                        key=lambda e: self.view._world_to_screen(e.x, e.y, 0, *self.view._proj_consts())[1]
+                    )
                 for ent in sorted_entities:
                     ent.draw(screen, self.view, self.world)
             except Exception as ex:
@@ -152,3 +161,5 @@ class Phase1:
                 continue
             surf = self.font.render(txt, True, (220, 230, 240))
             screen.blit(surf, (x, y)); y += 18
+
+    

@@ -173,7 +173,7 @@ class IsoMapView:
         return i_min, i_max, j_min, j_max, dx, dy, wall_h
 
 
-    def render(self, screen):
+    def render(self, screen, after_tile_cb=None):
         if not self.world: return
         W, H = self.world.width, self.world.height
         i_min, i_max, j_min, j_max, dx, dy, wall_h = self._visible_bounds(W, H)
@@ -214,6 +214,8 @@ class IsoMapView:
                 if gimg:
                     screen.blit(gimg, (sx - gimg.get_width() // 2, sy - gimg.get_height() + dy * 2))
 
+                if callable(after_tile_cb):
+                    after_tile_cb(i, j, sx, sy, dx, dy, wall_h)
                 # props
                 pid = self.world.overlay[j][i]
 

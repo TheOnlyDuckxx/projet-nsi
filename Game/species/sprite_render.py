@@ -2,9 +2,9 @@
 import pygame
 
 OFFSETS = {
-    "4_yeux_normaux": (0, -8),
-    "4_bouche_normale": (0, -3),
-    "4_jambe_base": (0, 5),
+    "4_yeux_normaux": (0, 1),
+    "4_bouche_normale": (0, 1),
+    "4_jambe_base": (0, 1),
     "4_corps_base": (0, 0),
     "ailes_grandes": (0, -6),
     "branchies": (0, -2),
@@ -22,8 +22,8 @@ class EspeceRenderer:
         self.espece = espece
         self.assets = assets
         self.layers = {
-            "appendices": ["4_jambe_base"],                # ailes, branchies...
-            "corps":      ["4_corps_base"],    # base obligatoire
+            "appendices": [],                # ailes, branchies...
+            "corps":      ["4_corps_base","4_jambe_base"],    # base obligatoire
             "peau":       [],                # poils, carapace...
             "tete":       ["4_bouche_normale", "4_yeux_normaux"],  # yeux/bouche...
             "effets":     [],                # camo, lueurs, phéromones
@@ -44,11 +44,14 @@ class EspeceRenderer:
         return surf
 
     def _get_img(self, key: str) -> pygame.Surface:
-        img = self.assets.images.get(key)
-        if img is None:
+        try:
+            img = self.assets.get_image(key)  # ← utilise l’API, pas .images
+            if img is None:
+                raise KeyError(key)
+            return img
+        except Exception:
             print(f"[Renderer] Asset manquant: {key}")
             return self._placeholder_surface(key)
-        return img
 
     # --- calques visuels dynamiques selon les mutations actives ---
     def update_from_mutations(self):
@@ -71,8 +74,9 @@ class EspeceRenderer:
                 img = self._get_img(key)
                 x = (self.BASE_SIZE[0] - img.get_width()) // 2
                 y = (self.BASE_SIZE[1] - img.get_height()) // 2
-                dx, dy = OFFSETS.get(key, (0, 0))
-                sprite.blit(img, (x + dx, y + dy))
+                offx, offy = OFFSETS.get(key, (0, 0))  # <-- pas "dx, dy"
+                sprite.blit(img, (x + offx, y + offy))
+
         return sprite
 
     def render(self, screen, view, world, tx: float, ty: float):
