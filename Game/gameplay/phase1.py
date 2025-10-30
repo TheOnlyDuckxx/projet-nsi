@@ -1,11 +1,14 @@
 # Game/gameplay/phase1.py
 import pygame
 import random
-from Game.ui.iso_render import IsoMapView
+from typing import List, Tuple
+from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
+from Game.world.tiles import get_ground_sprite_name
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 
 # + imports pour l'espèce
 from Game.species.species import Espece
+from Game.ui.panels import SideInfoPanel
 
 class Phase1:
     """
@@ -21,7 +24,7 @@ class Phase1:
 
         # Vue iso
         self.view = IsoMapView(self.assets, self.screen.get_size())
-    
+
         # Générateur
         self.gen = WorldGenerator(tiles_levels=6)
 
@@ -36,6 +39,9 @@ class Phase1:
         # Debug HUD
         self.show_info = True
         self.font = pygame.font.SysFont("consolas", 16)
+
+        # Panneau d’inspection
+        self.side = SideInfoPanel(self.screen.get_size())
 
     def enter(self, **kwargs):
         pre_world = kwargs.get("world")
@@ -52,52 +58,97 @@ class Phase1:
             self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
             self.view.set_world(self.world)
 
-        # === CRÉATION DE L’ESPÈCE JOUEUR SUR LE SPAWN ===
+        # spawn espèce
         try:
-            sx, sy = self.world.spawn  # cohérent avec le centrage caméra :contentReference[oaicite:5]{index=5}
+            sx, sy = self.world.spawn
         except Exception:
             sx, sy = 0, 0
         self.joueur = Espece("Hominidé", x=sx, y=sy, assets=self.assets)
-
-        # si tu veux d'autres entités :
         self.entities = [self.joueur]
 
     def leave(self):
         pass
 
+    def _gather_tile_info(self, i: int, j: int) -> Tuple[str, List[Tuple[str, str]]]:
+        w = self.world
+        try:
+            gid = w.ground_id[j][i]
+        except Exception:
+            gid = None
+        try:
+            biome = w.biome[j][i]
+        except Exception:
+            biome = "?"
+        try:
+            level = w.levels[j][i] if w.levels else 0
+        except Exception:
+            level = 0
+        try:
+            pid = w.overlay[j][i]
+        except Exception:
+            pid = None
+
+        gname = get_ground_sprite_name(gid) if gid is not None else "?"
+        pname = get_prop_sprite_name(pid) if pid else None
+
+        ents_here = [e for e in self.entities if int(getattr(e, "x", -9999)) == i and int(getattr(e, "y", -9999)) == j]
+
+        fields: List[Tuple[str, str]] = [
+            ("Coordonnées (i,j)", f"{i}, {j}"),
+            ("Altitude", f"{level}"),
+            ("Biome", f"{biome}"),
+            ("Sol", f"{gname} (id {gid})" if gid is not None else "Inconnu"),
+            ("Prop", f"{pname} (id {pid})" if pid else "Aucun"),
+        ]
+        for idx, e in enumerate(ents_here, 1):
+            name = getattr(e, "nom", None) or getattr(e, "name", None) or e.__class__.__name__
+            extra = []
+            stats = getattr(e, "stats", None)
+            if isinstance(stats, dict):
+                for k, v in list(stats.items())[:6]:
+                    extra.append(f"{k}:{v}")
+            fields.append((f"Entité {idx}", f"{name} @({int(e.x)},{int(e.y)})" + (f" | {', '.join(extra)}" if extra else "")))
+        return "Inspection", fields
+
     def handle_input(self, events):
+        # NEW: bouton ✕ du panneau
+        self.side.handle(events)
+
         for e in events:
-              # molette/drag/keys déjà gérés
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
-            if not self.paused :
+                elif e.key == pygame.K_i:
+                    self.show_info = not self.show_info
+                elif e.key == pygame.K_TAB:  # toggle panneau
+                    self.side.toggle()
+                elif e.key == pygame.K_r:
+                    mods = pygame.key.get_mods()
+                    if mods & pygame.KMOD_SHIFT:
+                        self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
+                    else:
+                        self.world = self.gen.generate_island(self.params)
+                    self.view.set_world(self.world)
+                    try:
+                        sx, sy = self.world.spawn
+                    except Exception:
+                        sx, sy = 0, 0
+                    if self.joueur:
+                        self.joueur.x, self.joueur.y = float(sx), float(sy)
+
+            if not self.paused:
                 self.view.handle_event(e)
-                if e.type == pygame.KEYDOWN:
-                    if e.key == pygame.K_i:
-                        self.show_info = not self.show_info
-                    if e.key == pygame.K_r:
-                        mods = pygame.key.get_mods()
-                        if mods & pygame.KMOD_SHIFT:
-                            self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
-                        else:
-                            self.world = self.gen.generate_island(self.params)
-                        self.view.set_world(self.world)
-                        # repositionne le joueur sur le nouveau spawn
-                        try:
-                            sx, sy = self.world.spawn
-                        except Exception:
-                            sx, sy = 0, 0
-                        if self.joueur:
-                            self.joueur.x, self.joueur.y = float(sx), float(sy)
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+
+                # CHANGE: clic droit (button == 3) = Inspecter
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                     mx, my = pygame.mouse.get_pos()
+
+                    # Ignore si on clique DANS le panneau
+                    if self.side.open and mx >= (self.screen.get_width() - self.side.width):
+                        continue
+
                     dx, dy, _ = self.view._proj_consts()
-
-                    # Décalage vers le haut (en pixels), proportionnel à dy
                     base_lift = int(self.view.click_lift_factor * dy)
-
-                    # On essaie avec un petit faisceau de hauteurs (du plus haut au normal)
                     candidates = (base_lift, int(base_lift * 0.66), int(base_lift * 0.33), 0)
 
                     hit = None
@@ -108,22 +159,15 @@ class Phase1:
 
                     if hit is not None:
                         i, j = hit
-                        from Game.world.tiles import get_tile_id
-                        self.world.ground_id[j][i] = get_tile_id("taiga")
-                        self.world.biome[j][i]     = "taiga"
-                        self.world.overlay[j][i]   = None
-                        print(f"[PICK +lift] ({i},{j}) -> taiga | lift_px={off}")
-
-
-                
+                        title, fields = self._gather_tile_info(i, j)
+                        self.side.set_content(title, fields)
 
     def update(self, dt):
-        if self.paused :
+        if self.paused:
             return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
-        # Update entités (non bloquant)
         if self.joueur:
             try:
                 self.joueur.update(self.world)
@@ -132,54 +176,56 @@ class Phase1:
 
     def render(self, screen):
         screen.fill((10, 12, 18))
+
         def _draw_entities_on_tile(i, j, sx, sy, dx, dy, wall_h):
             for e in self.entities:
                 if int(e.x) == i and int(e.y) == j:
                     e.draw(screen, self.view, self.world)
 
         self.view.render(screen, after_tile_cb=_draw_entities_on_tile)
-        # rendu du monde
 
-        # Rendu des entités, triées par (i+j) pour cohérence iso
         if self.entities:
             try:
                 sorted_entities = sorted(
-                        self.entities,
-                        key=lambda e: self.view._world_to_screen(e.x, e.y, 0, *self.view._proj_consts())[1]
-                    )
+                    self.entities,
+                    key=lambda e: self.view._world_to_screen(e.x, e.y, 0, *self.view._proj_consts())[1]
+                )
                 for ent in sorted_entities:
                     ent.draw(screen, self.view, self.world)
             except Exception as ex:
                 print(f"[Phase1] Render entités: {ex}")
-                # placeholder
-                pygame.draw.rect(screen, (255, 0, 255), (self.screen.get_width()//2-10,
-                                                         self.screen.get_height()//2-24, 20, 24), 1)
+                pygame.draw.rect(screen, (255, 0, 255),
+                                 (self.screen.get_width() // 2 - 10, self.screen.get_height() // 2 - 24, 20, 24), 1)
 
         if self.show_info:
             self._draw_info_panel(screen)
+
+        # Panneau d’inspection
+        self.side.draw(screen)
+
         if self.paused:
             overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 180))  # fond noir transparent
+            overlay.fill((0, 0, 0, 180))
             screen.blit(overlay, (0, 0))
-
             font = pygame.font.SysFont(None, 60)
             text = font.render("PAUSE", True, (255, 255, 255))
             resume_text = font.render("Appuyez sur Échap pour reprendre", True, (200, 200, 200))
-
-            text_rect = text.get_rect(center=(screen.get_width()/2, screen.get_height()/2 - 50))
-            resume_rect = resume_text.get_rect(center=(screen.get_width()/2, screen.get_height()/2 + 50))
+            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 50))
+            resume_rect = resume_text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 + 50))
             screen.blit(text, text_rect)
             screen.blit(resume_text, resume_rect)
 
     def on_resize(self, new_size):
         self.view.screen_w, self.view.screen_h = new_size
+        self.side.on_resize(new_size)
 
     def _draw_info_panel(self, screen):
         lines = [
             f"Phase1 — {self.params.world_name if self.params else '...'}",
             f"Size: {self.world.width}x{self.world.height}" if self.world else "",
             f"Zoom: {self.view.zoom:.2f} (min {self.view.min_zoom}, max {self.view.max_zoom})",
-            "Controls: WASD/flèches = pan | Molette = zoom | Clic milieu = drag | R = regen | Shift+R = reroll | I = info",
+            # CHANGE: texte d'aide -> clic droit
+            "Controls: Clic droit = Inspecter | TAB = toggle panneau | WASD/flèches = pan | Molette = zoom | Clic milieu = drag | R = regen | Shift+R = reroll | I = info",
         ]
         x, y = 10, 10
         for txt in lines:
@@ -187,5 +233,3 @@ class Phase1:
                 continue
             surf = self.font.render(txt, True, (220, 230, 240))
             screen.blit(surf, (x, y)); y += 18
-
-    
