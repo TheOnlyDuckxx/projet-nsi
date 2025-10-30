@@ -21,7 +21,7 @@ class IsoMapView:
     def __init__(self, assets, screen_size: Tuple[int,int],zoom_step=0.1):
         self.assets = assets
         self.screen_w, self.screen_h = screen_size
-
+        self.click_lift_factor = 0.6  # proportion de dy à soustraire au clic (0.3–0.8)
         # valeurs par défaut (seront recalibrées)
         self.base_dx = 32.0
         self.base_dy = 16.0
@@ -310,4 +310,72 @@ class IsoMapView:
         surf = pygame.transform.scale(base, scale).convert_alpha()
         self._prop_cache[key] = surf
         return surf
+
+    def pick_tile_at(self, sx: int, sy: int):
+        """
+        Renvoie (i, j) de la tuile *visible* sous le pixel écran (sx, sy),
+        en respectant l'ordre de peinture isométrique + la hauteur (murs).
+        Retourne None si rien de valide.
+        """
+        if not self.world:
+            return None
+
+        W, H = self.world.width, self.world.height
+        dx, dy, wall_h = self._proj_consts()
+
+        # Estimation (i0, j0) sur plan z≈0 pour restreindre la recherche
+        i0, j0 = self._screen_to_world_floor(sx, sy, dx, dy)
+
+        # Petite fenêtre locale autour du point (suffisante même avec relief)
+        r = max(6, int(2 + self.max_levels))  # augmente si besoin
+        i_min = max(0, i0 - r)
+        i_max = min(W - 1, i0 + r)
+        j_min = max(0, j0 - r)
+        j_max = min(H - 1, j0 + r)
+
+        picked = None  # on garde la DERNIÈRE tuile touchée (celle dessinée au-dessus)
+
+        # Parcours dans le même ordre que le rendu (painter’s algorithm)
+        for s in range(i_min + j_min, i_max + j_max + 1):
+            i_start = max(i_min, s - j_max)
+            i_end   = min(i_max, s - j_min)
+            for i in range(i_start, i_end + 1):
+                j = s - i
+                if not (0 <= j < H):
+                    continue
+
+                z = self.world.levels[j][i] if self.world.levels else 0
+                cx, cy = self._world_to_screen(i, j, z, dx, dy, wall_h)
+
+                # Sprite du sol tel qu'il est réellement blitté
+                gid  = self.world.ground_id[j][i]
+                gimg = self._get_scaled_ground(gid)
+                if not gimg:
+                    continue
+
+                w, h = gimg.get_width(), gimg.get_height()
+
+                # Top-left de l'image au blit (même formule que render)
+                tlx = cx - w // 2
+                tly = cy - h + int(dy * 2)
+                rect = pygame.Rect(tlx, tly, w, h)
+
+                # Si le pixel n'est pas dans le rectangle de l'image → skip rapide
+                if not rect.collidepoint(sx, sy):
+                    continue
+
+                # Centre du losange (surface), identique à ce que le rendu utilise
+                surface_y = cy - (h - int(dy * 2))  # ≈ cy - wall_h
+
+                # Test précis sur la surface losange OU sur le mur vertical :
+                # - Losange: |dx|/DX + |dy|/DY <= 1
+                in_top = (abs(sx - cx) / max(dx, 1e-6) + abs(sy - surface_y) / max(dy, 1e-6)) <= 1.0
+                # - Mur: rectangle entre la surface et la base (zone "noire"/opaque)
+                in_wall = (surface_y < sy <= cy and abs(sx - cx) <= dx)
+
+                if in_top or in_wall:
+                    picked = (i, j)  # on continue pour garder la *dernière* (au-dessus)
+
+        return picked
+
 

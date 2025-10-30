@@ -21,7 +21,7 @@ class Phase1:
 
         # Vue iso
         self.view = IsoMapView(self.assets, self.screen.get_size())
-
+    
         # Générateur
         self.gen = WorldGenerator(tiles_levels=6)
 
@@ -90,6 +90,32 @@ class Phase1:
                             sx, sy = 0, 0
                         if self.joueur:
                             self.joueur.x, self.joueur.y = float(sx), float(sy)
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    mx, my = pygame.mouse.get_pos()
+                    dx, dy, _ = self.view._proj_consts()
+
+                    # Décalage vers le haut (en pixels), proportionnel à dy
+                    base_lift = int(self.view.click_lift_factor * dy)
+
+                    # On essaie avec un petit faisceau de hauteurs (du plus haut au normal)
+                    candidates = (base_lift, int(base_lift * 0.66), int(base_lift * 0.33), 0)
+
+                    hit = None
+                    for off in candidates:
+                        hit = self.view.pick_tile_at(mx, my - off)
+                        if hit is not None:
+                            break
+
+                    if hit is not None:
+                        i, j = hit
+                        from Game.world.tiles import get_tile_id
+                        self.world.ground_id[j][i] = get_tile_id("taiga")
+                        self.world.biome[j][i]     = "taiga"
+                        self.world.overlay[j][i]   = None
+                        print(f"[PICK +lift] ({i},{j}) -> taiga | lift_px={off}")
+
+
+                
 
     def update(self, dt):
         if self.paused :
