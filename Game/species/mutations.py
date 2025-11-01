@@ -10,7 +10,7 @@ class MutationManager:
 
     def load_mutations(self):
         try:
-            with open(resource_path("/data/mutations.json"), "r", encoding="utf-8") as f:
+            with open(resource_path("Game/data/mutations.json"), "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             print(f"[Mutations] Impossible de charger mutations.json : {e}")
