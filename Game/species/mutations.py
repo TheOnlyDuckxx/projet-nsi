@@ -1,7 +1,6 @@
 # Game/espece/mutations.py
 import json
 from Game.core.utils import resource_path
-
 class MutationManager:
     def __init__(self, espece):
         self.espece = espece

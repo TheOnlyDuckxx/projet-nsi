@@ -1,0 +1,98 @@
+{
+  "musculature_developpee": {
+    "nom": "Musculature développée",
+    "description": "Augmente la force et l’endurance, utile pour la survie et la chasse.",
+    "effets": {
+      "physique": {
+        "force": 4,
+        "endurance": 1
+      }
+    },
+    "conditions": [],
+    "cout": 20,
+    "categorie": "physique",
+    "phase": 1,
+    "base":true
+  }, 
+    "peau_epaisse": {
+        "nom": "Peau épaisse",
+        "description": "Offre une meilleure protection contre les agressions extérieures.",
+        "effets": {
+        "physique": {
+            "resistance": 3
+        }
+        },
+        "conditions": [],
+        "imcompatibles": [],
+        "cout": 1,
+        "categorie": "physique",
+        "phase": 1,
+        "base":true
+        },
+    "omnivore": {
+        "nom": "Omnivore",
+        "description": "Permet de consommer une variété d'aliments, augmentant les chances de survie.",
+        "effets": {
+        "environnement": {
+            "adaptabilité": 5
+        }
+        },
+        "conditions": [],
+        "incompatibles": ["herbivore", "carnivore"],
+        "cout": 10,
+        "categorie": "environnement",
+        "phase": 1,
+        "base":true},
+
+    "carnivore": {
+        "nom": "Carnivore",
+        "description": "Adapté à un régime alimentaire principalement composé de viande.",
+        "effets": {
+        "mental": {
+            "agressivite": 7,
+            "intimidation": 10
+        }
+        },
+        "conditions": [],
+        "incompatibles": ["herbivore", "omnivore"],
+        "cout": 0,
+        "categorie": "environnement",
+        "phase": 1,
+        "base":true},
+    "herbivore": {
+        "nom": "Herbivore",
+        "description": "Adapté à un régime alimentaire principalement composé de plantes.",
+        "effets": {
+        "genetique": {
+            "taux_reproduction": 0.2
+        },
+        "physique": {
+            "endurence": 5
+        }
+        },
+        "conditions": [],
+        "incompatibles": ["carnivore", "omnivore"],
+        "cout": 0,
+        "categorie": "environnement",
+        "phase": 1,
+        "base":true}, 
+    "ambidextre": {
+        "nom": "Ambidextre",
+        "description": "Permet une utilisation égale des deux mains, améliorant la dextérité.",
+        "effets": {
+        "mental": {
+            "dexterite": 10,
+            "intelligence": 5
+        }
+        },
+        "conditions": [],
+        "cout": 10,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true}
+    
+    
+    
+    
+    
+    }
