@@ -40,8 +40,11 @@ class Phase1:
         self.show_info = True
         self.font = pygame.font.SysFont("consolas", 16)
 
-        # Panneau d’inspection
+        # Panneau d'inspection
         self.side = SideInfoPanel(self.screen.get_size())
+
+        # Bouton pause (menu principal)
+        self.menu_button_rect = None
 
     def enter(self, **kwargs):
         pre_world = kwargs.get("world")
@@ -136,6 +139,13 @@ class Phase1:
                     if self.joueur:
                         self.joueur.x, self.joueur.y = float(sx), float(sy)
 
+            # Gestion du clic sur le bouton menu (uniquement en pause)
+            if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
+                    # Retour au menu principal
+                    self.app.change_state("MENU")
+                    return
+
             if not self.paused:
                 self.view.handle_event(e)
 
@@ -197,23 +207,59 @@ class Phase1:
                 pygame.draw.rect(screen, (255, 0, 255),
                                  (self.screen.get_width() // 2 - 10, self.screen.get_height() // 2 - 24, 20, 24), 1)
 
-        if self.show_info:
+        if self.show_info and not self.paused:
             self._draw_info_panel(screen)
 
-        # Panneau d’inspection
-        self.side.draw(screen)
+        # Panneau d'inspection (seulement si pas en pause)
+        if not self.paused:
+            self.side.draw(screen)
 
+        # Écran de pause (doit être dessiné EN DERNIER)
         if self.paused:
-            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 180))
-            screen.blit(overlay, (0, 0))
-            font = pygame.font.SysFont(None, 60)
-            text = font.render("PAUSE", True, (255, 255, 255))
-            resume_text = font.render("Appuyez sur Échap pour reprendre", True, (200, 200, 200))
-            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 50))
-            resume_rect = resume_text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 + 50))
-            screen.blit(text, text_rect)
-            screen.blit(resume_text, resume_rect)
+            self._draw_pause_screen(screen)
+
+    def _draw_pause_screen(self, screen):
+        """Affiche l'écran de pause avec le bouton de retour au menu"""
+        # Overlay semi-transparent
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        
+        # Titre "PAUSE"
+        font_title = pygame.font.SysFont(None, 60)
+        text = font_title.render("PAUSE", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 100))
+        screen.blit(text, text_rect)
+        
+        # Texte de reprise
+        font_subtitle = pygame.font.SysFont(None, 40)
+        resume_text = font_subtitle.render("Appuyez sur Échap pour reprendre", True, (200, 200, 200))
+        resume_rect = resume_text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 30))
+        screen.blit(resume_text, resume_rect)
+        
+        # Bouton "Retour au menu"
+        button_width = 300
+        button_height = 60
+        button_x = screen.get_width() / 2 - button_width / 2
+        button_y = screen.get_height() / 2 + 40
+        
+        self.menu_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+        
+        # Effet hover
+        mouse_pos = pygame.mouse.get_pos()
+        is_hover = self.menu_button_rect.collidepoint(mouse_pos)
+        button_color = (80, 80, 120) if is_hover else (60, 60, 90)
+        border_color = (150, 150, 200) if is_hover else (100, 100, 150)
+        
+        # Dessiner le bouton
+        pygame.draw.rect(screen, button_color, self.menu_button_rect, border_radius=10)
+        pygame.draw.rect(screen, border_color, self.menu_button_rect, 3, border_radius=10)
+        
+        # Texte du bouton
+        font_button = pygame.font.SysFont(None, 36)
+        button_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
+        button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
+        screen.blit(button_text, button_text_rect)
 
     def on_resize(self, new_size):
         self.view.screen_w, self.view.screen_h = new_size
