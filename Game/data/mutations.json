@@ -78,7 +78,7 @@
         "base":true}, 
     "ambidextre": {
         "nom": "Ambidextre",
-        "description": "Permet une utilisation égale des deux mains, améliorant la dextérité.",
+        "description": "Permet une utilisation égale de toutes les mains, améliorant la dextérité.",
         "effets": {
         "mental": {
             "dexterite": 10,
@@ -89,10 +89,126 @@
         "cout": 10,
         "categorie": "sens",
         "phase": 1,
-        "base":true}
-    
-    
-    
-    
-    
+        "base":true},
+
+    "Vision Stéréoscopique": {
+        "nom": "Vision Stéréoscopique",
+        "description": "Permet une meilleure perception de la profondeur et une vision plus précise.",
+        "effets": {
+        "sens": {
+            "vision": 20,
+            "attaque_a_distance": 5,
+            "detection_visuelle": -20
+        }
+        },
+        "conditions": [],
+        "incompatibles": ["Vision Panoramique"],
+        "cout": 15,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true},
+    "Vision Panoramique": {
+        "nom": "Vision Panoramique",
+        "description": "Permet une vision à 280 degrés, utile pour détecter les prédateurs.",
+        "effets": {
+        "sens": {
+            "vision": -10,
+            "detection_visuelle": 40
+        }
+        },
+        "conditions": [],
+        "incompatibles": ["Vision Stéréoscopique"],
+        "cout": 15,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true},
+        "aveugle": {
+        "nom": "Aveugle",
+        "description": "Perte de la vision, mais amélioration des autres sens.",
+        "effets": {
+            "sens": {
+                "vision": -10000,
+                "ouie": 20,
+                "odorat": 20
+            }
+        },
+        "conditions": [],
+        "incompatibles": ["Myope","Vision_nocturne","vision_perçante"],
+        "cout": -80,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true
+    },
+    "Myope": {
+        "nom": "Myope",
+        "description": "Réduction de la capacité visuelle à longue distance.",
+        "effets": {
+            "sens": {
+                "vision": -30
+                
+            },
+            "combat": {
+                "attaque_a_distance": -5
+            }
+        },
+        "conditions": [],
+        "incompatibles": ["aveugle","vision_perçante"],
+        "cout": -20,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true
+    },
+    "vision_perçante": {
+        "nom": "Vision perçante",
+        "description": "Amélioration de la capacité visuelle à longue distance.",
+        "effets": {
+            "sens": {
+                "vision": 30
+            }
+            ,
+            "combat": {
+                "attaque_a_distance": 5
+            }
+        },
+        "conditions": [],
+        "incompatibles": ["aveugle","Myope"],
+        "cout": 20,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true
+    },
+    "Vision_nocturne": {
+        "nom": "Vision nocturne",
+        "description": "Permet de voir dans des conditions de faible luminosité.",
+        "effets": {
+            "sens": {
+                "vision_nocturne": 25
+            }
+        },
+        "conditions": [],
+        "incompatibles": ["aveugle"],
+        "cout": 10,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true
+    },
+    "Vision_thermique": {
+        "nom": "Vision thermique",
+        "description": "Permet de détecter la chaleur émise par les organismes vivants.",
+        "effets": {
+            "sens": {
+                "vision_nocturne": 100,
+                "detection_visuelle": 50
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "cout": 15,
+        "categorie": "sens",
+        "phase": 1,
+        "base":false
     }
+
+
+
+}

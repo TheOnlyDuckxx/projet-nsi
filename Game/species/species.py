@@ -15,7 +15,7 @@ class Espece:
         self.physique = {
             "taille": 5, "force": 5, "endurance": 5,
             "vitesse": 5,"vitesse de nage" : 5, "stockage_energetique": 5,
-            "temperature_corporelle": 5, "esperance_vie": 5,
+            "temperature_corporelle": 37.0, "esperance_vie": 5, 
         }
         self.sens = {
             "vision": 5, "ouie": 5, "odorat": 5, "echolocalisation": 0,
@@ -28,17 +28,21 @@ class Espece:
         }
         self.jauges = {
             "faim": 50, "soif": 50, "energie": self.physique["endurance"], "bonheur": 50,
-            "sante": 100, "temperature": 37.0,
+            "sante": 100,
         }
         self.environnement = {
             "resistance_froid": 5, "resistance_chaleur": 5, "resistance_secheresse": 5,
-            "resistance_toxines": 5, "discretion": 5, "adaptabilite": 5, "resistance_aux_maladies": 5,"detection" : self.sens["vision"] * 10 + self.sens["ouie"] * 5 + self.sens["odorat"]* 2 + self.sens["toucher"],
+            "resistance_toxines": 5, "discretion": 5, "adaptabilite": 5,"resistance_aux_maladies": 5,
+            "detection" : self.sens["ouie"] * 5 + self.sens["odorat"]* 2 + self.sens["toucher"], "detection_visuelle": self.sens["vision"] * 5,
         }
         self.social = {
             "communication":5,"charisme": 5, "cohesion": 5, "fidelite": 5, 
         }
         self.genetique = {
             "taux_reproduction": 1.0, "mutation_rate": 0.10,
+        }
+        self.combat = { 
+            "attaque_melee": 10+self.physique["force"] * 4+ self.physique["vitesse"] * 2+ self.mental["agressivite"], "attaque_distance": 0, "defense": 5, "agilite": 5,
         }
         self.arbre_phases3 = {"autorité" : 5,"strategie": 5, "organisation":5, "culture": 5, "science": 5,"raison": 5, "ferveur": 5,  "moralité": 5, "harmonie": 5,
                               }

@@ -128,3 +128,27 @@ class EspeceRenderer:
 
         screen.blit(sprite, (px, py))
 
+class PlayerRenderer(EspeceRenderer):
+    def __init__(self, espece, assets,tx,ty,controls):
+        super().__init__(espece, assets)
+        self.controls=controls
+        self.tx = tx
+        self.ty = ty
+             # --- MOUVEMENT ---
+
+    def handle_input(self):
+        keys = pygame.key.get_pressed()
+        if keys[self.controls["up"]]:
+            self.tx += self.speed
+            self.ty -= self.speed
+        if keys[self.controls["down"]]:
+            self.tx -= self.speed
+            self.ty += self.speed
+        if keys[self.controls["left"]]:
+            self.tx -= self.speed
+            self.ty -= self.speed
+        if keys[self.controls["right"]]:
+            self.tx += self.speed
+            self.ty += self.speed
+        def render(self, screen, view, world):
+            self.EspeceRenderer.render(screen, view, world, self.tx, self.ty)
