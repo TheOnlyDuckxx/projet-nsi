@@ -62,6 +62,11 @@ class IsoMapView:
         self.cull_prop_extra_tiles = 3   # marge pour la hauteur des props
         self.cull_screen_margin_px = None 
 
+        self._hit_stack = []      # pile (kind, payload, rect, mask) pour le picking
+        self._mask_cache = {}     # cache de pygame.Mask par Surface (id)
+        self._diamond_mask = None # mask losange pour la surface des tuiles
+
+
         # Auto-calibrage depuis un sprite "sol" de référence
         self._autocalibrate_from_sprite_key("tile_grass")
 
@@ -171,6 +176,83 @@ class IsoMapView:
         j_max = min(H-1, j_max + total_pad)
 
         return i_min, i_max, j_min, j_max, dx, dy, wall_h
+    
+        # ---------- Picking: pile de hit ----------
+    def begin_hitframe(self):
+        """À appeler au début du frame (avant tout dessin) pour vider la pile."""
+        self._hit_stack.clear()
+
+    def _mask_for_surface(self, surf: pygame.Surface) -> pygame.mask.Mask:
+        key = id(surf)
+        m = self._mask_cache.get(key)
+        if m is None:
+            m = pygame.mask.from_surface(surf)
+            self._mask_cache[key] = m
+        return m
+
+    def _diamond_mask_for(self, w: int, h: int) -> pygame.mask.Mask:
+        """Mask losange de taille (w,h) pour la 'surface' d'une tuile."""
+        if (self._diamond_mask is None) or (self._diamond_mask.get_size() != (w, h)):
+            tmp = pygame.Surface((w, h), pygame.SRCALPHA)
+            pygame.draw.polygon(tmp, (255,255,255,255), [(w//2,0),(w-1,h//2),(w//2,h-1),(0,h//2)])
+            self._diamond_mask = pygame.mask.from_surface(tmp)
+        return self._diamond_mask
+
+    def push_hit(self, kind: str, payload, rect: pygame.Rect, mask: pygame.mask.Mask | None):
+        """Empile un 'objet cliquable' dessiné à l'écran, dans l'ordre de dessin."""
+        self._hit_stack.append((kind, payload, rect, mask))
+
+    def pick_at(self, x: int, y: int):
+        """Retourne (kind, payload) du premier objet sous (x,y), en partant du haut."""
+        for kind, payload, rect, mask in reversed(self._hit_stack):
+            if not rect.collidepoint(x, y):
+                continue
+            if mask is None:
+                return kind, payload
+            lx, ly = x - rect.x, y - rect.y
+            if 0 <= lx < rect.w and 0 <= ly < rect.h and mask.get_at((lx, ly)):
+                return kind, payload
+        return None
+
+    def tile_surface_poly(self, i: int, j: int) -> list[tuple[int,int]]:
+        """Retourne les 4 points écran (losange) de la surface de la tuile (i,j)."""
+        if not self.world: return []
+        dx, dy, wall_h = self._proj_consts()
+        # altitude si dispo
+        z = 0
+        try:
+            if getattr(self.world, "levels", None):
+                z = int(self.world.levels[j][i])
+        except Exception:
+            z = 0
+        cx, cy = self._world_to_screen(i, j, z, dx, dy, wall_h)
+        surface_y = cy - int(dy * 2)  # même ‘plateau’ que dans render()
+        return [(cx, surface_y - dy), (cx + dx//2, surface_y), (cx, surface_y + dy), (cx - dx//2, surface_y)]
+
+    def prop_draw_rect(self, i: int, j: int, pid: int) -> pygame.Rect | None:
+        """Recalcule le rect écran exact du prop (mêmes formules que le render)."""
+        if not self.world: return None
+        dx, dy, wall_h = self._proj_consts()
+        # ground pour positionner la 'surface'
+        try:
+            gid = self.world.ground_id[j][i]
+        except Exception:
+            gid = None
+        gimg = self._get_scaled_ground(gid) if gid is not None else None
+        z = 0
+        try:
+            if getattr(self.world, "levels", None):
+                z = int(self.world.levels[j][i])
+        except Exception:
+            z = 0
+        cx, cy = self._world_to_screen(i, j, z, dx, dy, wall_h)
+        surface_y = cy - (gimg.get_height() - int(dy * 2)) if gimg else cy - int(dy * 2)
+
+        pimg = self._get_scaled_prop(pid)
+        if not pimg: return None
+        psx = int(cx - pimg.get_width() // 2)
+        psy = int(surface_y - (pimg.get_height() - 2 * dy))
+        return pygame.Rect(psx, psy, pimg.get_width(), pimg.get_height())
 
 
     def render(self, screen, after_tile_cb=None):
@@ -213,6 +295,13 @@ class IsoMapView:
                 gimg = self._get_scaled_ground(gid)
                 if gimg:
                     screen.blit(gimg, (sx - gimg.get_width() // 2, sy - gimg.get_height() + dy * 2))
+                
+                # --- HIT: tuile (surface losange) ---
+                surface_y = sy - (gimg.get_height() - int(dy * 2))     # y du plateau losange
+                tile_rect = pygame.Rect(int(sx - int(dx)//2), int(surface_y - int(dy)//2), int(dx), int(dy))
+                tile_mask = self._diamond_mask_for(int(dx), int(dy))
+                self.push_hit("tile", (i, j), tile_rect, tile_mask)
+
 
                 if callable(after_tile_cb):
                     after_tile_cb(i, j, sx, sy, dx, dy, wall_h)
@@ -235,6 +324,11 @@ class IsoMapView:
                             continue
 
                         screen.blit(pimg, (psx, psy))
+                                # --- HIT: prop (pixel-perfect) ---
+                        prop_rect = pygame.Rect(psx, psy, pimg.get_width(), pimg.get_height())
+                        prop_mask = self._mask_for_surface(pimg)
+                        self.push_hit("prop", (i, j, pid), prop_rect, prop_mask)
+
 
     # ---------- Projection ----------
     def world_to_screen(self, x: float, y: float, z: float,

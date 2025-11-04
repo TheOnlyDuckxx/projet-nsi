@@ -67,6 +67,37 @@ class EspeceRenderer:
             elif m == "Bioluminescence": self.layers["effets"].append("bioluminescence")
             elif m == "Sécrétion de phéromones": self.layers["effets"].append("pheromone")
 
+    def get_draw_surface_and_rect(self, view, world, tx: float, ty: float):
+        # 1) sprite assemblé puis zoomé
+        base = self._assemble_base_sprite()
+        zoom = getattr(view, "zoom", 1.0) or 1.0
+        if abs(zoom - 1.0) > 1e-6:
+            w, h = base.get_size()
+            sprite = pygame.transform.smoothscale(base, (int(w * zoom), int(h * zoom)))
+        else:
+            sprite = base
+
+        # 2) projection iso
+        dx, dy, wall_h = view._proj_consts()
+        z = 0
+        try:
+            i, j = int(tx), int(ty)
+            if world and getattr(world, "levels", None):
+                z = int(world.levels[j][i])
+        except Exception:
+            z = 0
+
+        sx, sy = view._world_to_screen(tx, ty, z, dx, dy, wall_h)
+
+        # 3) ancrage comme un prop sans dépendre d’un asset de sol
+        surface_y = sy - int(2 * dy)
+        px = int(sx - sprite.get_width() // 2)
+        py = int(surface_y - (sprite.get_height() - 2 * dy))
+
+        rect = pygame.Rect(px, py, sprite.get_width(), sprite.get_height())
+        return sprite, rect
+
+
     def _assemble_base_sprite(self) -> pygame.Surface:
         sprite = pygame.Surface(self.BASE_SIZE, pygame.SRCALPHA)
         for zone in ["appendices", "corps", "peau", "tete", "effets"]:
@@ -80,53 +111,9 @@ class EspeceRenderer:
         return sprite
 
     def render(self, screen, view, world, tx: float, ty: float):
-        """
-        screen : surface Pygame
-        view   : IsoMapView (caméra+zoom)  -> on utilise _proj_consts()/_world_to_screen()
-        world  : monde courant (pour connaître z au sol)
-        tx,ty  : coordonnées tuile de l'espèce
-        """
-        # 1) calques depuis mutations
-        #self.update_from_mutations()
+        sprite, rect = self.get_draw_surface_and_rect(view, world, tx, ty)
+        screen.blit(sprite, rect.topleft)
 
-        # 2) assemble un sprite 20x24, puis scale au zoom courant
-        base = self._assemble_base_sprite()
-        zoom = getattr(view, "zoom", 1.0) or 1.0
-        if abs(zoom - 1.0) > 1e-6:
-            w, h = base.get_size()
-            sprite = pygame.transform.smoothscale(base, (int(w * zoom), int(h * zoom)))
-        else:
-            sprite = base
-
-        # 3) récupère constantes de projection (dx,dy,wall_h) via view
-        dx, dy, wall_h = view._proj_consts()  # public interne → ok à utiliser ici
-
-        # 4) hauteur z de la tuile du monde (si dispo), sinon 0
-        z = 0
-        try:
-            i, j = int(tx), int(ty)
-            if world and world.levels:
-                z = world.levels[j][i]
-        except Exception:
-            z = 0
-
-        # 5) coord écran du "centre" isométrique de la tuile
-        sx, sy = view._world_to_screen(tx, ty, z, dx, dy, wall_h)
-
-        # 6) on pose l’entité comme un prop : sur la "surface" du sol (pas au milieu du losange)
-        #    cf. ton iso_render pour les props (surface_y = sy - (gimg.h - 2*dy)) :contentReference[oaicite:2]{index=2}
-        try:
-            base_tile = self.assets.get_image("tile_grass")
-            ground_h = int(base_tile.get_height() * zoom)
-        except Exception:
-            # fallback si l’asset n’existe pas
-            ground_h = int(24 * zoom)
-
-        surface_y = sy - (ground_h - 2 * dy)
-        px = sx - sprite.get_width() // 2
-        py = surface_y - (sprite.get_height() - 2 * dy)
-
-        screen.blit(sprite, (px, py))
 
 class PlayerRenderer(EspeceRenderer):
     def __init__(self, espece, assets,tx,ty,controls):
