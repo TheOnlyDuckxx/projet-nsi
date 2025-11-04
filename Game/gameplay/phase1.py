@@ -1,9 +1,8 @@
 # Game/gameplay/phase1.py
 import pygame
 import random
-import pickle
-import os
 from typing import List, Tuple
+from Game.save.save import SaveManager
 from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
 from Game.world.tiles import get_ground_sprite_name
 from world.world_gen import load_world_params_from_preset, WorldGenerator
@@ -20,14 +19,13 @@ class Phase1:
     - Système de sauvegarde/chargement (.evosave)
     """
     
-    SAVE_FILE = "Game/save/savegame.evosave"
     
     def __init__(self, app):
         self.app = app
         self.screen = app.screen
         self.assets = app.assets
         self.paused = False
-
+        self.saver = SaveManager()
         # Vue iso
         self.view = IsoMapView(self.assets, self.screen.get_size())
 
@@ -57,88 +55,17 @@ class Phase1:
         self.save_message = ""
         self.save_message_timer = 0
 
+
     @staticmethod
     def save_exists():
-        """Vérifie si un fichier de sauvegarde existe"""
-        return os.path.exists(Phase1.SAVE_FILE)
+        # délégué au SaveManager par défaut
+        return SaveManager().save_exists()
 
     def save_game(self):
-        """Sauvegarde l'état actuel du jeu au format .evosave"""
-        try:
-            # Créer le dossier data s'il n'existe pas
-            os.makedirs(os.path.dirname(Phase1.SAVE_FILE), exist_ok=True)
-            
-            # Données à sauvegarder
-            save_data = {
-                'version': '1.0',  # Version du format de sauvegarde
-                'world': self.world,
-                'params': self.params,
-                'joueur_pos': (self.joueur.x, self.joueur.y) if self.joueur else None,
-                'joueur_nom': self.joueur.nom if self.joueur else None,
-                'joueur_stats': self.joueur.stats if self.joueur else None,
-                'camera_x': self.view.camera_x,
-                'camera_y': self.view.camera_y,
-                'zoom': self.view.zoom,
-            }
-            
-            # Sauvegarde au format pickle avec extension .evosave
-            with open(Phase1.SAVE_FILE, 'wb') as f:
-                pickle.dump(save_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-            
-            print(f"✓ Partie sauvegardée dans {Phase1.SAVE_FILE}")
-            self.save_message = "✓ Partie sauvegardée !"
-            self.save_message_timer = 3.0  # 3 secondes
-            return True
-        except Exception as e:
-            print(f"✗ Erreur lors de la sauvegarde: {e}")
-            self.save_message = "✗ Erreur de sauvegarde"
-            self.save_message_timer = 3.0
-            return False
+        return self.saver.save_phase1(self)
 
     def load_game(self):
-        """Charge une partie sauvegardée depuis le fichier .evosave"""
-        try:
-            if not os.path.exists(Phase1.SAVE_FILE):
-                print("✗ Aucune sauvegarde trouvée")
-                return False
-                
-            with open(Phase1.SAVE_FILE, 'rb') as f:
-                save_data = pickle.load(f)
-            
-            # Vérifier la version (pour compatibilité future)
-            version = save_data.get('version', '1.0')
-            print(f"→ Chargement sauvegarde version {version}")
-            
-            # Restaurer les données
-            self.world = save_data['world']
-            self.params = save_data['params']
-            self.view.set_world(self.world)
-            
-            # Restaurer le joueur
-            if save_data['joueur_pos']:
-                x, y = save_data['joueur_pos']
-                nom = save_data.get('joueur_nom', 'Hominidé')
-                self.joueur = Espece(nom, x=x, y=y, assets=self.assets)
-                if save_data.get('joueur_stats'):
-                    self.joueur.stats = save_data['joueur_stats']
-                self.entities = [self.joueur]
-            
-            # Restaurer la caméra
-            self.view.camera_x = save_data.get('camera_x', 0)
-            self.view.camera_y = save_data.get('camera_y', 0)
-            self.view.zoom = save_data.get('zoom', 1.0)
-            
-            print(f"✓ Partie chargée depuis {Phase1.SAVE_FILE}")
-            self.save_message = "✓ Partie chargée !"
-            self.save_message_timer = 3.0
-            return True
-        except Exception as e:
-            print(f"✗ Erreur lors du chargement: {e}")
-            import traceback
-            traceback.print_exc()
-            self.save_message = "✗ Erreur de chargement"
-            self.save_message_timer = 3.0
-            return False
+        return self.saver.load_phase1(self)
 
     def enter(self, **kwargs):
         # Si on demande explicitement de charger

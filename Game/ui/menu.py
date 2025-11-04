@@ -200,7 +200,7 @@ class MainMenu(BaseMenu):
                 (WIDTH // 2, y0 - gap),
                 anchor="center",
                 style=resume_style,
-                on_click=lambda b: self.app.change_state("phase1", load_save=True),
+                on_click=lambda b: self.app.change_state("PHASE1", load_save=True),
             ))
 
         # ---- Boutons normaux ----
