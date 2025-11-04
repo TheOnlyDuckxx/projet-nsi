@@ -146,7 +146,30 @@ class MainMenu(BaseMenu):
             shadow=True,
             shadow_offset=(3, 3),
             shadow_alpha=90,
-            hover_zoom=1.10,   # zoom fluide (activé)
+            hover_zoom=1.10,
+            zoom_speed=0.22,
+        )
+
+        # Style spécial pour le bouton "Reprendre" (vert)
+        resume_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(40, 100, 60),
+            hover_bg_color=(60, 140, 80),
+            active_bg_color=(80, 180, 100),
+            draw_border=True,
+            border_color=(20, 50, 30),
+            border_width=2,
+            radius=14,
+            font=self.btn_font,
+            text_color=(255, 255, 255),
+            hover_text_color=(255, 255, 255),
+            active_text_color=(255, 255, 255),
+            padding_x=26,
+            padding_y=14,
+            shadow=True,
+            shadow_offset=(3, 3),
+            shadow_alpha=90,
+            hover_zoom=1.10,
             zoom_speed=0.22,
         )
 
@@ -158,31 +181,48 @@ class MainMenu(BaseMenu):
             zoom_speed=0.22,
         )
 
+        # Importer Phase1 pour vérifier la sauvegarde
+        from Game.gameplay.phase1 import Phase1
+        self.has_save = Phase1.save_exists()
+
+        # Calculer les positions en fonction de la présence d'une sauvegarde
         y0 = HEIGHT // 2 + 20
         gap = 70
+        
+        # Ajuster la position de départ si on a une sauvegarde
+        if self.has_save:
+            y0 -= gap // 2  # Décaler vers le haut pour faire de la place
 
-        # ---- Boutons (on_click appelle directement l'app) ----
+        # ---- Bouton "Reprendre" (uniquement si sauvegarde existe) ----
+        if self.has_save:
+            self.btn_resume = self.add(Button(
+                "▶ REPRENDRE LA PARTIE",
+                (WIDTH // 2, y0 - gap),
+                anchor="center",
+                style=resume_style,
+                on_click=lambda b: self.app.change_state("phase1", load_save=True),
+            ))
+
+        # ---- Boutons normaux ----
         self.btn_monde = self.add(Button(
             "PARAMÈTRES DU MONDE",
-            (WIDTH // 2, y0 - gap),
+            (WIDTH // 2, y0),
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("CREATION"),
         ))
 
-
         self.btn_start = self.add(Button(
             "NOUVELLE PARTIE",
-            (WIDTH // 2, y0),
+            (WIDTH // 2, y0 + gap),
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("LOADING"),
         ))
 
-
         self.btn_options = self.add(Button(
             "OPTIONS",
-            (WIDTH // 2, y0 + gap),
+            (WIDTH // 2, y0 + 2*gap),
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("OPTIONS"),
@@ -190,7 +230,7 @@ class MainMenu(BaseMenu):
 
         self.btn_credits = self.add(Button(
             "Crédits",
-            (WIDTH // 2, y0 + 2*gap),
+            (WIDTH // 2, y0 + 3*gap),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.change_state("CREDITS"),
@@ -198,17 +238,24 @@ class MainMenu(BaseMenu):
 
         self.btn_quit = self.add(Button(
             "Quitter",
-            (WIDTH // 2, y0 + 3*gap),
+            (WIDTH // 2, y0 + 4*gap),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.quit_game(),
         ))
 
-    # --- Entrées : laisse BaseMenu propager aux widgets; ajoute tes raccourcis si besoin
+    def enter(self):
+        """Appelé quand on entre dans ce menu - rafraîchit la détection de sauvegarde"""
+        from Game.gameplay.phase1 import Phase1
+        new_has_save = Phase1.save_exists()
+        
+        # Si l'état de la sauvegarde a changé, reconstruire le menu
+        if new_has_save != self.has_save:
+            self.__init__(self.app)
+
     def handle_input(self, events):
         super().handle_input(events)
 
-    # --- Rendu : BaseMenu dessine déjà bg + overlay + titre + widgets
     def render(self, screen):
         super().render(screen)
 
