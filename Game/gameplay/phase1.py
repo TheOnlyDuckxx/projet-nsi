@@ -1,6 +1,8 @@
 # Game/gameplay/phase1.py
 import pygame
 import random
+import pickle
+import os
 from typing import List, Tuple
 from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
 from Game.world.tiles import get_ground_sprite_name
@@ -15,7 +17,11 @@ class Phase1:
     État de jeu Phase 1 : île isométrique procédurale.
     - Génère le monde depuis un preset (seed + params)
     - Rendu via IsoMapView (caméra + zoom + culling)
+    - Système de sauvegarde/chargement (.evosave)
     """
+    
+    SAVE_FILE = "Game/save/savegame.evosave"
+    
     def __init__(self, app):
         self.app = app
         self.screen = app.screen
@@ -43,10 +49,103 @@ class Phase1:
         # Panneau d'inspection
         self.side = SideInfoPanel(self.screen.get_size())
 
-        # Bouton pause (menu principal)
+        # Boutons pause
         self.menu_button_rect = None
+        self.save_button_rect = None
+        
+        # Message de sauvegarde
+        self.save_message = ""
+        self.save_message_timer = 0
+
+    @staticmethod
+    def save_exists():
+        """Vérifie si un fichier de sauvegarde existe"""
+        return os.path.exists(Phase1.SAVE_FILE)
+
+    def save_game(self):
+        """Sauvegarde l'état actuel du jeu au format .evosave"""
+        try:
+            # Créer le dossier data s'il n'existe pas
+            os.makedirs(os.path.dirname(Phase1.SAVE_FILE), exist_ok=True)
+            
+            # Données à sauvegarder
+            save_data = {
+                'version': '1.0',  # Version du format de sauvegarde
+                'world': self.world,
+                'params': self.params,
+                'joueur_pos': (self.joueur.x, self.joueur.y) if self.joueur else None,
+                'joueur_nom': self.joueur.nom if self.joueur else None,
+                'joueur_stats': self.joueur.stats if self.joueur else None,
+                'camera_x': self.view.camera_x,
+                'camera_y': self.view.camera_y,
+                'zoom': self.view.zoom,
+            }
+            
+            # Sauvegarde au format pickle avec extension .evosave
+            with open(Phase1.SAVE_FILE, 'wb') as f:
+                pickle.dump(save_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            print(f"✓ Partie sauvegardée dans {Phase1.SAVE_FILE}")
+            self.save_message = "✓ Partie sauvegardée !"
+            self.save_message_timer = 3.0  # 3 secondes
+            return True
+        except Exception as e:
+            print(f"✗ Erreur lors de la sauvegarde: {e}")
+            self.save_message = "✗ Erreur de sauvegarde"
+            self.save_message_timer = 3.0
+            return False
+
+    def load_game(self):
+        """Charge une partie sauvegardée depuis le fichier .evosave"""
+        try:
+            if not os.path.exists(Phase1.SAVE_FILE):
+                print("✗ Aucune sauvegarde trouvée")
+                return False
+                
+            with open(Phase1.SAVE_FILE, 'rb') as f:
+                save_data = pickle.load(f)
+            
+            # Vérifier la version (pour compatibilité future)
+            version = save_data.get('version', '1.0')
+            print(f"→ Chargement sauvegarde version {version}")
+            
+            # Restaurer les données
+            self.world = save_data['world']
+            self.params = save_data['params']
+            self.view.set_world(self.world)
+            
+            # Restaurer le joueur
+            if save_data['joueur_pos']:
+                x, y = save_data['joueur_pos']
+                nom = save_data.get('joueur_nom', 'Hominidé')
+                self.joueur = Espece(nom, x=x, y=y, assets=self.assets)
+                if save_data.get('joueur_stats'):
+                    self.joueur.stats = save_data['joueur_stats']
+                self.entities = [self.joueur]
+            
+            # Restaurer la caméra
+            self.view.camera_x = save_data.get('camera_x', 0)
+            self.view.camera_y = save_data.get('camera_y', 0)
+            self.view.zoom = save_data.get('zoom', 1.0)
+            
+            print(f"✓ Partie chargée depuis {Phase1.SAVE_FILE}")
+            self.save_message = "✓ Partie chargée !"
+            self.save_message_timer = 3.0
+            return True
+        except Exception as e:
+            print(f"✗ Erreur lors du chargement: {e}")
+            import traceback
+            traceback.print_exc()
+            self.save_message = "✗ Erreur de chargement"
+            self.save_message_timer = 3.0
+            return False
 
     def enter(self, **kwargs):
+        # Si on demande explicitement de charger
+        if kwargs.get("load_save", False) and self.save_exists():
+            if self.load_game():
+                return
+        
         pre_world = kwargs.get("world")
         pre_params = kwargs.get("params")
 
@@ -66,8 +165,11 @@ class Phase1:
             sx, sy = self.world.spawn
         except Exception:
             sx, sy = 0, 0
-        self.joueur = Espece("Hominidé", x=sx, y=sy, assets=self.assets)
-        self.entities = [self.joueur]
+        
+        # Ne créer le joueur que si on n'a pas chargé une sauvegarde
+        if not self.joueur:
+            self.joueur = Espece("Hominidé", x=sx, y=sy, assets=self.assets)
+            self.entities = [self.joueur]
 
     def leave(self):
         pass
@@ -114,7 +216,7 @@ class Phase1:
         return "Inspection", fields
 
     def handle_input(self, events):
-        # NEW: bouton ✕ du panneau
+        # Bouton ✕ du panneau
         self.side.handle(events)
 
         for e in events:
@@ -123,8 +225,11 @@ class Phase1:
                     self.paused = not self.paused
                 elif e.key == pygame.K_i:
                     self.show_info = not self.show_info
-                elif e.key == pygame.K_TAB:  # toggle panneau
+                elif e.key == pygame.K_TAB:
                     self.side.toggle()
+                elif e.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    # Ctrl+S pour sauvegarder rapidement
+                    self.save_game()
                 elif e.key == pygame.K_r:
                     mods = pygame.key.get_mods()
                     if mods & pygame.KMOD_SHIFT:
@@ -139,17 +244,27 @@ class Phase1:
                     if self.joueur:
                         self.joueur.x, self.joueur.y = float(sx), float(sy)
 
-            # Gestion du clic sur le bouton menu (uniquement en pause)
+            # Gestion des clics sur les boutons de pause
             if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                # Bouton Menu
                 if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
-                    # Retour au menu principal
-                    self.app.change_state("MENU")
+                    try:
+                        self.app.change_state("MENU")
+                    except KeyError:
+                        pygame.quit()
+                        import sys
+                        sys.exit()
+                    return
+                
+                # Bouton Sauvegarder
+                if self.save_button_rect and self.save_button_rect.collidepoint(e.pos):
+                    self.save_game()
                     return
 
             if not self.paused:
                 self.view.handle_event(e)
 
-                # CHANGE: clic droit (button == 3) = Inspecter
+                # Clic droit = Inspecter
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                     mx, my = pygame.mouse.get_pos()
 
@@ -174,7 +289,11 @@ class Phase1:
 
     def update(self, dt):
         if self.paused:
+            # Décompte du message de sauvegarde même en pause
+            if self.save_message_timer > 0:
+                self.save_message_timer -= dt
             return
+            
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
@@ -183,6 +302,10 @@ class Phase1:
                 self.joueur.update(self.world)
             except Exception as ex:
                 print(f"[Phase1] Update joueur: {ex}")
+        
+        # Décompte du message de sauvegarde
+        if self.save_message_timer > 0:
+            self.save_message_timer -= dt
 
     def render(self, screen):
         screen.fill((10, 12, 18))
@@ -210,6 +333,10 @@ class Phase1:
         if self.show_info and not self.paused:
             self._draw_info_panel(screen)
 
+        # Message de sauvegarde (au-dessus de tout)
+        if self.save_message_timer > 0:
+            self._draw_save_message(screen)
+
         # Panneau d'inspection (seulement si pas en pause)
         if not self.paused:
             self.side.draw(screen)
@@ -218,8 +345,36 @@ class Phase1:
         if self.paused:
             self._draw_pause_screen(screen)
 
+    def _draw_save_message(self, screen):
+        """Affiche un message temporaire de sauvegarde"""
+        font = pygame.font.SysFont("consolas", 24, bold=True)
+        
+        # Couleur en fonction du message
+        if "✓" in self.save_message:
+            color = (100, 255, 100)
+        else:
+            color = (255, 100, 100)
+        
+        text = font.render(self.save_message, True, color)
+        
+        # Position en haut au centre
+        x = screen.get_width() // 2 - text.get_width() // 2
+        y = 50
+        
+        # Fond semi-transparent
+        padding = 20
+        bg_rect = pygame.Rect(x - padding, y - padding // 2, 
+                              text.get_width() + padding * 2, 
+                              text.get_height() + padding)
+        bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+        bg_surf.fill((0, 0, 0, 180))
+        screen.blit(bg_surf, bg_rect.topleft)
+        
+        # Texte
+        screen.blit(text, (x, y))
+
     def _draw_pause_screen(self, screen):
-        """Affiche l'écran de pause avec le bouton de retour au menu"""
+        """Affiche l'écran de pause avec les boutons"""
         # Overlay semi-transparent
         overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
@@ -228,38 +383,56 @@ class Phase1:
         # Titre "PAUSE"
         font_title = pygame.font.SysFont(None, 60)
         text = font_title.render("PAUSE", True, (255, 255, 255))
-        text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 100))
+        text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 130))
         screen.blit(text, text_rect)
         
         # Texte de reprise
         font_subtitle = pygame.font.SysFont(None, 40)
         resume_text = font_subtitle.render("Appuyez sur Échap pour reprendre", True, (200, 200, 200))
-        resume_rect = resume_text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 30))
+        resume_rect = resume_text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 60))
         screen.blit(resume_text, resume_rect)
         
-        # Bouton "Retour au menu"
+        # Bouton "Sauvegarder"
         button_width = 300
         button_height = 60
         button_x = screen.get_width() / 2 - button_width / 2
-        button_y = screen.get_height() / 2 + 40
+        button_y = screen.get_height() / 2 + 10
         
-        self.menu_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+        self.save_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
         
-        # Effet hover
+        # Effet hover sur bouton sauvegarder
         mouse_pos = pygame.mouse.get_pos()
-        is_hover = self.menu_button_rect.collidepoint(mouse_pos)
-        button_color = (80, 80, 120) if is_hover else (60, 60, 90)
-        border_color = (150, 150, 200) if is_hover else (100, 100, 150)
+        is_hover_save = self.save_button_rect.collidepoint(mouse_pos)
+        save_color = (40, 120, 40) if is_hover_save else (30, 90, 30)
+        save_border = (80, 200, 80) if is_hover_save else (60, 150, 60)
         
-        # Dessiner le bouton
-        pygame.draw.rect(screen, button_color, self.menu_button_rect, border_radius=10)
-        pygame.draw.rect(screen, border_color, self.menu_button_rect, 3, border_radius=10)
+        # Dessiner le bouton sauvegarder
+        pygame.draw.rect(screen, save_color, self.save_button_rect, border_radius=10)
+        pygame.draw.rect(screen, save_border, self.save_button_rect, 3, border_radius=10)
         
-        # Texte du bouton
+        # Texte du bouton sauvegarder
         font_button = pygame.font.SysFont(None, 36)
-        button_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
-        button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
-        screen.blit(button_text, button_text_rect)
+        save_text = font_button.render("Sauvegarder (Ctrl+S)", True, (255, 255, 255))
+        save_text_rect = save_text.get_rect(center=self.save_button_rect.center)
+        screen.blit(save_text, save_text_rect)
+        
+        # Bouton "Retour au menu"
+        button_y2 = button_y + button_height + 20
+        self.menu_button_rect = pygame.Rect(button_x, button_y2, button_width, button_height)
+        
+        # Effet hover sur bouton menu
+        is_hover_menu = self.menu_button_rect.collidepoint(mouse_pos)
+        menu_color = (80, 80, 120) if is_hover_menu else (60, 60, 90)
+        menu_border = (150, 150, 200) if is_hover_menu else (100, 100, 150)
+        
+        # Dessiner le bouton menu
+        pygame.draw.rect(screen, menu_color, self.menu_button_rect, border_radius=10)
+        pygame.draw.rect(screen, menu_border, self.menu_button_rect, 3, border_radius=10)
+        
+        # Texte du bouton menu
+        menu_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
+        menu_text_rect = menu_text.get_rect(center=self.menu_button_rect.center)
+        screen.blit(menu_text, menu_text_rect)
 
     def on_resize(self, new_size):
         self.view.screen_w, self.view.screen_h = new_size
@@ -270,8 +443,8 @@ class Phase1:
             f"Phase1 — {self.params.world_name if self.params else '...'}",
             f"Size: {self.world.width}x{self.world.height}" if self.world else "",
             f"Zoom: {self.view.zoom:.2f} (min {self.view.min_zoom}, max {self.view.max_zoom})",
-            # CHANGE: texte d'aide -> clic droit
-            "Controls: Clic droit = Inspecter | TAB = toggle panneau | WASD/flèches = pan | Molette = zoom | Clic milieu = drag | R = regen | Shift+R = reroll | I = info",
+            "Controls: Clic droit = Inspecter | TAB = toggle panneau | WASD/flèches = pan | Molette = zoom",
+            "Clic milieu = drag | R = regen | Shift+R = reroll | I = info | Ctrl+S = sauvegarder",
         ]
         x, y = 10, 10
         for txt in lines:
