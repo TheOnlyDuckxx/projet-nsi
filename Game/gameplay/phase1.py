@@ -28,6 +28,7 @@ class Phase1:
         # UI/HUD
         self.show_info = True
         self.font = pygame.font.SysFont("consolas", 16)
+        self.menu_button_rect = None
 
         # Sélection actuelle: ("tile",(i,j)) | ("prop",(i,j,pid)) | ("entity",ent)
         self.selected: Optional[tuple] = None
@@ -181,16 +182,48 @@ class Phase1:
                         if not target:
                             continue
 
-                        # Pathfinding A*: props/eau bloquent
-                        path = self._astar_path((int(ent.x), int(ent.y)), target)
-                        if path:
-                            # on ignore la première case si c’est la position actuelle
-                            if path and path[0] == (int(ent.x), int(ent.y)):
-                                path = path[1:]
-                            ent.move_path = path
+                        if not self._is_walkable(*target):
+                            target = self._find_nearest_walkable(target)
+                        if not target:
+                            continue
+
+                        raw_path = self._astar_path((int(ent.x), int(ent.y)), target)
+                        if raw_path:
+                            # Ignore la première case si c'est la position actuelle
+                            if raw_path and raw_path[0] == (int(ent.x), int(ent.y)):
+                                raw_path = raw_path[1:]
+                            # Lissage + waypoints flottants
+                            waypoints = self._smooth_path(raw_path)
+                            # Stocke des points (x,y) flottants dans move_path
+                            ent.move_path = waypoints
                             ent._move_from = (float(ent.x), float(ent.y))
-                            ent._move_to = path[0] if path else None
+                            ent._move_to = waypoints[0] if waypoints else None
                             ent._move_t = 0.0
+
+
+            if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
+                    self.paused = False  # pour éviter que le rendu de pause bloque tout
+
+                    # --- Sauvegarde avant retour au menu ---
+                    try:
+                        ok = self.save()
+                        if ok:
+                            self.save_message = "Sauvegarde effectuée !"
+                        else:
+                            print("[Phase1] Sauvegarde échouée.")
+                            self.save_message = "Erreur de sauvegarde."
+                    except Exception as ex:
+                        print(f"[Phase1] Erreur lors de la sauvegarde: {ex}")
+                        self.save_message = "Erreur de sauvegarde."
+
+                    self.save_message_timer = 2.5
+                    pygame.display.flip()  # force un dernier rendu avant de changer d'état
+                    pygame.time.wait(300)
+
+                    # --- Quitte proprement vers le menu principal ---
+                    self.app.change_state("MENU")
+                    return
 
     # ---------- UPDATE ----------
     def update(self, dt: float):
@@ -207,6 +240,43 @@ class Phase1:
             if self.save_message_timer <= 0:
                 self.save_message = ""
 
+    def draw_pause_screen(self, screen):
+            """Affiche l'écran de pause avec le bouton de retour au menu"""
+            # Overlay semi-transparent
+            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            screen.blit(overlay, (0, 0))
+            
+            # Titre "PAUSE"
+            font_title = pygame.font.SysFont(None, 60)
+            text = font_title.render("PAUSE", True, (255, 255, 255))
+            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 100))
+            screen.blit(text, text_rect)
+            
+            # Bouton "Retour au menu"
+            button_width = 300
+            button_height = 60
+            button_x = screen.get_width() / 2 - button_width / 2
+            button_y = screen.get_height() / 2 + 40
+            
+            self.menu_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+            
+            # Effet hover
+            mouse_pos = pygame.mouse.get_pos()
+            is_hover = self.menu_button_rect.collidepoint(mouse_pos)
+            button_color = (80, 80, 120) if is_hover else (60, 60, 90)
+            border_color = (150, 150, 200) if is_hover else (100, 100, 150)
+            
+            # Dessiner le bouton
+            pygame.draw.rect(screen, button_color, self.menu_button_rect, border_radius=10)
+            pygame.draw.rect(screen, border_color, self.menu_button_rect, 3, border_radius=10)
+            
+            # Texte du bouton
+            font_button = pygame.font.SysFont(None, 36)
+            button_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
+            button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
+            screen.blit(button_text, button_text_rect)
+
 
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
@@ -214,30 +284,27 @@ class Phase1:
         self.view.begin_hitframe()  # reset pile picking
 
         # Rendu carte (tu push déjà tuiles/props dans la pile via iso_render)
-        self.view.render(screen)
+        self.view.render(screen, world_entities=self.entities)
 
         # Rendu entités + ajout dans la pile (hit approximatif sur la tuile)
         dx, dy, wall_h = self.view._proj_consts()
-        sorted_entities = sorted(self.entities,
-                                 key=lambda ent: self.view._world_to_screen(ent.x, ent.y, 0, dx, dy, wall_h)[1])
-        for ent in sorted_entities:
-            try:
-                ent.draw(screen, self.view, self.world)
-            except Exception as ex:
-                print(f"[Phase1] Render entité: {ex}")
-            # hitbox “losange” au niveau de la tuile de l'entité
+        for ent in self.entities:
             i, j = int(ent.x), int(ent.y)
             poly = self.view.tile_surface_poly(i, j)
             if poly:
                 rect = pygame.Rect(min(p[0] for p in poly), min(p[1] for p in poly),
-                                   max(p[0] for p in poly) - min(p[0] for p in poly) + 1,
-                                   max(p[1] for p in poly) - min(p[1] for p in poly) + 1)
-                self.view.push_hit("entity", ent, rect, None)  # rect suffit pour cliquer la créature
+                                max(p[0] for p in poly) - min(p[0] for p in poly) + 1,
+                                max(p[1] for p in poly) - min(p[1] for p in poly) + 1)
+                self.view.push_hit("entity", ent, rect, None)
+
+        
 
         # Marqueur de sélection (tuile/prop/entité)
         self._draw_selection_marker(screen)
 
-        if self.show_info:
+        if self.paused:
+            self.draw_pause_screen(screen)
+        if not self.paused and self.show_info:
             self._draw_info_panel(screen)
         if self.save_message:
             hud_font = pygame.font.SysFont("consolas", 18)
@@ -324,67 +391,151 @@ class Phase1:
         if not self._is_walkable(*goal):
             return []
         sx, sy = start; gx, gy = goal
-        if (sx, sy) == (gx, gy): return []
+        if (sx, sy) == (gx, gy):
+            return []
 
-        def h(a,b): return abs(a[0]-b[0]) + abs(a[1]-b[1])  # Manhattan
+        # Heuristique octile (8-connexe, coût diag = sqrt(2))
+        import math
+        def h(a, b):
+            dx = abs(a[0] - b[0]); dy = abs(a[1] - b[1])
+            return (dx + dy) + (math.sqrt(2) - 2.0) * min(dx, dy)
+
         openh = []
-        heapq.heappush(openh, (0 + h(start, goal), 0, start))
+        heapq.heappush(openh, (h(start, goal), 0.0, start))
         came = {start: None}
-        gscore = {start: 0}
+        gscore = {start: 0.0}
 
-        neigh = ((1,0),(-1,0),(0,1),(0,-1))  # 4-connexe (iso = grille)
+        neigh = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (1, -1), (-1, 1), (-1, -1)
+        ]
+        import math
         while openh:
             _, gc, cur = heapq.heappop(openh)
             if cur == goal:
-                # reconstitue
                 path = []
-                while cur and cur in came:
+                while cur in came and cur is not None:
                     path.append(cur); cur = came[cur]
                 path.reverse()
                 return path
+
             for dx, dy in neigh:
-                nx, ny = cur[0]+dx, cur[1]+dy
-                if not self._is_walkable(nx, ny): continue
-                ng = gc + 1
-                if ng < gscore.get((nx, ny), 1e9):
+                nx, ny = cur[0] + dx, cur[1] + dy
+                if not self._is_walkable(nx, ny):
+                    continue
+                step_cost = math.sqrt(2.0) if dx != 0 and dy != 0 else 1.0
+                ng = gc + step_cost
+                if ng < gscore.get((nx, ny), 1e18):
                     gscore[(nx, ny)] = ng
                     came[(nx, ny)] = cur
-                    heapq.heappush(openh, (ng + h((nx,ny), goal), ng, (nx,ny)))
+                    f = ng + h((nx, ny), goal)
+                    heapq.heappush(openh, (f, ng, (nx, ny)))
         return []
 
+    def _los_clear(self, a: tuple[float,float], b: tuple[float,float]) -> bool:
+        """
+        Line-of-sight grossière : on échantillonne la droite AB et on vérifie
+        que chaque sample tombe sur une case walkable. Suffisant pour lisser.
+        """
+        import math
+        ax, ay = a; bx, by = b
+        dx, dy = bx - ax, by - ay
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            return True
+        steps = int(dist * 4) + 1  # sur-échantillonnage léger
+        for s in range(steps + 1):
+            t = s / max(1, steps)
+            x = ax + dx * t
+            y = ay + dy * t
+            if not self._is_walkable(int(x), int(y)):
+                return False
+        return True
+
+    def _smooth_path(self, nodes: list[tuple[int,int]]) -> list[tuple[float,float]]:
+        """
+        String-pulling simple : on garde le point courant, on pousse aussi loin
+        que possible en conservant la visibilité, puis on place un waypoint au
+        centre de la case retenue.
+        """
+        if not nodes:
+            return []
+        # Convertit nodes -> centres flottants
+        pts = [(i + 0.5, j + 0.5) for (i, j) in nodes]
+        smoothed = [pts[0]]
+        i = 0
+        while i < len(pts) - 1:
+            j = len(pts) - 1
+            # recule tant que la LOS échoue
+            while j > i + 1 and not self._los_clear(pts[i], pts[j]):
+                j -= 1
+            smoothed.append(pts[j])
+            i = j
+        return smoothed
+
+
     def _update_entity_movement(self, ent, dt: float):
-        if not ent.move_path:
+        # Rien à faire ?
+        if not getattr(ent, "move_path", None):
             return
-        # init segment
+
+        # Init du segment courant
         if ent._move_to is None:
-            if not ent.move_path: return
+            if not ent.move_path:
+                return
+            # _move_from est la position actuelle (flottante)
             ent._move_from = (float(ent.x), float(ent.y))
-            ent._move_to = ent.move_path[0]
+            ent._move_to = ent.move_path[0]  # (x, y) flottant désormais
             ent._move_t = 0.0
 
-        # si la prochaine tuile devient non walkable, stop
-        nx, ny = ent._move_to
-        if not self._is_walkable(nx, ny):
-            ent.move_path = []
-            ent._move_to = None
-            return
+        tx, ty = ent._move_to
+        fx, fy = ent._move_from
 
-        # avance
-        speed = max(0.2, float(getattr(ent, "move_speed", 3.5)))  # tiles/s
-        ent._move_t += dt * speed
+        # Longueur du segment en coordonnées monde (pas "1 tuile" supposée)
+        seg_len = max(1e-6, ((tx - fx)**2 + (ty - fy)**2) ** 0.5)
+
+        # Vitesse monde = "tuiles par seconde" mais on l'applique en distance euclidienne
+        speed = max(0.2, float(getattr(ent, "move_speed", 3.5)))
+        # t progresse à la bonne vitesse quelle que soit l'orientation
+        ent._move_t += (dt * speed) / seg_len
+
         if ent._move_t >= 1.0:
-            # arrive sur la tuile suivante
-            ent.x, ent.y = float(nx), float(ny)
-            ent.move_path.pop(0)
+            # On arrive exactement au point visé
+            ent.x, ent.y = float(tx), float(ty)
+            # Passe au waypoint suivant
+            if ent.move_path:
+                ent.move_path.pop(0)
             ent._move_from = (float(ent.x), float(ent.y))
             ent._move_t = 0.0
             ent._move_to = ent.move_path[0] if ent.move_path else None
         else:
-            # interpole
-            fx, fy = ent._move_from
-            tx, ty = ent._move_to
+            # Interpolation linéaire
             ent.x = fx + (tx - fx) * ent._move_t
             ent.y = fy + (ty - fy) * ent._move_t
+
+
+    def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8) -> Optional[tuple[int, int]]:
+        """Retourne la case libre la plus proche du point cible (si eau/obstacle)."""
+        tx, ty = target
+        if self._is_walkable(tx, ty):
+            return target
+
+        best = None
+        best_dist = 9999
+        for r in range(1, max_radius + 1):
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    nx, ny = tx + dx, ty + dy
+                    if not self._is_walkable(nx, ny):
+                        continue
+                    d = abs(dx) + abs(dy)
+                    if d < best_dist:
+                        best = (nx, ny)
+                        best_dist = d
+            if best:
+                break
+        return best
+
 
     # ---------- HUD ----------
     def _draw_info_panel(self, screen):

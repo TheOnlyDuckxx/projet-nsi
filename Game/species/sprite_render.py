@@ -88,14 +88,16 @@ class EspeceRenderer:
             z = 0
 
         sx, sy = view._world_to_screen(tx, ty, z, dx, dy, wall_h)
-
         # 3) ancrage comme un prop sans dépendre d’un asset de sol
-        surface_y = sy - int(2 * dy)
+        surface_y = sy - int(2 * dy)         # y du plateau (même repère que le losange)
         px = int(sx - sprite.get_width() // 2)
-        py = int(surface_y - (sprite.get_height() - 2 * dy))
+
+        FOOT_OFFSET = -10                   # +1..4 si tu veux “décoller” légèrement
+        py = int(surface_y - sprite.get_height() + FOOT_OFFSET)
 
         rect = pygame.Rect(px, py, sprite.get_width(), sprite.get_height())
         return sprite, rect
+
 
 
     def _assemble_base_sprite(self) -> pygame.Surface:
@@ -115,6 +117,8 @@ class EspeceRenderer:
         screen.blit(sprite, rect.topleft)
 
 
+
+# A quoi ça sert ???
 class PlayerRenderer(EspeceRenderer):
     def __init__(self, espece, assets,tx,ty,controls):
         super().__init__(espece, assets)
