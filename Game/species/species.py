@@ -15,7 +15,7 @@ class Espece:
         self.physique = {
             "taille": 5, "force": 5, "endurance": 5,
             "vitesse": 5,"vitesse de nage" : 5, "stockage_energetique": 5,
-            "temperature_corporelle": 37.0, "esperance_vie": 5, 
+            "temperature_corporelle": 37.0, "esperance_vie": 5, "weight_limit":2.5
         }
         self.sens = {
             "vision": 5, "ouie": 5, "odorat": 5, "echolocalisation": 0,
@@ -44,12 +44,13 @@ class Espece:
         self.combat = { 
             "attaque_melee": 10+self.physique["force"] * 4+ self.physique["vitesse"] * 2+ self.mental["agressivite"], "attaque_distance": 0, "defense": 5, "agilite": 5,
         }
-        self.arbre_phases3 = {"autorité" : 5,"strategie": 5, "organisation":5, "culture": 5, "science": 5,"raison": 5, "ferveur": 5,  "moralité": 5, "harmonie": 5,
-                              }
+        self.arbre_phases3 = {
+            "autorité" : 5,"strategie": 5, "organisation":5, "culture": 5, "science": 5,"raison": 5, "ferveur": 5,  "moralité": 5, "harmonie": 5
+        }
         self.ia = {
             "autonomie": True, "etat": "idle", "objectif": None, "vision_portee": 100,
         }
-        
+        self.carrying = []
         self.effets_speciaux = []
         # === Sous-systèmes ===
         self.mutations = MutationManager(self)

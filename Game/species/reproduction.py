@@ -24,5 +24,4 @@ class ReproductionSystem:
                     variation = 0.0
                 d_enfant[stat] = max(0, (val if isinstance(val, (int, float)) else 0) + variation)
 
-        print(f"Nouvelle génération : {enfant.nom}")
         return enfant

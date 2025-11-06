@@ -1,0 +1,10 @@
+{
+    "example": {
+        "description": "Lorem ipsum",
+        "sprite": "example",
+        "poid": 0.9
+    },
+    "wood":    { "description": "Bois brut",   "sprite": "wood",    "poids": 0.5 },
+    "stone":   { "description": "Pierre",      "sprite": "stone",   "poids": 1.0 },
+    "berries": { "description": "Baies",       "sprite": "berries", "poids": 0.2 }
+}

@@ -175,6 +175,8 @@ class Phase1:
                                 target = p  # (i,j)
                             elif k == "prop":
                                 target = (p[0], p[1])
+                                ent.ia["etat"] = "se_deplace_vers_prop"
+                                ent.ia["objectif"] = hit
                             elif k == "entity":
                                 target = (int(p.x), int(p.y))
                         if not target:
@@ -184,6 +186,8 @@ class Phase1:
 
                         if not self._is_walkable(*target):
                             target = self._find_nearest_walkable(target)
+                            
+
                         if not target:
                             continue
 
@@ -199,6 +203,7 @@ class Phase1:
                             ent._move_from = (float(ent.x), float(ent.y))
                             ent._move_to = waypoints[0] if waypoints else None
                             ent._move_t = 0.0
+
 
 
             if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
@@ -232,9 +237,14 @@ class Phase1:
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
+        # Dans Phase1.update(self, dt), après l'appel à _update_entity_movement(e, dt)
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
+            # → progression de la récolte (barre, timer, loot…)
+            if hasattr(e, "comportement"):
+                e.comportement.update(dt, self.world)
+
         if self.save_message_timer > 0:
             self.save_message_timer -= dt
             if self.save_message_timer <= 0:
@@ -289,6 +299,7 @@ class Phase1:
         # Rendu entités + ajout dans la pile (hit approximatif sur la tuile)
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
+            self._draw_work_bar(screen, ent)
             i, j = int(ent.x), int(ent.y)
             poly = self.view.tile_surface_poly(i, j)
             if poly:
@@ -476,8 +487,12 @@ class Phase1:
 
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
-        if not getattr(ent, "move_path", None):
-            return
+        if not getattr(ent, "move_path", None) or not ent.move_path:
+            if ent.ia.get("etat") == "se_deplace_vers_prop":
+                ent.ia["etat"] = "recolte"
+                # ent.ia["objectif"] est du type ("prop", (i, j, pid))
+                if hasattr(ent, "comportement"):
+                    ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
 
         # Init du segment courant
         if ent._move_to is None:
@@ -535,6 +550,30 @@ class Phase1:
             if best:
                 break
         return best
+    
+    def _draw_work_bar(self, screen, ent):
+        w = getattr(ent, "work", None)
+        if not w or ent.ia.get("etat") != "recolte":
+            return
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return
+        # centre au-dessus de la tuile de l’entité
+        cx = sum(p[0] for p in poly) / len(poly)
+        top = min(p[1] for p in poly) - 10
+
+        bar_w, bar_h = 44, 6
+        bg = pygame.Rect(int(cx - bar_w/2), int(top - bar_h), bar_w, bar_h)
+        fg = bg.inflate(-2, -2)
+        fg.width = int(fg.width * float(w.get("progress", 0.0)))
+
+        # fond
+        s = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 160))
+        screen.blit(s, (bg.x, bg.y))
+        # barre
+        pygame.draw.rect(screen, (80, 200, 120), fg, border_radius=2)
+
 
 
     # ---------- HUD ----------
