@@ -74,10 +74,12 @@ class Comportement:
         objectif: ("prop", (i, j, pid))
         Initialise la tâche de récolte (barre de progression, etc.).
         """
+        if self.e.ia["etat"]=="recolte":
+            return
         if not objectif or objectif[0] != "prop":
             self.e.ia["etat"] = "idle"
             return
-
+        self.e.ia["etat"]="recolte"
         i, j, pid = objectif[1]
         # Durée de base (s) + accélération par stats (force/dex/endurance)
         base = 2.5
@@ -98,6 +100,24 @@ class Comportement:
             "drops": self._drops_for_prop(pid),
         }
         self.e.ia["etat"] = "recolte"
+    
+    def cancel_work(self, reason: str | None = None):
+        """
+        Annule immédiatement toute récolte en cours : stoppe la barre,
+        nettoie l'objectif, et remet l'IA au neutre.
+        """
+        # stoppe la progression + barre
+        if getattr(self.e, "work", None):
+            self.e.work = None
+
+        # si on était en "recolte" ou en chemin vers un prop, repasse idle
+        etat = self.e.ia.get("etat")
+        if etat in ("recolte", "se_deplace_vers_prop"):
+            self.e.ia["etat"] = "idle"
+
+        # on oublie l'objectif lié
+        self.e.ia["objectif"] = None
+
 
     def update(self, dt: float, world):
         """

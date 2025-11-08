@@ -166,6 +166,16 @@ class Phase1:
                         ent = self.selected[1]
                         mx, my = pygame.mouse.get_pos()
 
+                        # --- NEW: annule toute récolte en cours avant le nouvel ordre ---
+                        if hasattr(ent, "comportement"):
+                            ent.comportement.cancel_work("player_new_order")
+                        else:
+                            if getattr(ent, "work", None):
+                                ent.work = None
+                            ent.ia["etat"] = "idle"
+                            ent.ia["objectif"] = None
+                        # --- FIN NEW ---
+
                         # On vise une tuile de destination
                         hit = self.view.pick_at(mx, my)
                         target = None
@@ -173,12 +183,17 @@ class Phase1:
                             k, p = hit
                             if k == "tile":
                                 target = p  # (i,j)
+                                ent.ia["etat"] = "se_deplace"       # NEW (cohérent)
+                                ent.ia["objectif"] = None           # NEW
                             elif k == "prop":
                                 target = (p[0], p[1])
                                 ent.ia["etat"] = "se_deplace_vers_prop"
                                 ent.ia["objectif"] = hit
                             elif k == "entity":
                                 target = (int(p.x), int(p.y))
+                                ent.ia["etat"] = "se_deplace"       # NEW
+                                ent.ia["objectif"] = None           
+
                         if not target:
                             target = self._fallback_pick_tile(mx, my)
                         if not target:
@@ -487,9 +502,16 @@ class Phase1:
 
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
+        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") == "recolte":
+            if hasattr(ent, "comportement"):
+                ent.comportement.cancel_work("movement_started")
+            else:
+                if getattr(ent, "work", None):
+                    ent.work = None
+                ent.ia["etat"] = "se_deplace"
+                ent.ia["objectif"] = None
         if not getattr(ent, "move_path", None) or not ent.move_path:
-            if ent.ia.get("etat") == "se_deplace_vers_prop":
-                ent.ia["etat"] = "recolte"
+            if ent.ia["etat"] == "se_deplace_vers_prop":
                 # ent.ia["objectif"] est du type ("prop", (i, j, pid))
                 if hasattr(ent, "comportement"):
                     ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
@@ -553,7 +575,7 @@ class Phase1:
     
     def _draw_work_bar(self, screen, ent):
         w = getattr(ent, "work", None)
-        if not w or ent.ia.get("etat") != "recolte":
+        if not w or ent.ia["etat"] != "recolte":
             return
         poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
         if not poly:
@@ -573,6 +595,7 @@ class Phase1:
         screen.blit(s, (bg.x, bg.y))
         # barre
         pygame.draw.rect(screen, (80, 200, 120), fg, border_radius=2)
+    
 
 
 
