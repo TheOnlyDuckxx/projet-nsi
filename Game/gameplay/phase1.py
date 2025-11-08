@@ -165,8 +165,13 @@ class Phase1:
                     if self.selected and self.selected[0] == "entity":
                         ent = self.selected[1]
                         mx, my = pygame.mouse.get_pos()
+                        hit = self.view.pick_at(mx, my)
 
-                        # --- NEW: annule toute récolte en cours avant le nouvel ordre ---
+                        # 🛑 Si c'est exactement le même prop → ignorer (pas d'annulation, pas de reset)
+                        if hit and hit[0] == "prop" and self._same_prop_target(ent, hit):
+                            return  # on laisse la progression continuer
+
+                        # Sinon, on peut annuler le job précédent et poser le nouvel ordre
                         if hasattr(ent, "comportement"):
                             ent.comportement.cancel_work("player_new_order")
                         else:
@@ -595,6 +600,26 @@ class Phase1:
         screen.blit(s, (bg.x, bg.y))
         # barre
         pygame.draw.rect(screen, (80, 200, 120), fg, border_radius=2)
+    
+    def _same_prop_target(self, ent, hit):
+        if not hit or hit[0] != "prop":
+            return False
+        i, j, pid = hit[1]
+        tgt = (int(i), int(j), str(pid))
+
+        # compare à l'objectif courant (si on est en chemin vers le prop)
+        cur = ent.ia.get("objectif")
+        if cur and cur[0] == "prop":
+            ci, cj, cpid = cur[1]
+            if (int(ci), int(cj), str(cpid)) == tgt:
+                return True
+
+        # compare au job en cours (si déjà en train de récolter)
+        w = getattr(ent, "work", None)
+        if w and w.get("type") == "harvest":
+            if (w["i"], w["j"], str(w["pid"])) == tgt:
+                return True
+        return False
     
 
 

@@ -69,18 +69,27 @@ class Comportement:
     # fallback basique
 
     # ---------- API publique ----------
+    def _prop_key(self, i, j, pid):
+        # normalise pour comparer proprement
+        return (int(i), int(j), str(pid))
+
     def recolter_ressource(self, objectif, world):
-        """
-        objectif: ("prop", (i, j, pid))
-        Initialise la tâche de récolte (barre de progression, etc.).
-        """
-        if self.e.ia["etat"]=="recolte":
-            return
         if not objectif or objectif[0] != "prop":
             self.e.ia["etat"] = "idle"
             return
-        self.e.ia["etat"]="recolte"
+
         i, j, pid = objectif[1]
+        new_key = self._prop_key(i, j, pid)
+
+        # 🔒 Anti-reset : si on travaille déjà sur CE prop, ne rien réinitialiser
+        w = getattr(self.e, "work", None)
+        if w and w.get("type") == "harvest":
+            cur_key = self._prop_key(w["i"], w["j"], w["pid"])
+            if cur_key == new_key:
+                # on force juste l'état si besoin et on sort
+                self.e.ia["etat"] = "recolte"
+                return
+
         # Durée de base (s) + accélération par stats (force/dex/endurance)
         base = 2.5
         force = float(self.e.physique.get("force", 5))
