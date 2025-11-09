@@ -11,6 +11,7 @@ from Game.core.assets import Assets
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
+from Game.ui.hud import draw_notifications
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
@@ -65,5 +66,6 @@ class App:
                 self.state.update(dt)
             if hasattr(self.state, "render"):
                 self.state.render(self.screen)
+            draw_notifications(self.screen)
             pygame.display.flip()
         pygame.quit()

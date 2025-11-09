@@ -22,7 +22,7 @@ class Espece:
             "vision_nocturne": 0, "toucher": 1,
         }
         self.mental = {
-            "intelligence": 5, "dexterité": 5,
+            "intelligence": 5, "dexterite": 5,
             "agressivite": 5, "courage": 5, "sociabilite": 5, "independance": 5,
             "empathie": 5, "creativite": 5, "intimidation": 5, 
         }

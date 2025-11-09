@@ -6,6 +6,7 @@ from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
+from Game.ui.hud import add_notification
 
 
 
@@ -117,9 +118,6 @@ class Phase1:
             for e in self.entities:
                 self._ensure_move_runtime(e)
 
-
-    def leave(self): ...
-
     # ---------- INPUT ----------
     def handle_input(self, events):
         for e in events:
@@ -165,6 +163,20 @@ class Phase1:
                     if self.selected and self.selected[0] == "entity":
                         ent = self.selected[1]
                         mx, my = pygame.mouse.get_pos()
+                        hit = self.view.pick_at(mx, my)
+
+                        if hit and hit[0] == "prop" and self._same_prop_target(ent, hit):
+                            return  # on laisse la progression continuer
+
+                        # Sinon, on peut annuler le job précédent et poser le nouvel ordre
+                        if hasattr(ent, "comportement"):
+                            ent.comportement.cancel_work("player_new_order")
+                        else:
+                            if getattr(ent, "work", None):
+                                ent.work = None
+                            ent.ia["etat"] = "idle"
+                            ent.ia["objectif"] = None
+                        # --- FIN NEW ---
 
                         # On vise une tuile de destination
                         hit = self.view.pick_at(mx, my)
@@ -173,12 +185,17 @@ class Phase1:
                             k, p = hit
                             if k == "tile":
                                 target = p  # (i,j)
+                                ent.ia["etat"] = "se_deplace"       # NEW (cohérent)
+                                ent.ia["objectif"] = None           # NEW
                             elif k == "prop":
                                 target = (p[0], p[1])
                                 ent.ia["etat"] = "se_deplace_vers_prop"
                                 ent.ia["objectif"] = hit
                             elif k == "entity":
                                 target = (int(p.x), int(p.y))
+                                ent.ia["etat"] = "se_deplace"       # NEW
+                                ent.ia["objectif"] = None           
+
                         if not target:
                             target = self._fallback_pick_tile(mx, my)
                         if not target:
@@ -236,8 +253,7 @@ class Phase1:
             return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
-
-        # Dans Phase1.update(self, dt), après l'appel à _update_entity_movement(e, dt)
+    
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
@@ -323,14 +339,8 @@ class Phase1:
         
         # Message de sauvegarde
         if self.save_message:
-            hud_font = pygame.font.SysFont("consolas", 18)
-            txt = hud_font.render(self.save_message, True, (240, 255, 240))
-            pad, bg = 10, (0, 0, 0, 170)
-            surf = pygame.Surface((txt.get_width() + 2*pad, txt.get_height() + 2*pad), pygame.SRCALPHA)
-            surf.fill(bg)
-            surf.blit(txt, (pad, pad))
-            screen.blit(surf, (self.screen.get_width() - surf.get_width() - 16,
-                            self.screen.get_height() - surf.get_height() - 16))
+            add_notification(self.save_message)
+            self.save_message = None
 
 
     # ---------- SELECTION MARKER ----------
@@ -492,9 +502,16 @@ class Phase1:
 
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
+        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") == "recolte":
+            if hasattr(ent, "comportement"):
+                ent.comportement.cancel_work("movement_started")
+            else:
+                if getattr(ent, "work", None):
+                    ent.work = None
+                ent.ia["etat"] = "se_deplace"
+                ent.ia["objectif"] = None
         if not getattr(ent, "move_path", None) or not ent.move_path:
-            if ent.ia.get("etat") == "se_deplace_vers_prop":
-                ent.ia["etat"] = "recolte"
+            if ent.ia["etat"] == "se_deplace_vers_prop":
                 # ent.ia["objectif"] est du type ("prop", (i, j, pid))
                 if hasattr(ent, "comportement"):
                     ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
@@ -558,7 +575,7 @@ class Phase1:
     
     def _draw_work_bar(self, screen, ent):
         w = getattr(ent, "work", None)
-        if not w or ent.ia.get("etat") != "recolte":
+        if not w or ent.ia["etat"] != "recolte":
             return
         poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
         if not poly:
@@ -578,6 +595,27 @@ class Phase1:
         screen.blit(s, (bg.x, bg.y))
         # barre
         pygame.draw.rect(screen, (80, 200, 120), fg, border_radius=2)
+    
+    def _same_prop_target(self, ent, hit):
+        if not hit or hit[0] != "prop":
+            return False
+        i, j, pid = hit[1]
+        tgt = (int(i), int(j), str(pid))
+
+        # compare à l'objectif courant (si on est en chemin vers le prop)
+        cur = ent.ia.get("objectif")
+        if cur and cur[0] == "prop":
+            ci, cj, cpid = cur[1]
+            if (int(ci), int(cj), str(cpid)) == tgt:
+                return True
+
+        # compare au job en cours (si déjà en train de récolter)
+        w = getattr(ent, "work", None)
+        if w and w.get("type") == "harvest":
+            if (w["i"], w["j"], str(w["pid"])) == tgt:
+                return True
+        return False
+    
 
 
 

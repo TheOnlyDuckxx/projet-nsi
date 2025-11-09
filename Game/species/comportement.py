@@ -1,6 +1,7 @@
 # Game/species/comportement.py
 import os, json, random
 from Game.core.utils import resource_path
+from Game.ui.hud import add_notification
 
 class Comportement:
     def __init__(self, espece):
@@ -41,7 +42,8 @@ class Comportement:
                 break
         else:
             self.e.carrying.append({"id": item_id, "qty": take})
-        return take
+        return take  # (on retourne combien on a pris)
+
 
     # ---------- Tables de loot par prop ----------
 
@@ -69,20 +71,31 @@ class Comportement:
     # fallback basique
 
     # ---------- API publique ----------
+    def _prop_key(self, i, j, pid):
+        # normalise pour comparer proprement
+        return (int(i), int(j), str(pid))
+
     def recolter_ressource(self, objectif, world):
-        """
-        objectif: ("prop", (i, j, pid))
-        Initialise la tâche de récolte (barre de progression, etc.).
-        """
         if not objectif or objectif[0] != "prop":
             self.e.ia["etat"] = "idle"
             return
 
         i, j, pid = objectif[1]
+        new_key = self._prop_key(i, j, pid)
+
+        # 🔒 Anti-reset : si on travaille déjà sur CE prop, ne rien réinitialiser
+        w = getattr(self.e, "work", None)
+        if w and w.get("type") == "harvest":
+            cur_key = self._prop_key(w["i"], w["j"], w["pid"])
+            if cur_key == new_key:
+                # on force juste l'état si besoin et on sort
+                self.e.ia["etat"] = "recolte"
+                return
+
         # Durée de base (s) + accélération par stats (force/dex/endurance)
         base = 2.5
         force = float(self.e.physique.get("force", 5))
-        dex   = float(self.e.mental.get("dexterité", 5))
+        dex   = float(self.e.mental.get("dexterite", 5))
         endu  = float(self.e.physique.get("endurance", 5))
 
         # facteur ~1.0 à stats moyennes; borné pour éviter les extrêmes
@@ -98,6 +111,24 @@ class Comportement:
             "drops": self._drops_for_prop(pid),
         }
         self.e.ia["etat"] = "recolte"
+    
+    def cancel_work(self, reason: str | None = None):
+        """
+        Annule immédiatement toute récolte en cours : stoppe la barre,
+        nettoie l'objectif, et remet l'IA au neutre.
+        """
+        # stoppe la progression + barre
+        if getattr(self.e, "work", None):
+            self.e.work = None
+
+        # si on était en "recolte" ou en chemin vers un prop, repasse idle
+        etat = self.e.ia.get("etat")
+        if etat in ("recolte", "se_deplace_vers_prop"):
+            self.e.ia["etat"] = "idle"
+
+        # on oublie l'objectif lié
+        self.e.ia["objectif"] = None
+
 
     def update(self, dt: float, world):
         """
@@ -116,8 +147,31 @@ class Comportement:
             return
 
         # Récolte terminée → ajoute les items (sous limite de poids)
+        taken_total = 0
         for item_id, qty in w["drops"]:
-            self._add_to_inventory(item_id, int(qty))
+            took = self._add_to_inventory(item_id, int(qty))
+            taken_total += took
+            leftover = int(qty) - int(took)
+            if leftover > 0:
+                # TODO: à adapter à ton système d'objets au sol
+                # ex: world.drop_item(w["i"], w["j"], item_id, leftover)
+                pass
+        if taken_total <= 0:
+            add_notification(f"{self.e.nom} : inventaire plein !")
+            self.e.work = None
+            self.e.ia["etat"] = "idle"
+            return
+
+        try:
+            if world and getattr(world, "overlay", None):
+                if 0 <= w["j"] < len(world.overlay) and 0 <= w["i"] < len(world.overlay[0]):
+                    world.overlay[w["j"]][w["i"]] = 0
+        except Exception:
+            pass
+
+        self.e.work = None
+        self.e.ia["etat"] = "idle"
+
 
         # Supprime le prop de la carte
         try:
