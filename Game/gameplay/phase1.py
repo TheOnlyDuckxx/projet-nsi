@@ -6,6 +6,7 @@ from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
+from Game.ui.hud import add_notification
 
 
 
@@ -117,9 +118,6 @@ class Phase1:
             for e in self.entities:
                 self._ensure_move_runtime(e)
 
-
-    def leave(self): ...
-
     # ---------- INPUT ----------
     def handle_input(self, events):
         for e in events:
@@ -167,7 +165,6 @@ class Phase1:
                         mx, my = pygame.mouse.get_pos()
                         hit = self.view.pick_at(mx, my)
 
-                        # 🛑 Si c'est exactement le même prop → ignorer (pas d'annulation, pas de reset)
                         if hit and hit[0] == "prop" and self._same_prop_target(ent, hit):
                             return  # on laisse la progression continuer
 
@@ -256,8 +253,7 @@ class Phase1:
             return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
-
-        # Dans Phase1.update(self, dt), après l'appel à _update_entity_movement(e, dt)
+    
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
@@ -338,14 +334,8 @@ class Phase1:
         if not self.paused and self.show_info:
             self._draw_info_panel(screen)
         if self.save_message:
-            hud_font = pygame.font.SysFont("consolas", 18)
-            txt = hud_font.render(self.save_message, True, (240, 255, 240))
-            pad, bg = 10, (0, 0, 0, 170)
-            surf = pygame.Surface((txt.get_width() + 2*pad, txt.get_height() + 2*pad), pygame.SRCALPHA)
-            surf.fill(bg)
-            surf.blit(txt, (pad, pad))
-            screen.blit(surf, (self.screen.get_width() - surf.get_width() - 16,
-                            self.screen.get_height() - surf.get_height() - 16))
+            add_notification(self.save_message)
+            self.save_message = None
 
 
     # ---------- SELECTION MARKER ----------

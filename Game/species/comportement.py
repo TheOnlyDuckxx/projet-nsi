@@ -1,6 +1,7 @@
 # Game/species/comportement.py
 import os, json, random
 from Game.core.utils import resource_path
+from Game.ui.hud import add_notification
 
 class Comportement:
     def __init__(self, espece):
@@ -41,7 +42,8 @@ class Comportement:
                 break
         else:
             self.e.carrying.append({"id": item_id, "qty": take})
-        return take
+        return take  # (on retourne combien on a pris)
+
 
     # ---------- Tables de loot par prop ----------
 
@@ -93,7 +95,7 @@ class Comportement:
         # Durée de base (s) + accélération par stats (force/dex/endurance)
         base = 2.5
         force = float(self.e.physique.get("force", 5))
-        dex   = float(self.e.mental.get("dexterité", 5))
+        dex   = float(self.e.mental.get("dexterite", 5))
         endu  = float(self.e.physique.get("endurance", 5))
 
         # facteur ~1.0 à stats moyennes; borné pour éviter les extrêmes
@@ -145,8 +147,31 @@ class Comportement:
             return
 
         # Récolte terminée → ajoute les items (sous limite de poids)
+        taken_total = 0
         for item_id, qty in w["drops"]:
-            self._add_to_inventory(item_id, int(qty))
+            took = self._add_to_inventory(item_id, int(qty))
+            taken_total += took
+            leftover = int(qty) - int(took)
+            if leftover > 0:
+                # TODO: à adapter à ton système d'objets au sol
+                # ex: world.drop_item(w["i"], w["j"], item_id, leftover)
+                pass
+        if taken_total <= 0:
+            add_notification(f"{self.e.nom} : inventaire plein !")
+            self.e.work = None
+            self.e.ia["etat"] = "idle"
+            return
+
+        try:
+            if world and getattr(world, "overlay", None):
+                if 0 <= w["j"] < len(world.overlay) and 0 <= w["i"] < len(world.overlay[0]):
+                    world.overlay[w["j"]][w["i"]] = 0
+        except Exception:
+            pass
+
+        self.e.work = None
+        self.e.ia["etat"] = "idle"
+
 
         # Supprime le prop de la carte
         try:
