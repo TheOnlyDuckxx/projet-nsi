@@ -22,9 +22,11 @@ class Comportement:
 
     def _inventory_weight(self) -> float:
         total = 0.0
-        for stack in self.e.carrying:  # [{'id':..., 'qty':...}]
-            total += self._item_weight(stack["id"]) * stack["qty"]
+        for stack in self.e.carrying:
+            qty = stack.get("quantity", stack.get("qty", 0))
+            total += self._item_weight(stack["id"]) * qty
         return total
+
 
     def _add_to_inventory(self, item_id: str, qty: int) -> int:
         if qty <= 0:
@@ -36,13 +38,26 @@ class Comportement:
         take = max(0, min(qty, can_take))
         if take == 0:
             return 0
+
+        # Infos tirées de la base items.json
+        meta = self.items_db.get(item_id, {})
+        name = meta.get("nom", item_id)
+        type_ = meta.get("type", "resource")
+        weight = float(meta.get("poids", 1.0))
+
         for stack in self.e.carrying:
             if stack["id"] == item_id:
-                stack["qty"] += take
+                stack["quantity"] += take
                 break
         else:
-            self.e.carrying.append({"id": item_id, "qty": take})
-        return take  # (on retourne combien on a pris)
+            self.e.carrying.append({
+                "id": item_id,
+                "name": name,
+                "type": type_,
+                "weight": weight,
+                "quantity": take,
+            })
+        return take
 
 
     # ---------- Tables de loot par prop ----------

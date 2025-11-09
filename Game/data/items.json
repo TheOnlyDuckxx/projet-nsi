@@ -1,10 +1,37 @@
 {
     "example": {
+        "name": "Exemple",
         "description": "Lorem ipsum",
         "sprite": "example",
-        "poid": 0.9
+        "poids": 0.9,
+        "type": "misc"
     },
-    "wood":    { "description": "Bois brut",   "sprite": "wood",    "poids": 0.5 },
-    "stone":   { "description": "Pierre",      "sprite": "stone",   "poids": 1.0 },
-    "berries": { "description": "Baies",       "sprite": "berries", "poids": 0.2 }
+    "wood": {
+        "name": "Bois brut",
+        "description": "Morceau de bois utilisable pour le feu ou la construction.",
+        "sprite": "wood",
+        "poids": 0.5,
+        "type": "resource"
+    },
+    "stone": {
+        "name": "Pierre",
+        "description": "Roche commune utilisée pour les outils primitifs.",
+        "sprite": "stone",
+        "poids": 1.0,
+        "type": "resource"
+    },
+    "berries": {
+        "name": "Baies",
+        "description": "Petits fruits comestibles utiles pour se nourrir.",
+        "sprite": "berries",
+        "poids": 0.2,
+        "type": "food"
+    },
+    "flint": {
+        "name": "Silex",
+        "description": "Pierre dure utilisée pour fabriquer des outils.",
+        "sprite": "flint",
+        "poids": 0.8,
+        "type": "resource"
+    }
 }
