@@ -43,14 +43,24 @@ ProgressCb = Optional[Callable[[float, str], None]]
 # On les utilise si disponibles, sinon on a un fallback interne.
 from Game.world.tiles import get_tile_id
 
+
 def get_prop_id(name: str) -> int:
     _MAP = {
         "tree_2": 10,
         "tree_base": 11,
         "tree_dead": 12,
         "rock": 13,
+        "palm": 14,
+        "cactus": 15,
+        "bush": 16,
+        "berry_bush": 17,
+        "reeds": 18,       # roseaux
+        "driftwood": 19,   # bois flotté
+        "flower": 20,
+        "stump": 21,       # souche
+        "log": 22,         # tronc au sol
+        "boulder": 23,     # gros rocher
     }
-    # Si le nom n’est pas reconnu → renvoie une variante générique “tree”
     return _MAP.get(name, _MAP["tree_2"])
 
 
@@ -186,8 +196,18 @@ def fbm2d(x: float, y: float, octaves: int, seed: int) -> float:
 
 # --------- Générateur principal (île) ---------
 class WorldGenerator:
-    def __init__(self, tiles_levels: int = 6):
+    def __init__(self,
+                 tiles_levels: int = 6,
+                 island_margin_frac: float = 0.12,   # marge océan par rapport au plus petit côté (8% par défaut)
+                 coast_band_tiles: int = 8,         # largeur de la bande où on "déforme" la côte
+                 beach_width_tiles: int = 2,         # épaisseur de la plage (levels==1)
+                 coast_noise_amp: float = 0.45):     # amplitude de la rugosité côtière
         self.tiles_levels = tiles_levels
+        self.island_margin_frac = max(0.0, min(0.4, island_margin_frac))
+        self.coast_band_tiles = max(2, int(coast_band_tiles))
+        self.beach_width_tiles = max(1, int(beach_width_tiles))
+        self.coast_noise_amp = float(coast_noise_amp)
+
 
     def generate_island(self, params: WorldParams, rng_seed: Optional[int]=None,
                         progress: ProgressCb=None) -> WorldData:
@@ -210,6 +230,7 @@ class WorldGenerator:
         w_biome   = 0.20
         w_props   = 0.08
         w_spawn   = 0.02
+        
 
         acc = 0.0
         report(acc, "Initialisation…")
@@ -224,43 +245,98 @@ class WorldGenerator:
             report(acc + w_height * ((y+1)/H), "Génération du terrain…")
         acc += w_height
 
-        # [2] Masque île
+        # [2] Île ronde avec rivage irrégulier (pas d'îlots, pas de terre aux bords)
         cx, cy = (W - 1) * 0.5, (H - 1) * 0.5
-        maxd = math.hypot(cx, cy) or 1.0
-        atmo = params.atmosphere_density
-        falloff_strength = 0.85 + (1.2 - atmo) * 0.25
-        height_island = [[0.0]*W for _ in range(H)]
+        min_dim = min(W, H)
+
+        # marge océan -> garantit un anneau d'eau avant les bords
+        margin = max(3, int(self.island_margin_frac * min_dim))
+        R0 = (min_dim * 0.5) - margin                 # rayon "cible" du disque
+        coast_band = self.coast_band_tiles            # largeur de la bande où on bruit le rivage
+        beach_w = self.beach_width_tiles              # plage (levels==1)
+
+        # bruit utilisé seulement pour la bande côtière (fréquence adaptée à la taille)
+        coast_scale = 0.06 * (256.0 / max(128.0, min_dim))  # + petit monde => bruit + large
+        coast_seed = final_seed + 901
+
+        land_h = [[0.0]*W for _ in range(H)]     # hauteur de la terre (0..1)
+        levels  = [[0]*W for _ in range(H)]      # 0: eau, 1: plage, >=2: intérieur
+
         for y in range(H):
             for x in range(W):
-                d = math.hypot(x - cx, y - cy) / maxd
-                f = smoothstep(d ** falloff_strength)
-                h = clamp01(height_raw[y][x] - f*0.65)
-                height_island[y][x] = h
-            report(acc + w_island * ((y+1)/H), "Découpage de l’île…")
+                dx, dy = x - cx, y - cy
+                d = math.hypot(dx, dy)
+                rd = d - R0  # négatif = à l'intérieur du cercle, positif = à l'extérieur
+
+                if rd > coast_band:
+                    # Au delà de la bande -> eau forcée (océan)
+                    levels[y][x] = 0
+                    land_h[y][x] = 0.0
+                    continue
+                if rd < -coast_band:
+                    # Profond à l'intérieur du disque -> terre forcée
+                    # hauteur douce qui croît vers le centre + un soupçon de bruit
+                    core = clamp01(1.0 - (d / max(R0 - coast_band, 1.0))**1.15)
+                    n = fbm2d(x*0.02, y*0.02, octaves=3, seed=final_seed+77)  # micro relief
+                    h = clamp01(core + 0.12 * n)
+                    land_h[y][x] = h
+                    # plage si proche du rivage
+                    if abs(rd) <= beach_w:
+                        levels[y][x] = 1
+                    else:
+                        inner_levels = max(0, self.tiles_levels - 2)  # réserve 0 et 1
+                        levels[y][x] = 2 + int(round(h * inner_levels))
+                    continue
+
+                n01 = (fbm2d(x*coast_scale, y*coast_scale, octaves=3, seed=coast_seed) + 1.0) * 0.5  # 0..1
+                # amplitude de retrait de côte en tuiles:
+                shrink = self.coast_noise_amp * float(coast_band) * n01
+                R_eff = R0 - shrink
+
+                if d > R_eff:
+                    # Océan (à l'extérieur du rayon rétréci)
+                    levels[y][x] = 0
+                    land_h[y][x] = 0.0
+                else:
+                    # Terre (à l'intérieur)
+                    # plage si on est dans l'anneau terminal
+                    if (R_eff - beach_w) <= d <= R_eff:
+                        levels[y][x] = 1  # plage
+                        land_h[y][x] = 0.12  # petite hauteur symbolique
+                    else:
+                        # hauteur douce (monte vers le centre) + micro relief
+                        core = clamp01(1.0 - (d / max(R0 - coast_band, 1.0))**1.15)
+                        n2 = fbm2d(x*0.02, y*0.02, octaves=3, seed=final_seed+77)
+                        h = clamp01(core + 0.12 * n2)
+                        land_h[y][x] = h
+                        inner_levels = max(0, self.tiles_levels - 2)  # réserve 0 et 1
+                        levels[y][x] = 2 + int(round(h * inner_levels))
+
+            report(acc + w_island * ((y+1)/H), "Génération île ronde…")
         acc += w_island
 
-        # [3] Niveau de la mer + renormalisation
-        sea_level = self._sea_level_from_percent(height_island, params.Niveau_des_océans)
-        report(acc + w_sea*0.5, "Calcul du niveau de la mer…")
-        land_h = [[0.0]*W for _ in range(H)]
-        for y in range(H):
-            for x in range(W):
-                land_h[y][x] = max(0.0, height_island[y][x] - sea_level)
-        maxh = max((v for row in land_h for v in row), default=1e-6)
-        if maxh < 1e-6: maxh = 1e-6
-        for y in range(H):
-            for x in range(W):
-                land_h[y][x] /= maxh
-        report(acc + w_sea, "Niveau de la mer…")
+        # (option sécurité) supprimer tout petit morceau de terre isolé:
+        self._keep_largest_landmass(levels)
+        report(acc + 0.01, "Nettoyage des fragments…")
+
+        # [3] Niveau des océans (stat) — on le CALCULE mais on ne l'utilise plus pour noyer la terre
+        # (servira pour lacs/rivières plus tard)
+        sea_level = float(params.Niveau_des_océans) / 100.0
+        report(acc + w_sea, "Niveau des océans (stat)…")
         acc += w_sea
 
         # [4] Quantification en étages
-        levels = [[0]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
-                levels[y][x] = self._quantize(land_h[y][x], self.tiles_levels)
-            report(acc + w_quant * ((y+1)/H), "Étagement du relief…")
-        acc += w_quant
+                if levels[y][x] == 0:
+                    # on laisse l'océan tel quel
+                    continue
+                if levels[y][x] == 1:
+                    # on garde la plage décidée en [2]
+                    continue
+                # intérieur: étagement 2..N en fonction de land_h
+                inner_levels = max(0, self.tiles_levels - 2)
+                levels[y][x] = 2 + int(round(clamp01(land_h[y][x]) * inner_levels))
 
         # [5] Humidité
         moist = [[0.0]*W for _ in range(H)]
@@ -310,48 +386,96 @@ class WorldGenerator:
                     else:
                         ground_id[y][x] = get_tile_id("water_deep")
 
-        # [7] Props
+        # [7] Props (variété + règles par biome + bord d’eau)
         overlay = [[None]*W for _ in range(H)]
         res_map = {"Faible": 0.5, "Normale": 1.0, "Riche": 1.5}
         density_mul = res_map.get(params.Ressources.capitalize(), 1.0) * 1.4
 
-        # Définition des variantes pondérées
-        tree_variants = {
-            "forest": [("tree_2", 0.6), ("tree_dead", 0.2), ("tree_base", 0.2)],
-            "rainforest": [("tree_2", 0.5), ("tree_dead", 0.3),("tree_base", 0.2)],
-            "taiga": [("tree_2", 0.3), ("tree_dead", 0.7)],
-            "grassland": [("tree_2", 0.8), ("tree_base", 0.2)],
-        }
+        # étiquette chaud/froid
+        temp_map = {"Glaciaire": "cold","Froid":"cold","Tempéré":"temperate","Tropical":"hot","Aride":"hot"}
+        temp_label = temp_map.get(params.Climat.capitalize(), "temperate")
+        is_hot = (temp_label == "hot")
 
-        rock_variants = {
-            "rock": [("rock", 1.0)],
-            "beach": [("rock", 0.6)],
-            "desert": [("rock", 0.4)],
-        }
+        rng_cluster_seed = final_seed + 424242
+        cluster_scale = 0.07  # plus petit -> taches plus grandes
 
-        prob_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08,"steppe":0.04}
-        prob_rock = {"rock":0.12,"beach":0.02,"desert":0.03,"taiga":0.03}
+        def cluster_mask(x, y):
+            c = fbm2d(x*cluster_scale, y*cluster_scale, octaves=2, seed=rng_cluster_seed)
+            return (c + 1.0) * 0.5  # 0..1
 
         for y in range(1, H-1):
             for x in range(1, W-1):
-                if levels[y][x] <= 0: 
+                if levels[y][x] <= 0:
                     continue
                 b = biome[y][x]
-                tprob = prob_tree.get(b, 0.0) * density_mul
-                rprob = prob_rock.get(b, 0.0) * density_mul
+                near_water = (self._distance_to_water(x, y, levels) <= 2)
+                cm = cluster_mask(x, y)
 
-                # Arbres
-                if rng.random() < tprob and b in tree_variants:
-                    name = self._weighted_choice(tree_variants[b], rng)
-                    overlay[y][x] = get_prop_id(name)
+                # base: petites chances de fleurs/buissons partout hors désert
+                if b not in ("desert", "rock") and rng.random() < 0.02 * density_mul * (0.5 + cm):
+                    overlay[y][x] = get_prop_id("flower")
                     continue
-                # Rochers
-                if rng.random() < rprob and b in rock_variants:
-                    name = self._weighted_choice(rock_variants[b], rng)
-                    overlay[y][x] = get_prop_id(name)
+                if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
+                    overlay[y][x] = get_prop_id("bush")
+                    continue
+
+                # forêts/taïga/grassland : arbres & souches/troncs
+                if b in ("forest", "rainforest", "taiga", "grassland"):
+                    # arbres
+                    p_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08}.get(b,0.0)
+                    p_tree *= density_mul * (0.6 + 0.8*cm)
+                    if rng.random() < p_tree:
+                        if b == "taiga":
+                            name = "tree_dead" if rng.random() < 0.6 else "tree_2"
+                        elif b == "rainforest":
+                            name = "tree_2" if rng.random() < 0.7 else "tree_base"
+                        else:
+                            name = "tree_2"
+                        overlay[y][x] = get_prop_id(name)
+                        continue
+                    # souches / troncs au sol (clairsemé)
+                    if rng.random() < 0.015 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("stump" if rng.random() < 0.5 else "log")
+                        continue
+
+                # plage : palmiers (si climat chaud), rochers légers, bois flotté, roseaux près de l’eau
+                if b == "beach":
+                    if is_hot and rng.random() < 0.06 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("palm")
+                        continue
+                    if near_water and rng.random() < 0.04 * density_mul:
+                        overlay[y][x] = get_prop_id("driftwood")
+                        continue
+                    if near_water and rng.random() < 0.05 * density_mul:
+                        overlay[y][x] = get_prop_id("reeds")
+                        continue
+                    if rng.random() < 0.02 * density_mul:
+                        overlay[y][x] = get_prop_id("rock")
+                        continue
+
+                # désert : cactus, blocs, quelques rochers
+                if b == "desert":
+                    if rng.random() < 0.06 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("cactus")
+                        continue
+                    if rng.random() < 0.02 * density_mul:
+                        overlay[y][x] = get_prop_id("boulder")
+                        continue
+                    if rng.random() < 0.015 * density_mul:
+                        overlay[y][x] = get_prop_id("rock")
+                        continue
+
+                # zones rocheuses/taiga : rochers/boulders
+                if b in ("rock", "taiga") and rng.random() < 0.03 * density_mul * (0.3 + cm):
+                    overlay[y][x] = get_prop_id("rock" if rng.random() < 0.7 else "boulder")
+                    continue
+
             report(acc + w_props * ((y+1)/H), "Placement des éléments…")
+
+        # éviter la pollution visuelle en bord de côte
         self._sparsify_coast(overlay, levels)
         acc += w_props
+
 
 
         # [8] Spawn
@@ -471,4 +595,51 @@ class WorldGenerator:
                         if levels[ny][nx] > 0:
                             return r
         return 999
- 
+    
+    def _distance_to_water(self, x, y, levels):
+        H, W = len(levels), len(levels[0])
+        for r in range(1, 6):
+            for dy in range(-r, r+1):
+                for dx in range(-r, r+1):
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < W and 0 <= ny < H:
+                        if levels[ny][nx] == 0:  # eau
+                            return r
+        return 999
+    
+
+    def _keep_largest_landmass(self, levels: List[List[int]]) -> None:
+        H = len(levels)
+        W = len(levels[0]) if H else 0
+        seen = [[False]*W for _ in range(H)]
+        comps = []
+        from collections import deque
+
+        def bfs(sx, sy):
+            q = deque([(sx, sy)])
+            seen[sy][sx] = True
+            cells = [(sx, sy)]
+            while q:
+                x, y = q.popleft()
+                for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < W and 0 <= ny < H and not seen[ny][nx]:
+                        if levels[ny][nx] > 0:
+                            seen[ny][nx] = True
+                            q.append((nx, ny))
+                            cells.append((nx, ny))
+            return cells
+
+        for y in range(H):
+            for x in range(W):
+                if levels[y][x] > 0 and not seen[y][x]:
+                    comps.append(bfs(x, y))
+
+        if not comps:
+            return
+        main = max(comps, key=len)
+        main_set = set(main)
+        for y in range(H):
+            for x in range(W):
+                if levels[y][x] > 0 and (x, y) not in main_set:
+                    levels[y][x] = 0  # redevient océan

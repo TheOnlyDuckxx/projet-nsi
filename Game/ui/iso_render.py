@@ -13,8 +13,18 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         11: "prop_tree_base",
         12: "prop_tree_dead",
         13: "prop_rock",
+        #14: "prop_palm",
+        #15: "prop_cactus",
+        16: "prop_bush",
+        #17: "prop_berry_bush",
+        #18: "prop_reeds",
+        #19: "prop_driftwood",
+        #20: "prop_flower",
+        #21: "prop_stump",
+        #22: "prop_log",
+        #23: "prop_boulder",
     }
-    # Si l’ID est inconnu, retourne “prop_tree” comme valeur par défaut
+    
     return mapping.get(pid, "prop_tree_2")
 
 class IsoMapView:
@@ -33,7 +43,7 @@ class IsoMapView:
         self.cam_x = 0
         self.cam_y = 0
         self.zoom = 1.5
-        self.min_zoom = 1.5
+        self.min_zoom = 0.3
         self.max_zoom = 5.0
 
         # métriques écran (fallback si display pas encore créé)

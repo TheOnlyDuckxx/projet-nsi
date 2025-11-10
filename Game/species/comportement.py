@@ -75,6 +75,7 @@ class Comportement:
                 {"id": "stone", "min": 1, "max": 3, "p": 1.0},   # toujours
                 {"id": "flint", "min": 1, "max": 1, "p": 0.15}   # 15% de chance
             ]
+            
         }
 
         conf = tables.get(key, [])

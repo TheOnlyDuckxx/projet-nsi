@@ -18,7 +18,7 @@ class Phase1:
         self.paused = False
 
         self.view = IsoMapView(self.assets, self.screen.get_size())
-        self.gen = WorldGenerator(tiles_levels=6)
+        self.gen = WorldGenerator(tiles_levels=6,island_margin_frac=0.10)
         self.params = None
         self.world = None
 
