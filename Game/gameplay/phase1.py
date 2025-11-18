@@ -7,6 +7,7 @@ from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
 from Game.ui.hud import add_notification,draw_info_panel,draw_inspection_panel,draw_work_bar
+from Game.world.fog_of_war import FogOfWar
 
 
 
@@ -21,6 +22,7 @@ class Phase1:
         self.gen = WorldGenerator(tiles_levels=6,island_margin_frac=0.10)
         self.params = None
         self.world = None
+        self.fog=None
 
         # entités
         self.joueur: Optional[Espece] = None
@@ -105,6 +107,8 @@ class Phase1:
 
         self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
         self.view.set_world(self.world)
+        self.fog = FogOfWar(self.world.width, self.world.height)
+        self.view.fog = self.fog
 
         try:
             sx, sy = self.world.spawn
@@ -253,6 +257,19 @@ class Phase1:
             return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+
+        def get_radius(ent):
+            vision = ent.sens.get("vision", 5)
+            return max(2, int(3 + vision * 0.7))
+
+        observers = [self.joueur]  # pour Phase1, il n’y a qu’un seul individu
+
+        if self.fog:
+            self.fog.recompute(observers, get_radius)
+        else :
+            self.fog = FogOfWar(self.world.width, self.world.height)
+        self.view.fog = self.fog
+
     
         for e in self.entities:
             self._ensure_move_runtime(e)

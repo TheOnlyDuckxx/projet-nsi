@@ -13,11 +13,11 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         11: "prop_tree_base",
         12: "prop_tree_dead",
         13: "prop_rock",
-        #14: "prop_palm",
+        14: "prop_palm",
         #15: "prop_cactus",
         16: "prop_bush",
         #17: "prop_berry_bush",
-        #18: "prop_reeds",
+        18: "prop_reeds",
         #19: "prop_driftwood",
         #20: "prop_flower",
         #21: "prop_stump",
@@ -43,7 +43,7 @@ class IsoMapView:
         self.cam_x = 0
         self.cam_y = 0
         self.zoom = 1.5
-        self.min_zoom = 0.3
+        self.min_zoom = 1.0
         self.max_zoom = 5.0
 
         # métriques écran (fallback si display pas encore créé)
@@ -62,6 +62,8 @@ class IsoMapView:
 
         self._ground_cache = {}
         self._prop_cache   = {}
+        self._gray_ground_cache = {}
+        self._gray_prop_cache = {}
 
         self.pan_keys_speed = 600
         self.mouse_pan_active = False
@@ -75,6 +77,8 @@ class IsoMapView:
         self._hit_stack = []      # pile (kind, payload, rect, mask) pour le picking
         self._mask_cache = {}     # cache de pygame.Mask par Surface (id)
         self._diamond_mask = None # mask losange pour la surface des tuiles
+       
+
 
 
         # Auto-calibrage depuis un sprite "sol" de référence
@@ -95,6 +99,29 @@ class IsoMapView:
         except Exception:
             # garde les defaults si l'image n'existe pas
             pass
+    
+    def _make_gray(self, surf):
+        # convertir en array RGB
+        arr = pygame.surfarray.pixels3d(surf).copy()
+
+        # gris foncé (40% du niveau de luminosité)
+        avg = ((arr[:,:,0] * 0.3 + arr[:,:,1] * 0.59 + arr[:,:,2] * 0.11) * 0.4).astype(arr.dtype)
+
+        arr[:,:,0] = avg
+        arr[:,:,1] = avg
+        arr[:,:,2] = avg
+
+        # créer surface et réinjecter alpha
+        gray = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        pygame.surfarray.blit_array(gray, arr)
+
+        # récupérer alpha original
+        alpha = pygame.surfarray.pixels_alpha(surf)
+        pygame.surfarray.pixels_alpha(gray)[:] = alpha
+
+        return gray
+
+
 
     # ---------- State ----------
     def set_world(self, world) -> None:
@@ -294,6 +321,15 @@ class IsoMapView:
                 if not (0 <= i < W and 0 <= j < H):
                     continue
 
+                visible = (self.fog.visible[j][i] if hasattr(self, "fog") and self.fog else True)
+                explored = (self.fog.explored[j][i] if hasattr(self, "fog") and self.fog else True)
+
+                if not explored:
+                    continue  # jamais vu → noir total
+
+                
+                
+
                 z = self.world.levels[j][i] if self.world.levels else 0
                 sx, sy = self._world_to_screen(i, j, z, dx, dy, wall_h)
 
@@ -301,8 +337,11 @@ class IsoMapView:
                     continue
 
                 # sol
+                # sol
+                gray = (not visible)
                 gid = self.world.ground_id[j][i]
-                gimg = self._get_scaled_ground(gid)
+                gimg = self._get_scaled_ground(gid, gray=gray)
+                
                 if gimg:
                     screen.blit(gimg, (sx - gimg.get_width() // 2, sy - gimg.get_height() + dy * 2))
                 
@@ -325,7 +364,8 @@ class IsoMapView:
                 # --- PROP DE LA TUILE ---
                 pid = self.world.overlay[j][i]
                 if pid:
-                    pimg = self._get_scaled_prop(pid)
+                    gray = (not visible)
+                    pimg = self._get_scaled_prop(pid, gray=gray)
                     if pimg:
                         surface_y = sy - (gimg.get_height() - dy * 2)
                         psx = sx - pimg.get_width() // 2
@@ -386,30 +426,48 @@ class IsoMapView:
     def _zoom_key(self) -> int:
         return int(round(self.zoom * 100))
 
-    def _get_scaled_ground(self, gid: int) -> pygame.Surface:
-        key = (gid, self._zoom_key())
-        surf = self._ground_cache.get(key)
-        if surf is not None: return surf
+   
+    def _get_scaled_ground(self, gid: int, gray=False):
+        key = (gid, self._zoom_key(), gray)
+        cache = self._gray_ground_cache if gray else self._ground_cache
+
+        surf = cache.get(key)
+        if surf:
+            return surf
+
         name = get_ground_sprite_name(gid)
         base = self.assets.get_image(name)
         scale = (int(base.get_width()*self.zoom), int(base.get_height()*self.zoom))
         surf = pygame.transform.scale(base, scale).convert_alpha()
-        self._ground_cache[key] = surf
+
+        if gray:
+            surf = self._make_gray(surf)
+
+        cache[key] = surf
         return surf
 
-    def _get_scaled_prop(self, pid: int) -> Optional[pygame.Surface]:
-        key = (pid, self._zoom_key())
-        surf = self._prop_cache.get(key)
+
+
+    def _get_scaled_prop(self, pid: int, gray=False) -> Optional[pygame.Surface]:
+        key = (pid, self._zoom_key(), gray)
+        cache = self._gray_prop_cache if gray else self._prop_cache
+
+        surf = cache.get(key)
         if surf is not None:
             return surf
+
         name = get_prop_sprite_name(pid)
-        
         base = self.assets.get_image(name)
-        
+
         scale = (int(base.get_width() * self.zoom), int(base.get_height() * self.zoom))
         surf = pygame.transform.scale(base, scale).convert_alpha()
-        self._prop_cache[key] = surf
+
+        if gray:
+            surf = self._make_gray(surf)
+
+        cache[key] = surf
         return surf
+
 
     def pick_tile_at(self, sx: int, sy: int):
         """

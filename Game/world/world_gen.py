@@ -37,6 +37,7 @@ from typing import Optional, Tuple, List, Dict, Any
 import json, os, random, math, hashlib, struct
 from typing import Callable
 
+
 # Type du callback: progress(fraction: float, label: str)
 ProgressCb = Optional[Callable[[float, str], None]]
 # --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
@@ -105,6 +106,7 @@ class WorldData:
     biome:    List[List[str]]          # nom de biome par case
     overlay:  List[List[Optional[int]]]# props (arbres, rochers…)
     spawn:    Tuple[int, int]          # (x, y)
+ 
 
 
 # --------- Presets ---------
@@ -337,6 +339,15 @@ class WorldGenerator:
                 # intérieur: étagement 2..N en fonction de land_h
                 inner_levels = max(0, self.tiles_levels - 2)
                 levels[y][x] = 2 + int(round(clamp01(land_h[y][x]) * inner_levels))
+        
+        # [4.5] Rivières & lacs internes (eau douce)
+        fresh_type = [[0]*W for _ in range(H)]  # 0=aucun, 1=rivière, 2=lac
+
+        # sources en altitude
+        sources = self._pick_river_sources(levels, land_h, rng)
+        for sx, sy in sources:
+            self._carve_river_path(sx, sy, cx, cy, levels, land_h, fresh_type, rng)
+
 
         # [5] Humidité
         moist = [[0.0]*W for _ in range(H)]
@@ -363,7 +374,11 @@ class WorldGenerator:
         ground_id = [[get_tile_id("ocean")]*W for _ in range(H)]
         for y in range(H):
             for x in range(W):
-                if levels[y][x] <= 0:
+                if fresh_type[y][x] == 1:
+                    biome[y][x] = "river"; ground_id[y][x] = get_tile_id("river")
+                elif fresh_type[y][x] == 2:
+                    biome[y][x] = "lake";  ground_id[y][x] = get_tile_id("lake")
+                elif levels[y][x] <= 0:
                     biome[y][x] = "ocean"; ground_id[y][x] = get_tile_id("ocean")
                 elif levels[y][x] == 1:
                     biome[y][x] = "beach"; ground_id[y][x] = get_tile_id("beach")
@@ -371,20 +386,19 @@ class WorldGenerator:
                     b = self._choose_biome(land_h[y][x], moist[y][x], temp_global)
                     biome[y][x] = b
                     ground_id[y][x] = get_tile_id(self._biome_to_ground(b))
+
+
             report(acc + w_biome * ((y+1)/H), "Attribution des biomes…")
         acc += w_biome
 
         for y in range(H):
             for x in range(W):
                 if biome[y][x] == "ocean":
-                    # distance à la côte
                     d = self._distance_to_land(x, y, levels)
-                    if d < 2:
-                        ground_id[y][x] = get_tile_id("water_shallow")
-                    elif d < 5:
-                        ground_id[y][x] = get_tile_id("water")
-                    else:
-                        ground_id[y][x] = get_tile_id("water_deep")
+                    if d < 2:   ground_id[y][x] = get_tile_id("water_shallow")
+                    elif d < 5: ground_id[y][x] = get_tile_id("water")
+                    else:       ground_id[y][x] = get_tile_id("water_deep")
+
 
         # [7] Props (variété + règles par biome + bord d’eau)
         overlay = [[None]*W for _ in range(H)]
@@ -410,6 +424,15 @@ class WorldGenerator:
                 b = biome[y][x]
                 near_water = (self._distance_to_water(x, y, levels) <= 2)
                 cm = cluster_mask(x, y)
+                
+                near_fresh = (self._distance_to_freshwater(x, y, fresh_type) <= 2)
+                if near_fresh and rng.random() < 0.06 * density_mul:
+                    overlay[y][x] = get_prop_id("reeds")
+                    continue
+
+                if fresh_type[y][x] > 0:   # rivière/lac
+                    continue
+
 
                 # base: petites chances de fleurs/buissons partout hors désert
                 if b not in ("desert", "rock") and rng.random() < 0.02 * density_mul * (0.5 + cm):
@@ -643,3 +666,134 @@ class WorldGenerator:
             for x in range(W):
                 if levels[y][x] > 0 and (x, y) not in main_set:
                     levels[y][x] = 0  # redevient océan
+
+    def _neighbors8(self, x, y, W, H):
+        for dy in (-1,0,1):
+            for dx in (-1,0,1):
+                if dx==0 and dy==0: continue
+                nx, ny = x+dx, y+dy
+                if 0 <= nx < W and 0 <= ny < H:
+                    yield nx, ny
+
+    def _carve_disc(self, cx, cy, r, levels, land_h, fresh_type):
+        H, W = len(levels), len(levels[0])
+        rr = r*r
+        for y in range(max(0, cy-r), min(H, cy+r+1)):
+            for x in range(max(0, cx-r), min(W, cx+r+1)):
+                if (x-cx)*(x-cx) + (y-cy)*(y-cy) <= rr:
+                    fresh_type[y][x] = 2
+
+
+    def _carve_river_path(self, sx, sy, cx, cy, levels, land_h, fresh_type, rng):
+        H, W = len(levels), len(levels[0])
+        x, y = sx, sy
+        visited = set()
+        steps = 0
+        max_steps = (W + H) * 4
+
+        # Bruit spatial fixe pour ce cours d’eau (donc méandres cohérents)
+        noise_seed = rng.randint(0, 10**9)
+        noise_scale = 0.08      # taille des méandres
+        wander_amp = 0.04       # force du "zigzag"
+        radial_amp = 0.0006     # biais vers la mer (plus faible qu’avant)
+        prev_dx, prev_dy = 0, 0
+
+        while steps < max_steps:
+            steps += 1
+            visited.add((x, y))
+
+            # marque la rivière
+            fresh_type[y][x] = 1  # 1 = rivière
+
+            # atteint la mer ? (voisin eau salée 4-connexe)
+            for nx, ny in ((x+1, y), (x-1, y), (x, y+1), (x, y-1)):
+                if 0 <= nx < W and 0 <= ny < H and levels[ny][nx] == 0 and fresh_type[ny][nx] == 0:
+                    return  # on a rejoint l’océan
+
+            # Choix du prochain pas
+            dc = math.hypot(x - cx, y - cy)
+            candidates = []
+
+            for nx, ny in self._neighbors8(x, y, W, H):
+                if (nx, ny) in visited:
+                    continue
+                # on évite de marcher dans l’océan directement
+                if levels[ny][nx] == 0:
+                    continue
+
+                base_h = land_h[ny][nx]
+
+                # petit biais vers l’extérieur (mer)
+                new_d = math.hypot(nx - cx, ny - cy)
+                radial_term = - radial_amp * (new_d - dc)
+
+                # bruit spatial déterministe → méandres
+                n = fbm2d(nx * noise_scale, ny * noise_scale, octaves=2, seed=noise_seed)
+                wander = wander_amp * n   # dans [-wander_amp, +wander_amp]
+
+                # légère inertie pour ne pas faire des zigzags brutaux
+                if prev_dx or prev_dy:
+                    dx, dy = nx - x, ny - y
+                    dot = dx * prev_dx + dy * prev_dy
+                    norm = math.hypot(dx, dy) * math.hypot(prev_dx, prev_dy) or 1.0
+                    align = dot / norm   # -1 (demi-tour) → +1 (tout droit)
+                    turn_penalty = 0.01 * (1.0 - align)
+                else:
+                    turn_penalty = 0.0
+
+                cost = base_h + radial_term + wander + turn_penalty
+                candidates.append((cost, nx, ny))
+
+            if not candidates:
+                break  # coincé
+
+            # On prend au hasard parmi les 2–3 meilleurs candidats
+            candidates.sort(key=lambda c: c[0])
+            top_k = candidates[:3] if len(candidates) >= 3 else candidates
+            _, nx, ny = rng.choice(top_k)
+
+            # Si on monte trop → cul-de-sac : créer un petit lac comme avant
+            if land_h[ny][nx] > land_h[y][x] + 0.02:
+                self._carve_disc(x, y, rng.randint(2, 3), levels, land_h, fresh_type)
+                # repartir du bord le plus bas autour du lac
+                cand = []
+                for px, py in self._neighbors8(x, y, W, H):
+                    cand.append((land_h[py][px], px, py))
+                cand.sort()
+                if cand:
+                    nx, ny = cand[0][1], cand[0][2]
+                else:
+                    break
+
+            prev_dx, prev_dy = nx - x, ny - y
+            x, y = nx, ny
+
+
+    def _pick_river_sources(self, levels, land_h, rng, count_range=(3,6)):
+        H, W = len(levels), len(levels[0])
+        cand = []
+        # candidats haut perchés, loin des côtes
+        for y in range(H):
+            for x in range(W):
+                if levels[y][x] >= 2 and land_h[y][x] > 0.55 and self._distance_to_water(x,y,levels) > 5:
+                    cand.append((land_h[y][x], x, y))
+        cand.sort(reverse=True)  # plus hauts d'abord
+        sources = []
+        want = rng.randint(*count_range)
+        min_dist = max(10, min(W,H)//12)
+        for h,x,y in cand:
+            if len(sources) >= want: break
+            if all((abs(x-sx) + abs(y-sy)) >= min_dist for sx,sy in sources):
+                sources.append((x,y))
+        return sources
+
+    def _distance_to_freshwater(self, x, y, fresh_type):
+        H, W = len(fresh_type), len(fresh_type[0])
+        for r in range(1, 6):
+            for dy in range(-r, r+1):
+                for dx in range(-r, r+1):
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < W and 0 <= ny < H:
+                        if fresh_type[ny][nx] > 0:
+                            return r
+        return 999

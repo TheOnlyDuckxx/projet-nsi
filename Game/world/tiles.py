@@ -46,6 +46,19 @@ WATER_SHALLOW = 9
 WATER         = 10
 WATER_DEEP    = 11
 
+RIVER = 12
+LAKE  = 13
+
+_DEFAULT_GROUND_SPRITES.update({
+    RIVER: "tile_river",  
+    LAKE:  "tile_lake",
+})
+
+_DEFAULT_NAME_TO_ID.update({
+    "river": RIVER,
+    "lake":  LAKE,
+})
+
 _DEFAULT_GROUND_SPRITES.update({
     WATER_SHALLOW: "tile_water_shallow",
     WATER:         "tile_water",
