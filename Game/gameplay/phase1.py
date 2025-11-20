@@ -6,7 +6,13 @@ from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
-from Game.ui.hud import add_notification,draw_info_panel,draw_inspection_panel,draw_work_bar
+from Game.ui.hud import (
+    add_notification,
+    draw_info_panel,
+    draw_inspection_panel,
+    draw_work_bar,
+    BottomHUD,
+)
 from Game.world.fog_of_war import FogOfWar
 
 
@@ -22,6 +28,7 @@ class Phase1:
         self.gen = WorldGenerator(tiles_levels=6,island_margin_frac=0.10)
         self.params = None
         self.world = None
+        self.fog=None
 
         # entités
         self.joueur: Optional[Espece] = None
@@ -29,6 +36,7 @@ class Phase1:
 
         # UI/HUD
         self.show_info = True
+        self.bottom_hud: BottomHUD | None = None
         self.font = pygame.font.SysFont("consolas", 16)
         self.menu_button_rect = None
 
@@ -63,7 +71,9 @@ class Phase1:
         # 1) Si on demande explicitement de charger une sauvegarde et qu'elle existe
         if kwargs.get("load_save", False) and self.save_exists():
             if self.load():
-                return  # on est prêt (world/params/view/joueur déjà posés)
+                if self.joueur and not self.bottom_hud:
+                    self.bottom_hud = BottomHUD(self, self.joueur)
+                return
 
         # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
         pre_world = kwargs.get("world", None)
@@ -106,6 +116,8 @@ class Phase1:
 
         self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
         self.view.set_world(self.world)
+        self.fog = FogOfWar(self.world.width, self.world.height)
+        self.view.fog = self.fog
 
         try:
             sx, sy = self.world.spawn
@@ -118,9 +130,20 @@ class Phase1:
             self._ensure_move_runtime(self.joueur)
             for e in self.entities:
                 self._ensure_move_runtime(e)
+        if self.joueur is not None:
+            if self.bottom_hud is None:
+                self.bottom_hud = BottomHUD(self, self.joueur)
+            else:
+                # au cas où le joueur serait recréé / rechargé
+                self.bottom_hud.species = self.joueur
+
 
     # ---------- INPUT ----------
     def handle_input(self, events):
+            
+        if self.bottom_hud is not None:
+            self.bottom_hud.handle(events)
+
         for e in events:
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
@@ -254,6 +277,19 @@ class Phase1:
             return
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+
+        def get_radius(ent):
+            vision = ent.sens.get("vision", 5)
+            return max(2, int(3 + vision * 0.7))
+
+        observers = [self.joueur]  # pour Phase1, il n’y a qu’un seul individu
+
+        if self.fog:
+            self.fog.recompute(observers, get_radius)
+        else :
+            self.fog = FogOfWar(self.world.width, self.world.height)
+        self.view.fog = self.fog
+
     
         for e in self.entities:
             self._ensure_move_runtime(e)
@@ -329,9 +365,6 @@ class Phase1:
         self._draw_selection_marker(screen)
         
         # HUD et panneaux
-        
-        #xpbar
-        
         if self.paused:
             self.draw_pause_screen(screen)
         if not self.paused and self.show_info:
@@ -341,11 +374,14 @@ class Phase1:
         if not self.paused:
             draw_inspection_panel(self,screen)
         
+        if not self.paused and self.bottom_hud is not None:
+            self.bottom_hud.draw(screen)
+
         # Message de sauvegarde
         if self.save_message:
             add_notification(self.save_message)
             self.save_message = None
-        
+
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
@@ -596,4 +632,3 @@ class Phase1:
             if (w["i"], w["j"], str(w["pid"])) == tgt:
                 return True
         return False
-    

@@ -61,6 +61,12 @@ class Espece:
         self.population = 1
         self.autonomie = True
 
+        # === XP / Niveaux d'espèce ===
+        self.species_level = 1
+        self.xp = 0
+        self.xp_to_next = 100
+
+
         # === Rendu ===
         self.renderer = EspeceRenderer(self, assets)
 
@@ -74,3 +80,38 @@ class Espece:
         self.renderer.render(screen, view, world, self.x, self.y)
     def get(self,n):
         return self[n]
+
+
+    # --- Gestion de l'XP / niveaux d'espèce ---
+
+    def add_xp(self, amount: float):
+        """
+        Ajoute de l'XP à l'espèce.
+        Pour l'instant tu pourras appeler ça depuis les actions importantes
+        (récolte réussie, construction d'un bâtiment, découverte, etc.)
+        """
+        if amount <= 0:
+            return
+
+        self.xp += amount
+
+        # Gestion du passage de niveau (progression simple, tu pourras l'affiner)
+        leveled_up = False
+        while self.xp >= self.xp_to_next:
+            self.xp -= self.xp_to_next
+            self.species_level += 1
+            leveled_up = True
+
+            # Courbe de progression : +25% à chaque niveau (modifiable)
+            self.xp_to_next = int(self.xp_to_next * 1.25)
+
+        if leveled_up:
+            print(f"[XP] {self.nom} passe niveau {self.species_level} (prochain palier : {self.xp_to_next} XP)")
+
+    def xp_ratio(self) -> float:
+        """
+        Renvoie un ratio 0..1 pour remplir la barre d'XP dans le HUD.
+        """
+        if self.xp_to_next <= 0:
+            return 0.0
+        return max(0.0, min(1.0, self.xp / self.xp_to_next))

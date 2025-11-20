@@ -1,6 +1,11 @@
 import pygame
 import time
 import textwrap
+from typing import List
+
+from Game.core.utils import Button, ButtonStyle
+
+
 
 # Configuration de base
 NOTIF_FONT = pygame.font.SysFont("consolas", 18)
@@ -226,7 +231,7 @@ def draw_inspection_panel(self, screen):
     y_offset += 5
     
     # === STATS PHYSIQUES ===
-    header = header_font.render("💪 Physique", True, (255, 180, 100))
+    header = header_font.render("Physique", True, (255, 180, 100))
     panel_surf.blit(header, (10, y_offset))
     y_offset += 20
     
@@ -245,7 +250,7 @@ def draw_inspection_panel(self, screen):
     y_offset += 5
     
     # === STATS MENTALES ===
-    header = header_font.render("🧠 Mental", True, (150, 200, 255))
+    header = header_font.render("Mental", True, (150, 200, 255))
     panel_surf.blit(header, (10, y_offset))
     y_offset += 20
     
@@ -267,7 +272,7 @@ def draw_inspection_panel(self, screen):
     pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
     y_offset += 10
     
-    header = header_font.render("🎒 Inventaire", True, (255, 220, 100))
+    header = header_font.render("Inventaire", True, (255, 220, 100))
     panel_surf.blit(header, (10, y_offset))
     y_offset += 20
     
@@ -339,7 +344,7 @@ def draw_inspection_panel(self, screen):
         pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
         y_offset += 10
         
-        header = header_font.render("🤖 État", True, (150, 255, 150))
+        header = header_font.render("État", True, (150, 255, 150))
         panel_surf.blit(header, (10, y_offset))
         y_offset += 20
         
@@ -350,27 +355,272 @@ def draw_inspection_panel(self, screen):
     # Afficher le panneau sur l'écran
     screen.blit(panel_surf, (panel_x, panel_y))
 
-def draw_XP_panel(self, screen):
-    width=400
-    height=100
-    margin_bottom=20
-    color=(30, 30, 50)
 
+class BottomHUD:
     """
-    Dessine un simple rectangle centré en bas de l'écran
-    
-    Args:
-        screen: Surface pygame
-        width: Largeur du rectangle
-        height: Hauteur du rectangle
-        margin_bottom: Marge depuis le bas de l'écran
-        color: Couleur RGB du rectangle
+    HUD du bas de l'écran pour la Phase 1.
+
+    - Barre d'XP de l'espèce
+    - Niveau d'espèce (cercle)
+    - Placeholder horloge jour/nuit
+    - Stats de base de l'espèce
+    - Zone de quick craft avec boutons
+    - Bouton pour plier / déplier le panneau
     """
-    screen_width, screen_height = screen.get_size()
-    
-    # Calcul de la position centrée
-    x = (screen_width - width) // 2
-    y = screen_height - height - margin_bottom
-    
-    # Dessiner le rectangle
-    pygame.draw.rect(screen, color, (x, y, width, height))
+
+    def __init__(self, phase, species):
+        # phase = Phase1 (pour screen, assets...)
+        self.phase = phase
+        self.assets = phase.assets
+        self.screen = phase.screen
+        self.species = species
+
+        self.visible = True      # panneau déplié ou non
+        self.height = 140        # hauteur du panneau
+        self.margin = 12         # marge avec le bord écran
+
+        if not pygame.font.get_init():
+            pygame.font.init()
+        self.font = pygame.font.SysFont("consolas", 18, bold=True)
+        self.small_font = pygame.font.SysFont("consolas", 14)
+
+        # --- Icône placeholder pour les crafts ---
+        surf = None
+        try:
+            surf = self.assets.get_image("placeholder")
+        except Exception:
+            pass
+
+        if surf is None:
+            surf = pygame.Surface((32, 32), pygame.SRCALPHA)
+            surf.fill((160, 160, 160, 255))
+        self.craft_icon = surf
+
+        # --- Bouton de repli / dépli ---
+        toggle_style = ButtonStyle(
+            draw_background=True,
+            radius=10,
+            padding_x=6,
+            padding_y=2,
+            font=self.small_font,
+            hover_zoom=1.1,
+        )
+        self.toggle_button = Button(
+            text="▼",
+            pos=(0, 0),            # position ajustée plus tard dans _update_layout
+            size=(28, 22),
+            anchor="center",
+            style=toggle_style,
+            on_click=self._on_toggle,
+        )
+
+        # --- Boutons de quick craft ---
+        craft_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(80, 130, 80),
+            hover_bg_color=(100, 160, 100),
+            active_bg_color=(60, 100, 60),
+            border_color=(20, 40, 20),
+            border_width=2,
+            radius=12,
+            padding_x=4,
+            padding_y=4,
+            font=self.small_font,
+            hover_zoom=1.0,
+        )
+
+        self.craft_buttons: List[Button] = []
+        craft_names = ["Feu", "Abri", "Outil", "Piège"]  # tu pourras changer ça plus tard
+
+        for name in craft_names:
+            btn = Button(
+                text=name,
+                pos=(0, 0),           # position ajustée dans _update_layout
+                size=(80, 72),
+                anchor="center",
+                style=craft_style,
+                on_click=self._make_craft_cb(name),
+                icon=self.craft_icon,
+            )
+            self.craft_buttons.append(btn)
+
+        # Rects de layout (calculés à chaque frame)
+        self.panel_rect = pygame.Rect(0, 0, 100, 100)
+        self.left_rect = pygame.Rect(0, 0, 50, 50)
+        self.right_rect = pygame.Rect(0, 0, 50, 50)
+
+    # ---------- Callbacks ----------
+
+    def _make_craft_cb(self, name):
+        def cb(_btn):
+            # Pour l'instant : simple log console
+            print(f"[HUD] Craft placeholder : {name}")
+        return cb
+
+    def _on_toggle(self, _btn):
+        self.visible = not self.visible
+        # change l’icone du bouton pour que ce soit plus clair
+        self.toggle_button.text = "▲" if not self.visible else "▼"
+
+    # ---------- Layout ----------
+
+    def _update_layout(self):
+        """Calcule les rectangles du panneau en fonction de la taille de l'écran."""
+        if not self.screen:
+            return
+
+        sw, sh = self.screen.get_size()
+        self.panel_rect = pygame.Rect(
+            self.margin,
+            sh - self.height - self.margin,
+            sw - 2 * self.margin,
+            self.height,
+        )
+
+        pad = 16
+        left_w = int(self.panel_rect.width * 0.45)
+
+        self.left_rect = pygame.Rect(
+            self.panel_rect.x + pad,
+            self.panel_rect.y + pad,
+            left_w - pad,
+            self.panel_rect.height - 2 * pad,
+        )
+
+        self.right_rect = pygame.Rect(
+            self.panel_rect.x + left_w,
+            self.panel_rect.y + pad,
+            self.panel_rect.width - left_w - pad,
+            self.panel_rect.height - 2 * pad,
+        )
+
+        # Bouton de repli : collé en haut à droite du panneau
+        toggle_x = self.panel_rect.right - 20
+        toggle_y = self.panel_rect.top - 10
+        self.toggle_button.move_to((toggle_x, toggle_y))
+
+        # Boutons de craft alignés en ligne dans la partie droite
+        if self.craft_buttons:
+            bw = self.craft_buttons[0].rect.width
+            gap = 10
+            total = len(self.craft_buttons) * bw + (len(self.craft_buttons) - 1) * gap
+            start_x = self.right_rect.x + (self.right_rect.width - total) // 2 + bw // 2
+            center_y = self.right_rect.y + 40
+            for i, btn in enumerate(self.craft_buttons):
+                cx = start_x + i * (bw + gap)
+                btn.move_to((cx, center_y))
+
+    # ---------- Interaction ----------
+
+    def handle(self, events):
+        """
+        À appeler depuis Phase1.handle_input.
+        On envoie les événements aux boutons du HUD.
+        """
+        self._update_layout()
+        self.toggle_button.handle(events)
+        if not self.visible:
+            return
+        for btn in self.craft_buttons:
+            btn.handle(events)
+
+    # ---------- Dessin des sous-parties ----------
+
+    def _draw_xp_bar(self, screen):
+        xp = getattr(self.species, "xp", 0)
+        xp_max = getattr(self.species, "xp_to_next", 1) or 1
+        ratio = max(0.0, min(1.0, xp / xp_max))
+
+        bar_h = 18
+        rect = pygame.Rect(self.left_rect.x, self.left_rect.y, self.left_rect.width, bar_h)
+
+        pygame.draw.rect(screen, (40, 70, 40), rect, border_radius=6)
+        inner = rect.inflate(-4, -4)
+        fill = inner.copy()
+        fill.width = int(inner.width * ratio)
+        pygame.draw.rect(screen, (90, 200, 90), fill, border_radius=6)
+        pygame.draw.rect(screen, (120, 200, 120), rect, 2, border_radius=6)
+
+        txt = self.small_font.render(f"XP {int(xp)}/{int(xp_max)}", True, (240, 240, 240))
+        screen.blit(txt, (rect.x + 6, rect.y + 1))
+
+    def _draw_level_and_clock(self, screen):
+        # Cercle de niveau
+        lvl = getattr(self.species, "species_level", 1)
+        cx = self.left_rect.x + 30
+        cy = self.left_rect.y + 50
+        pygame.draw.circle(screen, (50, 80, 50), (cx, cy), 24)
+        pygame.draw.circle(screen, (180, 230, 180), (cx, cy), 24, 2)
+        txt = self.font.render(str(lvl), True, (255, 255, 255))
+        rect = txt.get_rect(center=(cx, cy))
+        screen.blit(txt, rect)
+
+        # Placeholder horloge en dessous
+        cy2 = cy + 56
+        pygame.draw.circle(screen, (40, 40, 40), (cx, cy2), 18)
+        pygame.draw.circle(screen, (120, 120, 120), (cx, cy2), 18, 2)
+        pygame.draw.line(screen, (220, 220, 220), (cx, cy2), (cx, cy2 - 10), 2)
+        pygame.draw.line(screen, (220, 220, 220), (cx, cy2), (cx + 7, cy2), 2)
+
+    def _draw_stats(self, screen):
+        stats_rect = pygame.Rect(
+            self.left_rect.x + 70,
+            self.left_rect.y + 26,
+            self.left_rect.width - 80,
+            self.left_rect.height - 36,
+        )
+        pygame.draw.rect(screen, (25, 40, 25), stats_rect, border_radius=8)
+        pygame.draw.rect(screen, (80, 120, 80), stats_rect, 2, border_radius=8)
+
+        lines = [
+            f"Population : {getattr(self.species, 'population', '?')}",
+            f"Santé : {int(self.species.jauges.get('sante', 0))}",
+            f"Énergie : {int(self.species.jauges.get('energie', 0))}",
+            f"Faim : {int(self.species.jauges.get('faim', 0))}",
+        ]
+        y = stats_rect.y + 8
+        for line in lines:
+            surf = self.small_font.render(line, True, (230, 240, 230))
+            screen.blit(surf, (stats_rect.x + 8, y))
+            y += 18
+
+    def _draw_quickcraft(self, screen):
+        # Titre "CRAFT"
+        title = self.font.render("CRAFT", True, (240, 240, 240))
+        t_rect = title.get_rect(midtop=(self.right_rect.centerx, self.right_rect.y))
+        screen.blit(title, t_rect)
+
+        # Fond de la zone de craft
+        pygame.draw.rect(screen, (20, 55, 20), self.right_rect, border_radius=10)
+        pygame.draw.rect(screen, (70, 120, 70), self.right_rect, 2, border_radius=10)
+
+        # Boutons
+        for btn in self.craft_buttons:
+            btn.draw(screen)
+
+    # ---------- Dessin global ----------
+
+    def draw(self, screen):
+        """
+        À appeler depuis Phase1.render(screen)
+        """
+        self._update_layout()
+
+        # Bouton de repli toujours visible
+        self.toggle_button.draw(screen)
+
+        # Si plié : on ne montre pas le panneau
+        if not self.visible:
+            return
+
+        # Fond général du panneau
+        pygame.draw.rect(screen, (20, 60, 20), self.panel_rect, border_radius=16)
+        pygame.draw.rect(screen, (80, 140, 80), self.panel_rect, 2, border_radius=16)
+
+        # Partie gauche : XP + niveau + horloge + stats
+        self._draw_xp_bar(screen)
+        self._draw_level_and_clock(screen)
+        self._draw_stats(screen)
+
+        # Partie droite : quick craft
+        self._draw_quickcraft(screen)
