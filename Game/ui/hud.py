@@ -350,3 +350,27 @@ def draw_inspection_panel(self, screen):
     # Afficher le panneau sur l'écran
     screen.blit(panel_surf, (panel_x, panel_y))
 
+def draw_XP_panel(self, screen):
+    width=400
+    height=100
+    margin_bottom=20
+    color=(30, 30, 50)
+
+    """
+    Dessine un simple rectangle centré en bas de l'écran
+    
+    Args:
+        screen: Surface pygame
+        width: Largeur du rectangle
+        height: Hauteur du rectangle
+        margin_bottom: Marge depuis le bas de l'écran
+        color: Couleur RGB du rectangle
+    """
+    screen_width, screen_height = screen.get_size()
+    
+    # Calcul de la position centrée
+    x = (screen_width - width) // 2
+    y = screen_height - height - margin_bottom
+    
+    # Dessiner le rectangle
+    pygame.draw.rect(screen, color, (x, y, width, height))
