@@ -207,8 +207,108 @@
         "categorie": "sens",
         "phase": 1,
         "base":false
-    }
+    },
+    "Semibipedie": {
+        "nom": "Semi bipedie",
+         "description": "1ère étape vers la bipédie complète, améliore la vue et la dextérité des membres supérieurs.",
+        "effets": {
+            "sens": {
+                "detection_visuelle": 15,
+                "vision":10 },
+            "physique":{
+                "endurance":20,
+                "vitesse":-15,
+                "force":-20},
+            "mental":{
+                "intelligence":5,
+                "dexterite":10,
+                "intimidation":5
+            }
+            
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "cout":30,
+        "categorie": "sens",
+        "phase": 1,
+        "base":true
+    },
+    "Bipedie": {
+        "nom": "Bipédie",
+         "description": "Permet de se déplacer sur deux jambes, libérant les membres supérieurs pour d'autres tâches.",
+        "effets": {
+            "sens": {
+                "detection_visuelle": 25,
+                "vision":15 },
+            "physique":{
+                "endurance":40,
+                "vitesse":-25,
+                "force":-20},
+            "mental":{
+                "intelligence":10,
+                "dexterite":15,
+                "intimidation":10
+            }
+            
+        },
+        "conditions": ["Semibipedie"],
+        "incompatibles": [],
+        "cout":50,
+        "categorie": "sens",
+        "phase": 2,
+        "base":false
+    },
+    "Bipedie exclusive": {
+        "nom": "Bipédie exclusive",
+         "description": "Adoption complète de la bipédie, avec des adaptations supplémentaires pour l'équilibre et la locomotion.",
+        "effets": {
+            "sens": {
+                "detection_visuelle": 35,
+                "vision":20 },
+            "physique":{
+                "endurance":60,
+                "vitesse":-35,
+                "force":-25},
+            "mental":{
+                "intelligence":15,
+                "dexterite":20,
+                "intimidation":15
+            }
+            
+        },
+        "conditions": ["Bipedie"],
+        "incompatibles": [],
+        "cout":75,
+        "categorie": "sens",
+        "phase": 3,
+        "base":false
+    },
 
+    "Carapace": {
+    "nom": "Carapace",
+    "description": "Développement d'une carapace protectrice.",
+    "effets": {
+        "physique": { "vitesse": -10, "endurance": -25 },
+        "combat": { "defense": 15 }
+    },
+
+    "effets_temporaire": {
+        "nom": "Se réfugier dans sa carapace",
+        "description": "Se protège…",
+        "durée": 300,
+
+        "effets": {
+            "physique": { "vitesse": -2000000 },
+            "combat": { "defense": 100 }
+        }},
+
+        "conditions": [],
+        "incompatibles": [],
+        "cout":25,
+        "categorie": "physique",
+        "phase": 1,
+        "base":false
+    }
 
 
 }
