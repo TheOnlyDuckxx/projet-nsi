@@ -16,7 +16,7 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         14: "prop_palm",
         #15: "prop_cactus",
         16: "prop_bush",
-        #17: "prop_berry_bush",
+        17: "prop_berry_bush",
         18: "prop_reeds",
         #19: "prop_driftwood",
         #20: "prop_flower",
@@ -324,8 +324,8 @@ class IsoMapView:
                 visible = (self.fog.visible[j][i] if hasattr(self, "fog") and self.fog else True)
                 explored = (self.fog.explored[j][i] if hasattr(self, "fog") and self.fog else True)
 
-                if not explored:
-                    continue  # jamais vu → noir total
+                #if not explored:
+                #    continue  # jamais vu → noir total
 
                 
                 
@@ -338,7 +338,7 @@ class IsoMapView:
 
                 # sol
                 # sol
-                gray = (not visible)
+                gray = False #(not visible)###############
                 gid = self.world.ground_id[j][i]
                 gimg = self._get_scaled_ground(gid, gray=gray)
                 
@@ -364,7 +364,7 @@ class IsoMapView:
                 # --- PROP DE LA TUILE ---
                 pid = self.world.overlay[j][i]
                 if pid:
-                    gray = (not visible)
+                    gray = False #(not visible)##################
                     pimg = self._get_scaled_prop(pid, gray=gray)
                     if pimg:
                         surface_y = sy - (gimg.get_height() - dy * 2)

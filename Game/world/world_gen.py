@@ -36,7 +36,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional, Tuple, List, Dict, Any
 import json, os, random, math, hashlib, struct
 from typing import Callable
-
+import random
 
 # Type du callback: progress(fraction: float, label: str)
 ProgressCb = Optional[Callable[[float, str], None]]
@@ -439,7 +439,10 @@ class WorldGenerator:
                     overlay[y][x] = get_prop_id("flower")
                     continue
                 if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
-                    overlay[y][x] = get_prop_id("bush")
+                    if random.randrange(3) == 0:
+                        overlay[y][x] = get_prop_id("berry_bush")
+                    else:
+                        overlay[y][x] = get_prop_id("bush")
                     continue
 
                 # forêts/taïga/grassland : arbres & souches/troncs
