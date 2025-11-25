@@ -495,9 +495,10 @@ class BottomHUD:
         )
 
         # Bouton de repli : collé en haut à droite du panneau
-        toggle_x = self.panel_rect.right - 20
-        toggle_y = self.panel_rect.top - 10
-        self.toggle_button.move_to((toggle_x, toggle_y))
+        if self.visible :
+            toggle_x = self.panel_rect.right - 20
+            toggle_y = self.panel_rect.top - 10
+            self.toggle_button.move_to((toggle_x, toggle_y))
 
         # Boutons de craft alignés en ligne dans la partie droite
         if self.craft_buttons:
@@ -527,12 +528,12 @@ class BottomHUD:
     # ---------- Dessin des sous-parties ----------
 
     def _draw_xp_bar(self, screen):
-        xp = getattr(self.species, "xp", 0)
-        xp_max = getattr(self.species, "xp_to_next", 1) or 1
+        xp = self.species.xp
+        xp_max = self.species.xp_to_next
         ratio = max(0.0, min(1.0, xp / xp_max))
 
         bar_h = 18
-        rect = pygame.Rect(self.left_rect.x, self.left_rect.y, self.left_rect.width, bar_h)
+        rect = pygame.Rect(self.left_rect.x-10, self.left_rect.y, self.left_rect.width, bar_h)
 
         pygame.draw.rect(screen, (40, 70, 40), rect, border_radius=6)
         inner = rect.inflate(-4, -4)
@@ -556,7 +557,7 @@ class BottomHUD:
         screen.blit(txt, rect)
 
         # Placeholder horloge en dessous
-        cy2 = cy + 56
+        cy2 = cy + 46
         pygame.draw.circle(screen, (40, 40, 40), (cx, cy2), 18)
         pygame.draw.circle(screen, (120, 120, 120), (cx, cy2), 18, 2)
         pygame.draw.line(screen, (220, 220, 220), (cx, cy2), (cx, cy2 - 10), 2)
@@ -567,16 +568,13 @@ class BottomHUD:
             self.left_rect.x + 70,
             self.left_rect.y + 26,
             self.left_rect.width - 80,
-            self.left_rect.height - 36,
+            self.left_rect.height - 26,
         )
         pygame.draw.rect(screen, (25, 40, 25), stats_rect, border_radius=8)
         pygame.draw.rect(screen, (80, 120, 80), stats_rect, 2, border_radius=8)
 
         lines = [
             f"Population : {getattr(self.species, 'population', '?')}",
-            f"Santé : {int(self.species.jauges.get('sante', 0))}",
-            f"Énergie : {int(self.species.jauges.get('energie', 0))}",
-            f"Faim : {int(self.species.jauges.get('faim', 0))}",
         ]
         y = stats_rect.y + 8
         for line in lines:
@@ -605,7 +603,8 @@ class BottomHUD:
         À appeler depuis Phase1.render(screen)
         """
         self._update_layout()
-
+        if not self.visible:
+            self.toggle_button.pos=(10,10)
         # Bouton de repli toujours visible
         self.toggle_button.draw(screen)
 

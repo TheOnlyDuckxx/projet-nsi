@@ -48,7 +48,6 @@ from Game.world.tiles import get_tile_id
 def get_prop_id(name: str) -> int:
     _MAP = {
         "tree_2": 10,
-        "tree_base": 11,
         "tree_dead": 12,
         "rock": 13,
         "palm": 14,
@@ -439,7 +438,7 @@ class WorldGenerator:
                     overlay[y][x] = get_prop_id("flower")
                     continue
                 if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
-                    if random.randrange(3) == 0:
+                    if random.randint(0,3) == 0:
                         overlay[y][x] = get_prop_id("berry_bush")
                     else:
                         overlay[y][x] = get_prop_id("bush")
@@ -454,7 +453,7 @@ class WorldGenerator:
                         if b == "taiga":
                             name = "tree_dead" if rng.random() < 0.6 else "tree_2"
                         elif b == "rainforest":
-                            name = "tree_2" if rng.random() < 0.7 else "tree_base"
+                            name = "tree_2" if rng.random() < 0.7 else "stump"
                         else:
                             name = "tree_2"
                         overlay[y][x] = get_prop_id(name)

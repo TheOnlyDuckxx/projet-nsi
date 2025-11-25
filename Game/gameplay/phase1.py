@@ -31,6 +31,7 @@ class Phase1:
         self.fog=None
 
         # entités
+        self.espece = None
         self.joueur: Optional[Espece] = None
         self.entities: list = []
 
@@ -71,8 +72,8 @@ class Phase1:
         # 1) Si on demande explicitement de charger une sauvegarde et qu'elle existe
         if kwargs.get("load_save", False) and self.save_exists():
             if self.load():
-                if self.joueur and not self.bottom_hud:
-                    self.bottom_hud = BottomHUD(self, self.joueur)
+                if self.espece and not self.bottom_hud:
+                    self.bottom_hud = BottomHUD(self, self.espece)
                 return
 
         # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
@@ -92,7 +93,12 @@ class Phase1:
                 except Exception:
                     sx, sy = 0, 0
                 from Game.species.species import Espece
-                self.joueur = Espece("Hominidé", x=float(sx), y=float(sy), assets=self.assets)
+                self.espece_hominide = Espece("Hominidé")
+                self.joueur = self.espece_hominide.create_individu(
+                    x=float(sx),
+                    y=float(sy),
+                    assets=self.assets,
+                )
                 self.entities = [self.joueur]
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
 
@@ -125,14 +131,19 @@ class Phase1:
             sx, sy = 0, 0
         if not self.joueur:
             from Game.species.species import Espece
-            self.joueur = Espece("Hominidé", x=float(sx), y=float(sy), assets=self.assets)
+            self.espece_hominide = Espece("Hominidé")
+            self.joueur = self.espece_hominide.create_individu(
+                x=float(sx),
+                y=float(sy),
+                assets=self.assets,
+            )
             self.entities = [self.joueur]
             self._ensure_move_runtime(self.joueur)
             for e in self.entities:
                 self._ensure_move_runtime(e)
-        if self.joueur is not None:
+        if self.espece_hominide is not None:
             if self.bottom_hud is None:
-                self.bottom_hud = BottomHUD(self, self.joueur)
+                self.bottom_hud = BottomHUD(self, self.espece_hominide)
             else:
                 # au cas où le joueur serait recréé / rechargé
                 self.bottom_hud.species = self.joueur

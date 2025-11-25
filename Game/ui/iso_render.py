@@ -10,7 +10,6 @@ from Game.world.tiles import get_ground_sprite_name
 def get_prop_sprite_name(pid: int) -> Optional[str]:
     mapping = {
         10: "prop_tree_2",
-        11: "prop_tree_base",
         12: "prop_tree_dead",
         13: "prop_rock",
         14: "prop_palm",
@@ -20,7 +19,7 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         18: "prop_reeds",
         #19: "prop_driftwood",
         #20: "prop_flower",
-        #21: "prop_stump",
+        21: "prop_stump",
         #22: "prop_log",
         #23: "prop_boulder",
     }
@@ -324,8 +323,8 @@ class IsoMapView:
                 visible = (self.fog.visible[j][i] if hasattr(self, "fog") and self.fog else True)
                 explored = (self.fog.explored[j][i] if hasattr(self, "fog") and self.fog else True)
 
-                #if not explored:
-                #    continue  # jamais vu → noir total
+                if not explored:
+                    continue  # jamais vu → noir total
 
                 
                 
@@ -338,7 +337,7 @@ class IsoMapView:
 
                 # sol
                 # sol
-                gray = False #(not visible)###############
+                gray = (not visible)
                 gid = self.world.ground_id[j][i]
                 gimg = self._get_scaled_ground(gid, gray=gray)
                 
@@ -364,7 +363,7 @@ class IsoMapView:
                 # --- PROP DE LA TUILE ---
                 pid = self.world.overlay[j][i]
                 if pid:
-                    gray = False #(not visible)##################
+                    gray = (not visible)
                     pimg = self._get_scaled_prop(pid, gray=gray)
                     if pimg:
                         surface_y = sy - (gimg.get_height() - dy * 2)

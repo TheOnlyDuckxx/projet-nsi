@@ -68,22 +68,32 @@ class Comportement:
         Gère le drop des ressources lors de la récolte
         La table gère le nombre de ressource (entre min et max) et la problabilité (p)
         """
-        key = str(pid)
+        key = pid
         drops = []
         tables = {
-            "rock": [
+            13: [
                 {"id": "stone", "min": 1, "max": 3, "p": 1.0},   # toujours
                 {"id": "flint", "min": 1, "max": 1, "p": 0.15}   # 15% de chance
-            ]
+            ],
+
+            17:[
+                {"id": "berries", "min": 3, "max": 7, "p": 1.0}
+            ],
+
+            10:[
+                {"id": "wood", "min": 1, "max": 3, "p": 1.0}
+            ],
             
         }
-
-        conf = tables.get(key, [])
-        for entry in conf:
-            if random.random() <= entry.get("p", 1.0):
-                qty = random.randint(entry["min"], entry["max"])
-                drops.append((entry["id"], qty))
-        return drops or [("stone", 1)]  # fallback
+        try :
+            conf = tables[key]
+            for entry in conf:
+                if random.random() <= entry["p"]:
+                    qty = random.randint(entry["min"], entry["max"])
+                    drops.append((entry["id"], qty))
+            return drops
+        except :
+            return [("stone",1)]
     # fallback basique
 
     # ---------- API publique ----------
@@ -99,7 +109,6 @@ class Comportement:
         i, j, pid = objectif[1]
         new_key = self._prop_key(i, j, pid)
 
-        # 🔒 Anti-reset : si on travaille déjà sur CE prop, ne rien réinitialiser
         w = getattr(self.e, "work", None)
         if w and w.get("type") == "harvest":
             cur_key = self._prop_key(w["i"], w["j"], w["pid"])
