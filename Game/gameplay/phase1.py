@@ -8,13 +8,11 @@ from Game.species.species import Espece
 from Game.save.save import SaveManager
 from Game.ui.hud import (
     add_notification,
-    draw_info_panel,
     draw_inspection_panel,
     draw_work_bar,
     BottomHUD,
 )
 from Game.world.fog_of_war import FogOfWar
-
 
 
 class Phase1:
@@ -36,7 +34,6 @@ class Phase1:
         self.entities: list = []
 
         # UI/HUD
-        self.show_info = True
         self.bottom_hud: BottomHUD | None = None
         self.font = pygame.font.SysFont("consolas", 16)
         self.menu_button_rect = None
@@ -57,7 +54,6 @@ class Phase1:
     def load(self) -> bool:
         return SaveManager().load_phase1(self)
 
-    #Cii
     def _ensure_move_runtime(self, ent):
         """S'assure que l'entité a tout le runtime nécessaire au déplacement."""
         if not hasattr(ent, "move_path"):   ent.move_path = []          # liste de (i,j)
@@ -65,7 +61,6 @@ class Phase1:
         if not hasattr(ent, "_move_from"):  ent._move_from = None       # (x,y) float
         if not hasattr(ent, "_move_to"):    ent._move_to = None         # (i,j) int
         if not hasattr(ent, "_move_t"):     ent._move_t = 0.0           # 0..1
-
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
@@ -122,7 +117,8 @@ class Phase1:
 
         self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
         self.view.set_world(self.world)
-        self.fog = FogOfWar(self.world.width, self.world.height)
+        if self.fog is None:
+            self.fog = FogOfWar(self.world.width, self.world.height)
         self.view.fog = self.fog
 
         try:
@@ -148,7 +144,6 @@ class Phase1:
                 # au cas où le joueur serait recréé / rechargé
                 self.bottom_hud.species = self.joueur
 
-
     # ---------- INPUT ----------
     def handle_input(self, events):
             
@@ -159,8 +154,6 @@ class Phase1:
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
-                elif e.key == pygame.K_i:
-                    self.show_info = not self.show_info
                 elif e.key == pygame.K_r:
                     self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
                     self.view.set_world(self.world)
@@ -305,6 +298,12 @@ class Phase1:
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
+            e.faim_timer+=dt
+            if e.faim_timer>=5.0:
+                e.faim_timer=0
+                e.jauges["faim"]-=1
+                if e.jauges["faim"]<20:
+                    e.comportement.try_eating()
             # → progression de la récolte (barre, timer, loot…)
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
@@ -351,7 +350,6 @@ class Phase1:
             button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
             screen.blit(button_text, button_text_rect)
 
-
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
         screen.fill((10, 12, 18))
@@ -378,8 +376,6 @@ class Phase1:
         # HUD et panneaux
         if self.paused:
             self.draw_pause_screen(screen)
-        if not self.paused and self.show_info:
-            draw_info_panel(self,screen)
         
         # NOUVEAU : Panneau d'inspection si une entité est sélectionnée
         if not self.paused:
@@ -392,7 +388,6 @@ class Phase1:
         if self.save_message:
             add_notification(self.save_message)
             self.save_message = None
-
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
@@ -550,7 +545,6 @@ class Phase1:
             i = j
         return smoothed
 
-
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
         if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") == "recolte":
@@ -600,7 +594,6 @@ class Phase1:
             # Interpolation linéaire
             ent.x = fx + (tx - fx) * ent._move_t
             ent.y = fy + (ty - fy) * ent._move_t
-
 
     def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8) -> Optional[tuple[int, int]]:
         """Retourne la case libre la plus proche du point cible (si eau/obstacle)."""

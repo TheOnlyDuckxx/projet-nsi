@@ -1,6 +1,7 @@
 import os
 import pickle
 from typing import Any, Dict, Optional
+from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")
 SAVE_VERSION = "1.1"
@@ -84,10 +85,7 @@ class SaveManager:
 
         # ---------- BROUILLARD DE GUERRE ----------
         fog_data = None
-        fog = getattr(phase1, "fog_of_war", None)
-        if fog is None:
-            # au cas où tu l'aies nommé self.fog
-            fog = getattr(phase1, "fog", None)
+        fog = phase1.fog
 
         if fog is not None:
             # On ne sauvegarde que les cases explorées
@@ -96,6 +94,8 @@ class SaveManager:
                 "height": fog.height,
                 "explored": fog.explored,
             }
+        else :
+            print("pas de fog :(")
 
         # ---------- PAYLOAD FINAL ----------
         return {
@@ -158,6 +158,9 @@ class SaveManager:
             phase1.params = data.get("params")
             phase1.view.set_world(phase1.world)
 
+            if phase1.world is not None:
+                phase1.fog = FogOfWar(phase1.world.width, phase1.world.height)
+                phase1.view.fog = phase1.fog
             # ----------------- Espèce + individus -----------------
             from Game.species.species import Espece
 
@@ -241,11 +244,8 @@ class SaveManager:
             if fog_data is not None:
                 exp = fog_data.get("explored")
                 if exp is not None:
-                    fog = getattr(phase1, "fog_of_war", None)
-                    if fog is None:
-                        fog = getattr(phase1, "fog", None)
+                    fog = getattr(phase1, "fog", None)
                     if fog is not None:
-                        # On suppose que dimensions = même monde
                         fog.explored = exp
 
             phase1.save_message = "✓ Partie chargée !"

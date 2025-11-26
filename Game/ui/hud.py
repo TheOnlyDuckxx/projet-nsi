@@ -133,20 +133,6 @@ def draw_work_bar(self, screen, ent):
         # barre
         pygame.draw.rect(screen, (80, 200, 120), fg, border_radius=2)
 
-def draw_info_panel(self, screen):
-    """Panneau d'infos générales en haut à gauche"""
-    lines = [
-        f"Phase1 — {self.params.world_name if self.params else '...'}",
-        f"Size: {self.world.width}x{self.world.height}" if self.world else "",
-        f"Zoom: {self.view.zoom:.2f} (min {self.view.min_zoom}, max {self.view.max_zoom})",
-        "Controls: Clic gauche = sélectionner | Clic droit = déplacer | Molette/drag = caméra | R = regénérer | I = HUD",
-    ]
-    x, y = 10, 10
-    for txt in lines:
-        if not txt: continue
-        surf = self.font.render(txt, True, (220, 230, 240))
-        screen.blit(surf, (x, y)); y += 18
-
 def draw_inspection_panel(self, screen):
     """Panneau d'inspection détaillé pour l'entité sélectionnée"""
     if not self.selected or self.selected[0] != "entity":
@@ -156,7 +142,7 @@ def draw_inspection_panel(self, screen):
     
     # Configuration du panneau
     panel_width = 350
-    panel_height = screen.get_height() - 700
+    panel_height = int(screen.get_height() * 0.70)
     panel_x = screen.get_width() - panel_width 
     panel_y = 0
     
@@ -175,7 +161,7 @@ def draw_inspection_panel(self, screen):
     y_offset = 10
     
     # === TITRE ===
-    title = title_font.render(f"🔍 {ent.nom}", True, (220, 240, 255))
+    title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
     panel_surf.blit(title, (10, y_offset))
     y_offset += 30
     
@@ -189,7 +175,7 @@ def draw_inspection_panel(self, screen):
     y_offset += 20
     
     # === JAUGES VITALES ===
-    header = header_font.render("⚡ Jauges", True, (255, 220, 100))
+    header = header_font.render("Jauges", True, (255, 220, 100))
     panel_surf.blit(header, (10, y_offset))
     y_offset += 20
     

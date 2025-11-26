@@ -154,6 +154,14 @@ class Comportement:
         # on oublie l'objectif lié
         self.e.ia["objectif"] = None
 
+    def try_eating(self):
+        item = self.e.find_item_in_inventory("berries")
+        if item:
+            item["quantity"] -= 1
+            if item["quantity"] <= 0:
+                self.e.carrying.remove(item)
+        self.e.jauges["faim"]=100
+
 
     def update(self, dt: float, world):
         """
@@ -173,6 +181,7 @@ class Comportement:
 
         # Récolte terminée → ajoute les items (sous limite de poids)
         taken_total = 0
+        print(self.e.espece.xp)
         for item_id, qty in w["drops"]:
             took = self._add_to_inventory(item_id, int(qty))
             taken_total += took
@@ -186,6 +195,7 @@ class Comportement:
             self.e.work = None
             self.e.ia["etat"] = "idle"
             return
+        self.e.add_xp(taken_total*10)
 
         try:
             if world and getattr(world, "overlay", None):

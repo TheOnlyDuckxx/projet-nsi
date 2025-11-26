@@ -53,6 +53,7 @@ class App:
 
     # Boucle principale pygame
     def run(self):
+        print(WIDTH,HEIGHT)
         while self.running:
             fps_cap = int(self.settings.get("video.fps_cap", FPS))
             dt = self.clock.tick(fps_cap) / 1000.0

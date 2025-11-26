@@ -159,7 +159,7 @@ class Individu:
 
         # --- Jauges purement individuelles ---
         self.jauges = {
-            "faim": 50,
+            "faim": 20,
             "soif": 50,
             "energie": self.physique["endurance"],
             "bonheur": 50,
@@ -176,6 +176,7 @@ class Individu:
 
         self.carrying = []
         self.effets_speciaux = []
+        self.faim_timer = 0.0
 
         # === Sous-systèmes individuels ===
         self.mutations = MutationManager(self)
@@ -215,3 +216,14 @@ class Individu:
     @property
     def species_level(self) -> int:
         return self.espece.species_level
+
+    def find_item_in_inventory(self, item_id: str, min_qty: int = 1):
+        inv = self.carrying
+        if not inv:
+            return None
+
+        for item in inv:
+            if item.get("id") == item_id and item.get("quantity", 0) >= min_qty:
+                return item
+
+        return None 
