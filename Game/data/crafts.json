@@ -1,0 +1,36 @@
+{
+  "crafts": [
+    {
+      "name": "Feu",
+      "image": "feu_de_camp",
+      "cost": {
+        "wood": 5,
+        "stone": 2
+      }
+    },
+    {
+      "name": "Abri",
+      "image": "abri",
+      "cost": {
+        "wood": 10,
+        "stone": 5
+      }
+    },
+    {
+      "name": "Outil",
+      "image": "outil",
+      "cost": {
+        "wood": 2,
+        "stone": 1
+      }
+    },
+    {
+      "name": "Piège",
+      "image": "piege",
+      "cost": {
+        "wood": 3,
+        "stone": 1
+      }
+    }
+  ]
+}

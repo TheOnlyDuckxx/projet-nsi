@@ -2,34 +2,6 @@
 # Génère le monde procéduralement tout en utilisant les paramètres fournit
 
 
-"""
-NE PAS ESSAYER DE COMPRENDRE CE FICHIER, C'EST 100% FAIT PAR CHAT GPT
-
-Petit récap :
-
-[PARAMÈTRES + SEED]
-        ↓
-[1] Génére la map avec un "bruit fractal" (cf.wikipédia)
-        ↓
-[2] Entoure l'ile d'eau
-        ↓
-[3] Calcul du niveau de la mer (% eau)
-        ↓
-[4] Normalisation + quantification (étages)
-        ↓
-[5] Ajout de l'humidité (autre bruit)
-        ↓
-[6] Choix du biome (règles)
-        ↓
-[7] Placement des props (arbres, rochers)
-        ↓
-[8] Recherche du spawn
-        ↓
-[WORLD DATA prêt pour affichage]
-
-"""
-
-
 # --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
 from dataclasses import dataclass, asdict
