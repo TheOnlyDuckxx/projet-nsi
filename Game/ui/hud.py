@@ -345,7 +345,7 @@ def draw_inspection_panel(self, screen):
 def load_crafts(file_path):
     with open(file_path, 'r') as f:
         data = json.load(f)
-    return data["crafts"]
+    return data
 
 class BottomHUD:
     """
@@ -415,7 +415,8 @@ class BottomHUD:
         
         # Créer les boutons de craft à partir du fichier JSON
         for craft in self.crafts:
-            image_name = craft["image"]
+            print(craft)
+            image_name = self.crafts[craft]["image"]
             surf = None
             try:
                 surf = self.assets.get_image(image_name)
@@ -424,10 +425,10 @@ class BottomHUD:
             btn = Button(
                 text="",
                 pos=(0, 0),
-                size=(80, 72),
+                size=(70, 70),
                 anchor="center",
                 style=craft_style,
-                on_click=self._make_craft_cb(craft["name"]),
+                on_click=self._make_craft_cb(self.crafts[craft]["name"]),
                 icon=surf,
             )
             self.craft_buttons.append(btn)
@@ -440,10 +441,8 @@ class BottomHUD:
     # ---------- Callbacks ----------
 
     def _make_craft_cb(self, name):
-        def cb(_btn):
-            # Pour l'instant : simple log console
-            print(f"[HUD] Craft placeholder : {name}")
-        return cb
+        self.phase.selected_craft = name
+        print(self.phase.selected_craft)
 
     def _on_toggle(self, _btn):
         self.visible = not self.visible

@@ -13,6 +13,7 @@ from Game.ui.hud import (
     BottomHUD,
 )
 from Game.world.fog_of_war import FogOfWar
+from Game.gameplay.craft import Craft
 
 
 class Phase1:
@@ -42,6 +43,8 @@ class Phase1:
         self.selected: Optional[tuple] = None
         self.save_message = ""
         self.save_message_timer = 0.0
+        self.craft_system = Craft()
+        self.selected_craft = None
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -88,13 +91,23 @@ class Phase1:
                 except Exception:
                     sx, sy = 0, 0
                 from Game.species.species import Espece
-                self.espece_hominide = Espece("Hominidé")
-                self.joueur = self.espece_hominide.create_individu(
+                self.espece = Espece("Hominidé")
+                self.joueur = self.espece.create_individu(
                     x=float(sx),
                     y=float(sy),
                     assets=self.assets,
                 )
-                self.entities = [self.joueur]
+
+                self.joueur2 = self.espece.create_individu(
+                    x=float(sx+1),
+                    y=float(sy+1),
+                    assets=self.assets,
+                )
+                self.entities = [self.joueur,self.joueur2]
+            if self.bottom_hud is None:
+                self.bottom_hud = BottomHUD(self, self.espece)
+            else:
+                self.bottom_hud.species = self.espece
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
 
         # 3) Sinon, génération classique depuis un preset (avec fallback)
@@ -127,22 +140,26 @@ class Phase1:
             sx, sy = 0, 0
         if not self.joueur:
             from Game.species.species import Espece
-            self.espece_hominide = Espece("Hominidé")
-            self.joueur = self.espece_hominide.create_individu(
+            self.espece = Espece("Hominidé")
+            self.joueur = self.espece.create_individu(
                 x=float(sx),
                 y=float(sy),
                 assets=self.assets,
             )
-            self.entities = [self.joueur]
+            self.joueur2 = self.espece.create_individu(
+                    x=float(sx+1),
+                    y=float(sy+1),
+                    assets=self.assets,
+                )
+            self.entities = [self.joueur,self.joueur2]
             self._ensure_move_runtime(self.joueur)
+            self._ensure_move_runtime(self.joueur2)
             for e in self.entities:
                 self._ensure_move_runtime(e)
-        if self.espece_hominide is not None:
-            if self.bottom_hud is None:
-                self.bottom_hud = BottomHUD(self, self.espece_hominide)
-            else:
-                # au cas où le joueur serait recréé / rechargé
-                self.bottom_hud.species = self.joueur
+        if self.bottom_hud is None:
+            self.bottom_hud = BottomHUD(self, self.espece)
+        else:
+            self.bottom_hud.species = self.espece
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -174,6 +191,10 @@ class Phase1:
                     # selection via pile de hit
                     hit = self.view.pick_at(mx, my)
                     if hit:
+                        # i, j = hit
+                        # if self.selected_craft!=None:
+                        #     self.view.place_craft(i, j, self.selected_craft)
+                        #     self.selected_craft = None
                         kind, payload = hit
                         if kind == "entity":
                             self.selected = ("entity", payload)
@@ -185,6 +206,8 @@ class Phase1:
                         # fallback: pick tuile (beam)
                         i_j = self._fallback_pick_tile(mx, my)
                         self.selected = ("tile", i_j) if i_j else None
+            
+                       
 
                 # --- CLIC DROIT = ORDRE DE DÉPLACEMENT (si une créature est sélectionnée) ---
                 elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:

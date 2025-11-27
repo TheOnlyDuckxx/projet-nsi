@@ -147,6 +147,7 @@ class IsoMapView:
             dy = my - self.mouse_pan_start[1]
             self.cam_x = self.cam_start_at_drag[0] - dx
             self.cam_y = self.cam_start_at_drag[1] - dy
+        
 
     def update(self, dt: float, keys=None) -> None:
         if keys is None: keys = pygame.key.get_pressed()
@@ -534,5 +535,12 @@ class IsoMapView:
                     picked = (i, j)  # on continue pour garder la *dernière* (au-dessus)
 
         return picked
+
+    def place_craft(self, i, j, craftname):
+        """Place le craft sur la tuile spécifiée"""
+        sprite_name = self.assets.get_image("craftname")
+        # Logique pour afficher le sprite du craft
+        if sprite_name:
+            self.world.overlay[j][i] = sprite_name
 
 

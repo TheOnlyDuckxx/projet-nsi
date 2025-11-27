@@ -1,36 +1,39 @@
 {
-  "crafts": [
-    {
+  "Feu": {
       "name": "Feu",
       "image": "feu_de_camp",
+      "sprite": "prop_rock",
       "cost": {
         "wood": 5,
         "stone": 2
       }
     },
-    {
+  "Abri": {
       "name": "Abri",
       "image": "abri",
+      "sprite":"prop_rock",
       "cost": {
         "wood": 10,
         "stone": 5
       }
     },
-    {
+  "Outils": {
       "name": "Outil",
       "image": "outil",
+      "sprite":"prop_rock",
       "cost": {
         "wood": 2,
         "stone": 1
       }
     },
+  "Piège":
     {
       "name": "Piège",
       "image": "piege",
+      "sprite":"prop_rock",
       "cost": {
         "wood": 3,
         "stone": 1
       }
     }
-  ]
 }
