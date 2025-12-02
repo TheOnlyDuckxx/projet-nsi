@@ -536,11 +536,11 @@ class IsoMapView:
 
         return picked
 
-    def place_craft(self, i, j, craftname):
-        """Place le craft sur la tuile spécifiée"""
-        sprite_name = self.assets.get_image("craftname")
-        # Logique pour afficher le sprite du craft
-        if sprite_name:
-            self.world.overlay[j][i] = sprite_name
+    def place_craft(self, i: int, j: int, pid: int):
+        """Place directement un prop-id sur la tuile (i,j)."""
+        if not self.world:
+            return
+        if 0 <= i < self.world.width and 0 <= j < self.world.height:
+            self.world.overlay[j][i] = pid
 
 

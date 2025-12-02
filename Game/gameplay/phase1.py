@@ -321,16 +321,40 @@ class Phase1:
             if not self.paused:
                 self.view.handle_event(e)
 
-                # --- CLIC GAUCHE = SÉLECTION ---
+                # --- CLIC GAUCHE ---
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = pygame.mouse.get_pos()
-                    # selection via pile de hit
+
+                    # 1) Mode "placement de craft"
+                    if self.selected_craft is not None:
+                        tile = None
+                        hit = self.view.pick_at(mx, my)
+                        if hit:
+                            kind, payload = hit
+                            if kind == "tile":
+                                tile = payload              # (i, j)
+                            elif kind == "prop":
+                                i, j, _pid = payload
+                                tile = (i, j)
+
+                        if tile is None:
+                            tile = self._fallback_pick_tile(mx, my)
+
+                        if tile is not None and self.joueur and self.world:
+                            ok = self.craft_system.craft_item(
+                                craft_id=self.selected_craft,
+                                builder=self.joueur,
+                                world=self.world,
+                                tile=tile,
+                                notify=add_notification,
+                            )
+                            if ok:
+                                self.selected_craft = None  # on sort du mode placement
+                        return  # on ne fait pas la logique de sélection classique
+
+                    # 2) Mode "sélection" normal
                     hit = self.view.pick_at(mx, my)
                     if hit:
-                        # i, j = hit
-                        # if self.selected_craft!=None:
-                        #     self.view.place_craft(i, j, self.selected_craft)
-                        #     self.selected_craft = None
                         kind, payload = hit
                         if kind == "entity":
                             self.selected = ("entity", payload)
@@ -339,7 +363,6 @@ class Phase1:
                         else:
                             self.selected = ("tile", payload)  # (i,j)
                     else:
-                        # fallback: pick tuile (beam)
                         i_j = self._fallback_pick_tile(mx, my)
                         self.selected = ("tile", i_j) if i_j else None
             

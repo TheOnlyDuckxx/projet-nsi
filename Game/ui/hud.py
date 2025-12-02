@@ -3,7 +3,7 @@ import time
 import textwrap
 import json
 from typing import List
-
+from Game.gameplay.craft import load_crafts
 from Game.core.utils import Button, ButtonStyle
 
 
@@ -342,10 +342,6 @@ def draw_inspection_panel(self, screen):
     # Afficher le panneau sur l'écran
     screen.blit(panel_surf, (panel_x, panel_y))
 
-def load_crafts(file_path):
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    return data
 
 class BottomHUD:
     """
@@ -366,10 +362,10 @@ class BottomHUD:
         self.screen = phase.screen
         self.species = species
         self.crafts = load_crafts("Game/data/crafts.json")
-        # 🌙 Système jour/nuit
+        #Système jour/nuit
         self.day_night = day_night_cycle
         
-        # 🌙 IMPORTANT : Importer et créer le renderer d'horloge
+        #IMPORTANT : Importer et créer le renderer d'horloge
         from Game.world.day_night import ClockRenderer
         self.clock_renderer = ClockRenderer(radius=18)
 
@@ -434,11 +430,12 @@ class BottomHUD:
                 size=(70, 70),
                 anchor="center",
                 style=craft_style,
-                on_click=self._make_craft_cb(self.crafts[craft]["name"]),
+                on_click=self._make_craft_cb(craft_id),
                 icon=surf,
             )
             self.craft_buttons.append(btn)
         
+
 
         # Rects de layout (calculés à chaque frame)
         self.panel_rect = pygame.Rect(0, 0, 100, 100)
@@ -446,9 +443,13 @@ class BottomHUD:
         self.right_rect = pygame.Rect(0, 0, 50, 50)
     # ---------- Callbacks ----------
 
-    def _make_craft_cb(self, name):
-        self.phase.selected_craft = name
-        print(self.phase.selected_craft)
+    def _make_craft_cb(self, craft_id: str):
+        def _cb(_btn):
+            self.phase.selected_craft = craft_id
+            craft_def = self.crafts.get(craft_id, {})
+            label = craft_def.get("name", craft_id)
+            add_notification(f"Placement de : {label} (clique sur une tuile)")
+        return _cb
 
     def _on_toggle(self, _btn):
         self.visible = not self.visible
@@ -551,7 +552,6 @@ class BottomHUD:
         rect = txt.get_rect(center=(cx, cy))
         screen.blit(txt, rect)
 
-        # 🌙 Horloge animée
         cy2 = cy + 56
         if hasattr(self, 'clock_renderer'):
             self.clock_renderer.draw(screen, cx, cy2, self.day_night, self.small_font)
