@@ -5,6 +5,7 @@ import json
 from typing import List
 from Game.gameplay.craft import load_crafts
 from Game.core.utils import Button, ButtonStyle
+from Game.world.day_night import ClockRenderer
 
 
 
@@ -364,9 +365,6 @@ class BottomHUD:
         self.crafts = load_crafts("Game/data/crafts.json")
         #Système jour/nuit
         self.day_night = day_night_cycle
-        
-        #IMPORTANT : Importer et créer le renderer d'horloge
-        from Game.world.day_night import ClockRenderer
         self.clock_renderer = ClockRenderer(radius=18)
 
         self.visible = True      # panneau déplié ou non
@@ -377,18 +375,6 @@ class BottomHUD:
             pygame.font.init()
         self.font = pygame.font.SysFont("consolas", 18, bold=True)
         self.small_font = pygame.font.SysFont("consolas", 14)
-
-        # --- Icône placeholder pour les crafts ---
-        surf = None
-        try:
-            surf = self.assets.get_image("placeholder")
-        except Exception:
-            pass
-
-        if surf is None:
-            surf = pygame.Surface((32, 32), pygame.SRCALPHA)
-            surf.fill((160, 160, 160, 255))
-        self.craft_icon = surf
 
         # --- Bouton de repli / dépli ---
         toggle_style = ButtonStyle(
@@ -414,16 +400,14 @@ class BottomHUD:
         )
 
         self.craft_buttons: List[Button] = []
-        
-        for craft in self.crafts:
-            print(craft)
-            image_name = self.crafts[craft]["image"]
-            surf = None
+
+        for craft_id, craft_def in self.crafts.items():
+            image_name = craft_def.get("image", "feu_de_camp")
             try:
                 surf = self.assets.get_image(image_name)
             except Exception:
                 surf = self.assets.get_image("feu_de_camp")
-            # Si l'image n'est pas trouvée, utiliser l'image de secours
+
             btn = Button(
                 text="",
                 pos=(0, 0),
@@ -434,7 +418,7 @@ class BottomHUD:
                 icon=surf,
             )
             self.craft_buttons.append(btn)
-        
+                
 
 
         # Rects de layout (calculés à chaque frame)

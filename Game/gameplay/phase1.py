@@ -239,7 +239,7 @@ class Phase1:
                 )
                 self.entities = [self.joueur,self.joueur2]
             if self.bottom_hud is None:
-                self.bottom_hud = BottomHUD(self, self.espece)
+                self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
             else:
                 self.bottom_hud.species = self.espece
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
@@ -293,7 +293,7 @@ class Phase1:
             for e in self.entities:
                 self._ensure_move_runtime(e)
         if self.bottom_hud is None:
-            self.bottom_hud = BottomHUD(self, self.espece)
+            self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
         else:
             self.bottom_hud.species = self.espece
 
@@ -370,6 +370,7 @@ class Phase1:
 
                 # --- CLIC DROIT = ORDRE DE DÉPLACEMENT (si une créature est sélectionnée) ---
                 elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
+                    self.selected_craft = None
                     if self.selected and self.selected[0] == "entity":
                         ent = self.selected[1]
                         mx, my = pygame.mouse.get_pos()
