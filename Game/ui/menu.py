@@ -211,6 +211,14 @@ class MainMenu(BaseMenu):
             style=primary,
             on_click=lambda b: self.app.change_state("CREATION"),
         ))
+        self.btn_species = self.add(Button(
+            "CRÉATION D'ESPÈCE",
+            (WIDTH // 2, y0 + gap),
+            anchor="center",
+            style=primary,
+            on_click=lambda b: self.app.change_state("SPECIES_CREATION"),
+        ))
+
 
         self.btn_start = self.add(Button(
             "NOUVELLE PARTIE",
@@ -258,6 +266,7 @@ class MainMenu(BaseMenu):
 
     def render(self, screen):
         super().render(screen)
+    
 
 
 class CreditMenu(BaseMenu):
@@ -461,3 +470,190 @@ class WorldCreationMenu(BaseMenu):
             json.dump(presets, f, indent=4, ensure_ascii=False)
             # Change d'état pour lancer la partie
         self.app.change_state("LOADING")
+
+
+class SpeciesCreationMenu(BaseMenu):
+    def __init__(self, app):
+        super().__init__(app, title="Création d'espèce")
+
+        self.font = app.assets.get_font("MightySouly", 22)
+        self.btn_font = app.assets.get_font("MightySouly", 28)
+
+        # --- Charger le JSON des mutations ---
+        mutations_path = os.path.join("Game", "data", "mutations.json")
+        try:
+            with open(mutations_path, "r", encoding="utf-8") as f:
+                all_mutations = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"[SpeciesCreationMenu] Impossible de charger mutations.json : {e}")
+            all_mutations = {}
+
+        # Mutations de base uniquement (base: true)
+        self.base_mutations = {
+            mid: data for mid, data in all_mutations.items()
+            if data.get("base", False)
+        }
+
+        # État local : mutations sélectionnées (id → bool)
+        # On tente de récupérer ce qui a été déjà choisi (session précédente)
+        default_sel = []
+        if hasattr(app, "selected_base_mutations"):
+            default_sel = list(app.selected_base_mutations or [])
+        else:
+            # fallback éventuel depuis settings (optionnel)
+            default_sel = app.settings.get("species.base_mutations", []) or []
+
+        self.selected_ids: set[str] = {
+            mid for mid in default_sel if mid in self.base_mutations
+        }
+
+        self.error_msg: str = ""
+
+        # --- Layout des Toggles ---
+        center_x = WIDTH // 2
+        start_y = 220
+        gap_y = 45
+
+        base_list = list(self.base_mutations.items())
+
+        for i, (mutation_id, data) in enumerate(base_list):
+            y = start_y + i * gap_y
+            label = data.get("nom", mutation_id)
+
+            def make_get(mid):
+                return lambda mid=mid: mid in self.selected_ids
+
+            def make_set(mid):
+                def setter(value, mid=mid):
+                    self._toggle_mutation(mid, value)
+                return setter
+
+            self.add(Toggle(
+                label,
+                (center_x, y),
+                get_value=make_get(mutation_id),
+                set_value=make_set(mutation_id),
+                font=self.btn_font,
+            ))
+
+        # --- Styles de boutons bas ---
+        primary = ButtonStyle(
+            draw_background=True,
+            bg_color=(60, 80, 110),
+            hover_bg_color=(80, 110, 155),
+            active_bg_color=(40, 140, 240),
+            draw_border=True,
+            border_color=(20, 30, 45),
+            border_width=2,
+            radius=14,
+            font=self.btn_font,
+            text_color=(255, 255, 255),
+            hover_text_color=(255, 255, 255),
+            active_text_color=(255, 255, 255),
+            padding_x=26,
+            padding_y=14,
+            shadow=True,
+            shadow_offset=(3, 3),
+            shadow_alpha=90,
+            hover_zoom=1.10,
+            zoom_speed=0.22,
+        )
+
+        ghost = ButtonStyle(
+            draw_background=False,
+            font=self.btn_font,
+            text_color=(230, 230, 230),
+            hover_zoom=1.08,
+            zoom_speed=0.22,
+        )
+
+        y_buttons = start_y + len(base_list) * gap_y + 60
+
+        self.btn_reset = self.add(Button(
+            "Réinitialiser",
+            (center_x - 200, y_buttons),
+            anchor="center",
+            style=ghost,
+            on_click=lambda b: self._reset_selection(),
+        ))
+
+        self.btn_validate = self.add(Button(
+            "Valider",
+            (center_x, y_buttons),
+            anchor="center",
+            style=primary,
+            on_click=lambda b: self._validate_and_back(),
+        ))
+
+        self.btn_back = self.add(Button(
+            "Retour",
+            (center_x + 200, y_buttons),
+            anchor="center",
+            style=ghost,
+            on_click=lambda b: self.app.change_state("MENU"),
+        ))
+
+    # --- Logique de sélection / incompatibilités ---
+
+    def _toggle_mutation(self, mutation_id: str, enabled: bool):
+        """
+        Active/désactive une mutation, en vérifiant les incompatibilités.
+        """
+        if enabled:
+            data = self.base_mutations.get(mutation_id, {})
+            incompat_ids = set(data.get("incompatibles", []))
+            conflict = incompat_ids & self.selected_ids
+            if conflict:
+                # On bloque et on affiche un message d'erreur
+                noms = [
+                    self.base_mutations[c]["nom"] if c in self.base_mutations else c
+                    for c in conflict
+                ]
+                self.error_msg = "Incompatible avec : " + ", ".join(noms)
+                return
+            self.selected_ids.add(mutation_id)
+            self.error_msg = ""
+        else:
+            self.selected_ids.discard(mutation_id)
+            self.error_msg = ""
+
+    def _reset_selection(self):
+        self.selected_ids.clear()
+        self.error_msg = ""
+
+    def _validate_and_back(self):
+        """
+        Sauvegarde la sélection dans l'App (et éventuellement dans les settings)
+        puis retourne au menu principal.
+        """
+        # Stockage en mémoire pour la session
+        if hasattr(self.app, "selected_base_mutations"):
+            self.app.selected_base_mutations = list(self.selected_ids)
+
+        # Optionnel : persister dans settings
+        try:
+            self.app.settings.set("species.base_mutations", list(self.selected_ids))
+        except Exception:
+            pass
+
+        self.app.change_state("MENU")
+
+    def handle_input(self, events):
+        super().handle_input(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+
+    def render(self, screen):
+        super().render(screen)
+
+        # Bandeau d'info / erreurs
+        if self.error_msg:
+            font = self.app.assets.get_font("MightySouly", 22)
+            txt = font.render(self.error_msg, True, (255, 120, 120))
+            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT - 120))
+        else:
+            font = self.app.assets.get_font("MightySouly", 20)
+            msg = "Sélectionne les mutations de base de ton espèce (les incompatibilités sont bloquées)."
+            surf = font.render(msg, True, (210, 210, 210))
+            screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, HEIGHT - 120))

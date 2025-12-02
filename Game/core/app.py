@@ -6,7 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
-from Game.ui.menu import MainMenu,OptionsMenu, CreditMenu, WorldCreationMenu
+from Game.ui.menu import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
@@ -26,6 +26,7 @@ class App:
         self.states = {}
         self.state = None
         self.settings=Settings()
+        self.selected_base_mutations: list[str] = []
         self._register_states()
         self.change_state("MENU")
 
@@ -37,6 +38,7 @@ class App:
         self.states["PHASE1"] = Phase1(self)
         self.states["LOADING"] = LoadingState(self)
         self.states["CREATION"] = WorldCreationMenu(self)
+        self.states["SPECIES_CREATION"] = SpeciesCreationMenu(self)
         # plus tard: self.states["PHASE2"] = Phase2(self)
     
     #Fonction pour quitter le jeu

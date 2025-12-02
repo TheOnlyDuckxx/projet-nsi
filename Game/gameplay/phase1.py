@@ -1,12 +1,14 @@
 # --- imports en haut du fichier ---
-import pygame, random, heapq
+import pygame, random, heapq, json
 from typing import List, Tuple, Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
+from Game.core.utils import resource_path
 from Game.ui.hud import (
+
     add_notification,
     draw_inspection_panel,
     draw_work_bar,
@@ -64,6 +66,132 @@ class Phase1:
         if not hasattr(ent, "_move_from"):  ent._move_from = None       # (x,y) float
         if not hasattr(ent, "_move_to"):    ent._move_to = None         # (i,j) int
         if not hasattr(ent, "_move_t"):     ent._move_t = 0.0           # 0..1
+        # ---------- Mutations de base de l'espèce ----------
+
+    def _load_mutations_data(self):
+        """
+        Charge et met en cache le JSON des mutations.
+        """
+        if hasattr(self, "_mutations_cache"):
+            return self._mutations_cache
+
+        try:
+            with open(resource_path("Game/data/mutations.json"), "r", encoding="utf-8") as f:
+                self._mutations_cache = json.load(f)
+        except Exception as e:
+            print(f"[Phase1] Impossible de charger mutations.json : {e}")
+            self._mutations_cache = {}
+
+        return self._mutations_cache
+
+    def _get_selected_base_mutations(self) -> list[str]:
+        """
+        Récupère la liste des IDs de mutations de base sélectionnées
+        dans l'App ou les settings.
+        """
+        app = self.app
+        # priorité : valeur en mémoire (menu espèce)
+        if hasattr(app, "selected_base_mutations") and app.selected_base_mutations:
+            return list(app.selected_base_mutations)
+
+        # fallback : config (si tu veux garder un défaut global)
+        try:
+            return list(app.settings.get("species.base_mutations", []) or [])
+        except Exception:
+            return []
+
+    def _apply_base_mutations_to_species(self):
+        """
+        Applique les effets des mutations de base sur les stats de base
+        de l'espèce (base_physique, base_sens, etc.).
+        À appeler après la création de self.espece, avant create_individu().
+        """
+        ids = self._get_selected_base_mutations()
+        if not ids or not self.espece:
+            return
+
+        data_all = self._load_mutations_data()
+
+        # mapping des catégories JSON → attributs de l'espèce
+        cat_map = {
+            "physique": "base_physique",
+            "sens": "base_sens",
+            "mental": "base_mental",
+            "social": "base_social",
+            "environnement": "base_environnement",
+            "genetique": "genetique",
+        }
+
+        for mut_id in ids:
+            m = data_all.get(mut_id)
+            if not m:
+                print(f"[Phase1] Mutation de base inconnue : {mut_id}")
+                continue
+
+            effets = m.get("effets", {})
+            for cat, d_stats in effets.items():
+                if cat == "combat":
+                    # géré plus tard sur les individus
+                    continue
+
+                attr = cat_map.get(cat)
+                if not attr:
+                    print(f"[Phase1] Catégorie '{cat}' non gérée pour mutation '{mut_id}'")
+                    continue
+
+                cible = getattr(self.espece, attr, None)
+                if not isinstance(cible, dict):
+                    print(f"[Phase1] Attribut '{attr}' manquant sur Espece (mutation '{mut_id}')")
+                    continue
+
+                for stat, delta in d_stats.items():
+                    if stat not in cible:
+                        print(f"[Phase1] Stat '{stat}' absente dans '{attr}' (mutation '{mut_id}')")
+                        continue
+                    try:
+                        cible[stat] += delta
+                    except Exception:
+                        pass
+
+        # On garde la liste sur l'espèce (utile plus tard)
+        self.espece.base_mutations = ids
+
+    def _apply_base_mutations_to_individus(self):
+        """
+        Applique sur les individus déjà créés les effets qui concernent
+        par exemple la catégorie 'combat' (attaque à distance, etc.).
+        À appeler après la création de self.joueur / self.joueur2.
+        """
+        ids = getattr(self.espece, "base_mutations", None)
+        if not ids:
+            return
+
+        data_all = self._load_mutations_data()
+
+        individus = [getattr(self, "joueur", None), getattr(self, "joueur2", None)]
+        individus = [ind for ind in individus if ind is not None]
+
+        for mut_id in ids:
+            m = data_all.get(mut_id)
+            if not m:
+                continue
+
+            effets = m.get("effets", {})
+            combat_stats = effets.get("combat", {})
+            if not combat_stats:
+                continue
+
+            for ind in individus:
+                if not hasattr(ind, "combat"):
+                    continue
+                for stat, delta in combat_stats.items():
+                    if stat not in ind.combat:
+                        print(f"[Phase1] Stat de combat '{stat}' absente sur Individu (mutation '{mut_id}')")
+                        continue
+                    try:
+                        ind.combat[stat] += delta
+                    except Exception:
+                        pass
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
@@ -141,6 +269,7 @@ class Phase1:
         if not self.joueur:
             from Game.species.species import Espece
             self.espece = Espece("Hominidé")
+            self._apply_base_mutations_to_species()
             self.joueur = self.espece.create_individu(
                 x=float(sx),
                 y=float(sy),
@@ -151,6 +280,7 @@ class Phase1:
                     y=float(sy+1),
                     assets=self.assets,
                 )
+            self._apply_base_mutations_to_individus()
             self.entities = [self.joueur,self.joueur2]
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
