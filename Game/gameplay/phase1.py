@@ -16,7 +16,7 @@ from Game.ui.hud import (
 )
 from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
-
+from Game.world.day_night import DayNightCycle
 
 class Phase1:
     def __init__(self, app):
@@ -30,7 +30,13 @@ class Phase1:
         self.params = None
         self.world = None
         self.fog=None
-
+        
+        # Système jour/nuit
+        # Cycle de 10 minutes réelles (600 secondes)
+        self.day_night = DayNightCycle(cycle_duration=600)
+        self.day_night.set_time(6, 0)  # Commence à 6h du matin
+        self.day_night.set_speed(1.0)   # Vitesse normale
+        
         # entités
         self.espece = None
         self.joueur: Optional[Espece] = None
@@ -199,7 +205,7 @@ class Phase1:
         if kwargs.get("load_save", False) and self.save_exists():
             if self.load():
                 if self.espece and not self.bottom_hud:
-                    self.bottom_hud = BottomHUD(self, self.espece)
+                    self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
                 return
 
         # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
@@ -432,6 +438,9 @@ class Phase1:
     def update(self, dt: float):
         if self.paused:
             return
+        #mettre a jour le cycle jour/nuit
+        self.day_night.update(dt)
+        
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
