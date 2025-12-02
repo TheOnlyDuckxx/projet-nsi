@@ -365,7 +365,7 @@ class BottomHUD:
         self.assets = phase.assets
         self.screen = phase.screen
         self.species = species
-        
+        self.crafts = load_crafts("Game/data/crafts.json")
         # 🌙 Système jour/nuit
         self.day_night = day_night_cycle
         
@@ -414,33 +414,31 @@ class BottomHUD:
 
         # --- Boutons de quick craft ---
         craft_style = ButtonStyle(
-            draw_background=True,
-            bg_color=(80, 130, 80),
-            hover_bg_color=(100, 160, 100),
-            active_bg_color=(60, 100, 60),
-            border_color=(20, 40, 20),
-            border_width=2,
-            radius=12,
-            padding_x=4,
-            padding_y=4,
-            font=self.small_font,
             hover_zoom=1.0,
         )
 
         self.craft_buttons: List[Button] = []
-        craft_names = ["Feu", "Abri", "Outil", "Piège"]
-
-        for name in craft_names:
+        
+        for craft in self.crafts:
+            print(craft)
+            image_name = self.crafts[craft]["image"]
+            surf = None
+            try:
+                surf = self.assets.get_image(image_name)
+            except Exception:
+                surf = self.assets.get_image("feu_de_camp")
+            # Si l'image n'est pas trouvée, utiliser l'image de secours
             btn = Button(
-                text=name,
+                text="",
                 pos=(0, 0),
-                size=(80, 72),
+                size=(70, 70),
                 anchor="center",
                 style=craft_style,
-                on_click=self._make_craft_cb(name),
-                icon=self.craft_icon,
+                on_click=self._make_craft_cb(self.crafts[craft]["name"]),
+                icon=surf,
             )
             self.craft_buttons.append(btn)
+        
 
         # Rects de layout (calculés à chaque frame)
         self.panel_rect = pygame.Rect(0, 0, 100, 100)

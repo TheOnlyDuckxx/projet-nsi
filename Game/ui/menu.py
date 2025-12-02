@@ -197,18 +197,11 @@ class MainMenu(BaseMenu):
         if self.has_save:
             self.btn_resume = self.add(Button(
                 "▶ REPRENDRE LA PARTIE",
-                (WIDTH // 2, y0 - 2*gap),
+                (WIDTH // 2, y0 - gap),
                 anchor="center",
                 style=resume_style,
                 on_click=lambda b: self.app.change_state("PHASE1", load_save=True),
             ))
-        self.btn_species = self.add(Button(
-            "CRÉATION D'ESPÈCE",
-            (WIDTH // 2, y0 - gap),
-            anchor="center",
-            style=primary,
-            on_click=lambda b: self.app.change_state("SPECIES_CREATION"),
-        ))
 
         # ---- Boutons normaux ----
         self.btn_monde = self.add(Button(
@@ -217,6 +210,13 @@ class MainMenu(BaseMenu):
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("CREATION"),
+        ))
+        self.btn_species = self.add(Button(
+            "CRÉATION D'ESPÈCE",
+            (WIDTH // 2, y0 + gap),
+            anchor="center",
+            style=primary,
+            on_click=lambda b: self.app.change_state("SPECIES_CREATION"),
         ))
 
 
@@ -470,6 +470,7 @@ class WorldCreationMenu(BaseMenu):
             json.dump(presets, f, indent=4, ensure_ascii=False)
             # Change d'état pour lancer la partie
         self.app.change_state("LOADING")
+        self.app.change_state("LOADING")
 
 
 class SpeciesCreationMenu(BaseMenu):
@@ -566,16 +567,12 @@ class SpeciesCreationMenu(BaseMenu):
             hover_zoom=1.08,
             zoom_speed=0.22,
         )
-        x_buttons = center_x - 200
-        if y_buttons > HEIGHT - 50:
-             y_buttons = start_y + len(base_list) + 60 - gap_y
-             x_buttons = center_x + 300
-        else:
-            y_buttons = start_y + len(base_list) * gap_y + 60 - gap_y
+
+        y_buttons = start_y + len(base_list) * gap_y + 60
 
         self.btn_reset = self.add(Button(
             "Réinitialiser",
-            (x_buttons, y_buttons),
+            (center_x - 200, y_buttons),
             anchor="center",
             style=ghost,
             on_click=lambda b: self._reset_selection(),
@@ -583,7 +580,7 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.btn_validate = self.add(Button(
             "Valider",
-            (x_buttons+200, y_buttons),
+            (center_x, y_buttons),
             anchor="center",
             style=primary,
             on_click=lambda b: self._validate_and_back(),
@@ -591,7 +588,7 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.btn_back = self.add(Button(
             "Retour",
-            (x_buttons+400, y_buttons),
+            (center_x + 200, y_buttons),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.change_state("MENU"),
