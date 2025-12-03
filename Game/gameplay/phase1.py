@@ -473,9 +473,9 @@ class Phase1:
             return max(2, int(3 + vision * 0.7))
 
         observers = self.entities  # pour Phase1, il n’y a qu’un seul individu
-
         if self.fog:
-            self.fog.recompute(observers, get_radius)
+            light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel
+            self.fog.recompute(self.entities, get_radius, light_level)
         else :
             self.fog = FogOfWar(self.world.width, self.world.height)
         self.view.fog = self.fog

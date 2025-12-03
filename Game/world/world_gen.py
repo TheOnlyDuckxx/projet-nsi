@@ -30,6 +30,7 @@ def get_prop_id(name: str) -> int:
         "boulder": 23,     # gros rocher
         "flower2": 25,
         "flower3": 26,
+        "entrepot": 24,
     }
     return _MAP.get(name, _MAP["tree_2"])
 

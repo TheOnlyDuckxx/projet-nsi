@@ -32,7 +32,7 @@ class DayNightCycle:
         }
         
         # Vitesse d'écoulement du temps (1.0 = temps normal, 2.0 = 2x plus rapide)
-        self.time_speed = 1.0
+        self.time_speed = 2.0
         
         # Pause
         self.paused = False

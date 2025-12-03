@@ -11,7 +11,7 @@ class FogOfWar:
             for x in range(self.width):
                 self.visible[y][x] = False
 
-    def recompute(self, observers, get_radius):
+    def recompute(self, observers, get_radius, light_level):
         self.clear_visible()
 
         for ent in observers:
@@ -19,7 +19,7 @@ class FogOfWar:
             if not (0 <= cx < self.width and 0 <= cy < self.height):
                 continue
 
-            r = get_radius(ent)
+            r = int(get_radius(ent) * light_level)  # Ajuste la portée de vision selon la luminosité
             r2 = r * r
 
             for y in range(max(0, cy-r), min(self.height, cy+r+1)):
@@ -32,4 +32,4 @@ class FogOfWar:
                     dx = x - cx
                     if dx*dx + dy2 <= r2:
                         row_vis[x] = True
-                        row_exp[x] = True   # ← NEW : devenue explorée
+                        row_exp[x] = True 

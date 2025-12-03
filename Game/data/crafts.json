@@ -1,4 +1,17 @@
-{
+{ 
+  "Entrepot": {
+    "name": "Entrepot",
+    "image": "feu_de_camp",
+    "sprite": "prop_entrepot",
+    "cost": {
+      "wood": 0,
+      "stone": 0
+    },
+    "output": {
+      "type": "prop",
+      "pid": 24   
+    }
+  },
   "Feu": {
     "name": "Feu",
     "image": "feu_de_camp",
