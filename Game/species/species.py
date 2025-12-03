@@ -1,7 +1,7 @@
 # Game/espece/species.py
 
 from copy import deepcopy
-
+from Game.gameplay.level_up import LevelUp
 from .mutations import MutationManager
 from .comportement import Comportement
 from .reproduction import ReproductionSystem
@@ -60,6 +60,8 @@ class Espece:
         self.species_level = 1
         self.xp = 0
         self.xp_to_next = 100
+        self.lvl_up=LevelUp(self.species_level)
+        self.mutations = MutationManager(self)
 
         # === Population ===
         self.individus = []
@@ -103,8 +105,7 @@ class Espece:
             self.xp_to_next = int(self.xp_to_next * 1.25)
 
         if leveled_up:
-            print(f"[XP] {self.nom} passe niveau {self.species_level} "
-                  f"(prochain palier : {self.xp_to_next} XP)")
+            self.lvl_up.update_level(self.species_level)
 
     def xp_ratio(self) -> float:
         """
@@ -179,7 +180,7 @@ class Individu:
         self.faim_timer = 0.0
 
         # === Sous-systèmes individuels ===
-        self.mutations = MutationManager(self)
+        self.mutations = espece.mutations
         self.comportement = Comportement(self)
         self.reproduction = ReproductionSystem(self)
         self.sensors = Sensors(self)

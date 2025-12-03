@@ -9,11 +9,7 @@ from typing import Optional, Tuple, List, Dict, Any
 import json, os, random, math, hashlib, struct
 from typing import Callable
 import random
-
-# Type du callback: progress(fraction: float, label: str)
 ProgressCb = Optional[Callable[[float, str], None]]
-# --- Optionnel : si tes modules fournissent des helpers d'ID de tuiles/ressources ---
-# On les utilise si disponibles, sinon on a un fallback interne.
 from Game.world.tiles import get_tile_id
 
 
@@ -32,6 +28,8 @@ def get_prop_id(name: str) -> int:
         "stump": 21,       # souche
         "log": 22,         # tronc au sol
         "boulder": 23,     # gros rocher
+        "flower2": 25,
+        "flower3": 26,
     }
     return _MAP.get(name, _MAP["tree_2"])
 
@@ -407,7 +405,12 @@ class WorldGenerator:
 
                 # base: petites chances de fleurs/buissons partout hors désert
                 if b not in ("desert", "rock") and rng.random() < 0.02 * density_mul * (0.5 + cm):
-                    overlay[y][x] = get_prop_id("flower")
+                    if random.randint(0,2)==0:
+                        overlay[y][x] = get_prop_id("flower")
+                    elif random.randint(0,2)==1:
+                        overlay[y][x] = get_prop_id("flower2")
+                    elif random.randint(0,2)==2:
+                        overlay[y][x] = get_prop_id("flower3")
                     continue
                 if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
                     if random.randint(0,3) == 0:

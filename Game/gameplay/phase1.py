@@ -472,7 +472,7 @@ class Phase1:
             vision = ent.sens.get("vision", 5)
             return max(2, int(3 + vision * 0.7))
 
-        observers = [self.joueur]  # pour Phase1, il n’y a qu’un seul individu
+        observers = self.entities  # pour Phase1, il n’y a qu’un seul individu
 
         if self.fog:
             self.fog.recompute(observers, get_radius)
