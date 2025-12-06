@@ -1,20 +1,10 @@
 {
     "presets": {
-        "Default": {
-            "planet_width": 256,
-            "planet_height": 256,
-            "water_pct": 62,
-            "temperature": "temperate",
-            "atmosphere_density": 1.0,
-            "resource_density": 1.0,
-            "seed": null,
-            "world_name": "Gaia"
-        },
         "Custom": {
-            "world_name": "Monde sans nom",
+            "world_name": "MONDE COOL",
             "seed": "Aléatoire",
             "world_size": "Moyenne",
-            "water_coverage": "Tempéré (40-60%)",
+            "water_coverage": "Tempéré",
             "temperature": "Tempéré",
             "atmosphere_density": "Normale",
             "resource_density": "Moyenne",

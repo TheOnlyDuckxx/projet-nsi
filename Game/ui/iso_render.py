@@ -250,8 +250,10 @@ class IsoMapView:
             if mask is None:
                 return kind, payload
             lx, ly = x - rect.x, y - rect.y
-            if 0 <= lx < rect.w and 0 <= ly < rect.h and mask.get_at((lx, ly)):
-                return kind, payload
+            if 0 <= lx < rect.w and 0 <= ly < rect.h:
+                if lx < mask.get_size()[0] and ly < mask.get_size()[1]:
+                    if mask.get_at((lx, ly)):
+                        return kind, payload
         return None
 
     def tile_surface_poly(self, i: int, j: int) -> list[tuple[int,int]]:

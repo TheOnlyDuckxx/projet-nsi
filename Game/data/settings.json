@@ -9,5 +9,8 @@
   },
   "gameplay": {
     "language": "fr"
+  },
+  "species": {
+    "base_mutations": []
   }
 }

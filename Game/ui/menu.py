@@ -206,25 +206,17 @@ class MainMenu(BaseMenu):
             ))
 
         # ---- Boutons normaux ----
-        self.btn_monde = self.add(Button(
-            "PARAMÈTRES DU MONDE",
-            (WIDTH // 2, y0),
+        self.btn_start = self.add(Button(
+            "NOUVELLE PARTIE",
+            (WIDTH // 2, y0 ),
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("CREATION"),
         ))
 
-        self.btn_start = self.add(Button(
-            "NOUVELLE PARTIE",
-            (WIDTH // 2, y0 + gap),
-            anchor="center",
-            style=primary,
-            on_click=lambda b: self.app.change_state("LOADING"),
-        ))
-
         self.btn_options = self.add(Button(
             "OPTIONS",
-            (WIDTH // 2, y0 + 2*gap),
+            (WIDTH // 2, y0 + gap),
             anchor="center",
             style=primary,
             on_click=lambda b: self.app.change_state("OPTIONS"),
@@ -232,7 +224,7 @@ class MainMenu(BaseMenu):
 
         self.btn_credits = self.add(Button(
             "Crédits",
-            (WIDTH // 2, y0 + 3*gap),
+            (WIDTH // 2, y0 + 2*gap),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.change_state("CREDITS"),
@@ -240,7 +232,7 @@ class MainMenu(BaseMenu):
 
         self.btn_quit = self.add(Button(
             "Quitter",
-            (WIDTH // 2, y0 + 4*gap),
+            (WIDTH // 2, y0 + 3*gap),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.quit_game(),
@@ -351,7 +343,7 @@ class WorldCreationMenu(BaseMenu):
              ["Petite planète", "Moyenne", "Grande", "Gigantesque"]),
 
             ("water_coverage", "Pourcentage d'eau",
-             ["Aride (0-20%)", "Tempéré (40-60%)", "Océanique (80-100%)"]),
+             ["Aride", "Tempéré", "Océanique"]),
 
             ("temperature", "Température moyenne",
              ["Glaciaire", "Froid", "Tempéré", "Chaud", "Ardent"]),
@@ -786,7 +778,7 @@ class SpeciesCreationMenu(BaseMenu):
         except Exception:
             pass
 
-        self.app.change_state("MENU")
+        self.app.change_state("LOADING")
 
     def handle_input(self, events):
         super().handle_input(events)

@@ -80,18 +80,157 @@ class WorldData:
 
 
 # --------- Presets ---------
-def load_world_params_from_preset(preset_name: str, path: str="Game/data/world_presets.json",
-                                  overrides: Optional[Dict[str, Any]]=None) -> WorldParams:
+def load_world_params_from_preset(
+    preset_name: str,
+    path: str = "Game/data/world_presets.json",
+    overrides: Optional[Dict[str, Any]] = None
+) -> WorldParams:
+    """
+    Charge un preset de monde en acceptant :
+      - l'ancien format (Taille, Climat, 'Niveau des océans', Ressources, etc.)
+      - le nouveau format du menu (world_size, water_coverage, temperature,
+        resource_density, atmosphere_density = 'Faible/Normale/Épaisse', etc.)
+    """
     if not os.path.exists(path):
         raise FileNotFoundError(f"Preset file not found: {path}")
+
     with open(path, "r", encoding="utf-8") as f:
         doc = json.load(f)
+
     preset = doc.get("presets", {}).get(preset_name)
     if preset is None:
         raise KeyError(f"Preset '{preset_name}' not found in {path}")
+
+    # Copie modifiable
+    d: Dict[str, Any] = dict(preset)
+
+    # Merge éventuels overrides
     if overrides:
-        preset = {**preset, **overrides}
-    return WorldParams.from_dict(preset)
+        d.update(overrides)
+
+    # ---------- Taille ----------
+    if "Taille" not in d:
+        raw_size = d.get("world_size", "Moyenne")
+        taille_km: int
+
+        if isinstance(raw_size, (int, float)):
+            taille_km = int(raw_size)
+        elif isinstance(raw_size, str):
+            s = raw_size.lower()
+            if "petite" in s:
+                taille_km = 22000
+            elif "moyen" in s:
+                taille_km = 28000
+            elif "grand" in s:
+                taille_km = 34000
+            elif "gigan" in s:
+                taille_km = 38000
+            else:
+                taille_km = 28000
+        else:
+            taille_km = 28000
+
+        d["Taille"] = taille_km
+
+    # ---------- Climat ----------
+    if "Climat" not in d:
+        raw_temp = d.get("temperature", "Tempéré")
+        climat: str
+
+        if isinstance(raw_temp, str):
+            t = raw_temp.lower()
+            if "glaciaire" in t:
+                climat = "Glaciaire"
+            elif "froid" in t:
+                climat = "Froid"
+            elif "temp" in t:
+                climat = "Tempéré"
+            elif "chaud" in t:
+                climat = "Tropical"
+            elif "ardent" in t:
+                climat = "Aride"
+            else:
+                climat = "Tempéré"
+        else:
+            climat = "Tempéré"
+
+        d["Climat"] = climat
+
+    # ---------- Niveau des océans ----------
+    if "Niveau des océans" not in d:
+        raw_cov = d.get("water_coverage", "Tempéré")
+        niveau: int
+
+        if isinstance(raw_cov, (int, float)):
+            niveau = int(raw_cov)
+        elif isinstance(raw_cov, str):
+            c = raw_cov.lower()
+            if "aride" in c:
+                niveau = 25
+            elif "temp" in c:
+                niveau = 50
+            elif "océan" in c or "ocean" in c:
+                niveau = 75
+            else:
+                niveau = 50
+        else:
+            niveau = 50
+
+        d["Niveau des océans"] = niveau
+
+    # ---------- Ressources ----------
+    if "Ressources" not in d:
+        raw_res = d.get("resource_density", "Moyenne")
+        res: str
+
+        if isinstance(raw_res, str):
+            r = raw_res.lower()
+            if "pauvre" in r:
+                res = "Faible"
+            elif "moy" in r:
+                res = "Normale"
+            elif "riche" in r:
+                res = "Riche"
+            elif "instable" in r:
+                # pour l'instant on assimile à Riche (densité forte)
+                res = "Riche"
+            else:
+                res = "Normale"
+        else:
+            res = "Normale"
+
+        d["Ressources"] = res
+
+    # ---------- Atmosphère (float) ----------
+    raw_atmo = d.get("atmosphere_density", 1.0)
+    atmo_val: float
+
+    if isinstance(raw_atmo, (int, float)):
+        atmo_val = float(raw_atmo)
+    elif isinstance(raw_atmo, str):
+        s = raw_atmo.lower()
+        if "faible" in s:
+            atmo_val = 0.7
+        elif "norm" in s:
+            atmo_val = 1.0
+        elif "épais" in s or "epais" in s:
+            atmo_val = 1.3
+        else:
+            try:
+                atmo_val = float(raw_atmo.replace(",", "."))
+            except Exception:
+                atmo_val = 1.0
+    else:
+        atmo_val = 1.0
+
+    d["atmosphere_density"] = atmo_val
+
+    # ---------- Age par défaut ----------
+    if "age" not in d:
+        d["age"] = 2000
+
+    # Le reste (seed, world_name, etc.) est déjà géré par WorldParams.from_dict
+    return WorldParams.from_dict(d)
 
 
 def km_to_blocks(km: int) -> int:

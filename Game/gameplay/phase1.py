@@ -36,7 +36,7 @@ class Phase1:
         # Cycle de 10 minutes réelles (600 secondes)
         self.day_night = DayNightCycle(cycle_duration=600)
         self.day_night.set_time(6, 0)  # Commence à 6h du matin
-        self.day_night.set_speed(1.0)   # Vitesse normale
+        self.day_night.set_speed(3.0)   # Vitesse normale
         
         # entités
         self.espece = None
@@ -564,33 +564,26 @@ class Phase1:
             if renderer is None and hasattr(ent, "espece"):
                 renderer = getattr(ent.espece, "renderer", None)
 
-            # 2) Si on a un renderer compatible, on l’utilise pour la hitbox
-            if renderer is not None and hasattr(renderer, "get_draw_surface_and_rect"):
+            sprite = None
+            rect = None
+
+            if renderer and hasattr(renderer, "get_draw_surface_and_rect"):
                 try:
                     sprite, rect = renderer.get_draw_surface_and_rect(
                         self.view, self.world, ent.x, ent.y
                     )
                 except Exception:
-                    rect = None
+                    sprite, rect = None, None
 
+            # 2) Si on n'a ni sprite ni rect → pas de picking
             if rect is None:
-                i, j = int(ent.x), int(ent.y)
-                poly = self.view.tile_surface_poly(i, j)
-                if poly:
-                    rect = pygame.Rect(
-                        min(p[0] for p in poly),
-                        min(p[1] for p in poly),
-                        max(p[0] for p in poly) - min(p[0] for p in poly) + 1,
-                        max(p[1] for p in poly) - min(p[1] for p in poly) + 1,
-                    )
+                continue
 
-            # 4) On pousse dans la pile de pick, avec un mask pixel-perfect si possible
-            if rect is not None:
-                if sprite is not None:
-                    mask = self.view._mask_for_surface(sprite)
-                else:
-                    mask = None
-                self.view.push_hit("entity", ent, rect, mask)
+            # 3) masque pixel-perfect si possible
+            mask = self.view._mask_for_surface(sprite) if sprite is not None else None
+
+            # 4) push
+            self.view.push_hit("entity", ent, rect, mask)
         if self.espece and self.espece.lvl_up.active:
             self.espece.lvl_up.render(screen, self.assets)
             return
