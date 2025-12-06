@@ -11,12 +11,20 @@
             "world_name": "Gaia"
         },
         "Custom": {
+            "world_name": "Monde sans nom",
             "seed": "Aléatoire",
-            "age": 2000,
-            "Taille": 20000,
-            "Climat": "Aride",
-            "Niveau des océans": -50,
-            "Ressources": "Éparse"
+            "world_size": "Moyenne",
+            "water_coverage": "Tempéré (40-60%)",
+            "temperature": "Tempéré",
+            "atmosphere_density": "Normale",
+            "resource_density": "Moyenne",
+            "biodiversity": "Moyenne",
+            "tectonic_activity": "Moyenne",
+            "weather": "Variable",
+            "gravity": "Moyenne",
+            "cosmic_radiation": "Moyenne",
+            "mystic_influence": "Nulle",
+            "dimensional_stability": "Stable"
         }
     }
 }
