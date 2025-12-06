@@ -5,6 +5,7 @@ from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
+from Game.species.sprite_render import EspeceRenderer
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud import (
@@ -299,7 +300,11 @@ class Phase1:
 
     # ---------- INPUT ----------
     def handle_input(self, events):
-            
+        if self.espece and self.espece.lvl_up.active:
+            for e in events:
+                self.espece.lvl_up.handle_event(e, self.screen)
+            return
+
         if self.bottom_hud is not None:
             self.bottom_hud.handle(events)
 
@@ -460,6 +465,8 @@ class Phase1:
 
     # ---------- UPDATE ----------
     def update(self, dt: float):
+        if self.espece and self.espece.lvl_up.active:
+            return
         if self.paused:
             return
         #mettre a jour le cycle jour/nuit
@@ -547,15 +554,46 @@ class Phase1:
         # Rendu entités + ajout dans la pile
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
-            draw_work_bar(self,screen, ent)
-            i, j = int(ent.x), int(ent.y)
-            poly = self.view.tile_surface_poly(i, j)
-            if poly:
-                rect = pygame.Rect(min(p[0] for p in poly), min(p[1] for p in poly),
-                                max(p[0] for p in poly) - min(p[0] for p in poly) + 1,
-                                max(p[1] for p in poly) - min(p[1] for p in poly) + 1)
-                self.view.push_hit("entity", ent, rect, None)
-        
+            draw_work_bar(self, screen, ent)
+
+            sprite = None
+            rect = None
+
+            # 1) On essaye de récupérer le renderer de l’individu / espèce
+            renderer = getattr(ent, "renderer", None)
+            if renderer is None and hasattr(ent, "espece"):
+                renderer = getattr(ent.espece, "renderer", None)
+
+            # 2) Si on a un renderer compatible, on l’utilise pour la hitbox
+            if renderer is not None and hasattr(renderer, "get_draw_surface_and_rect"):
+                try:
+                    sprite, rect = renderer.get_draw_surface_and_rect(
+                        self.view, self.world, ent.x, ent.y
+                    )
+                except Exception:
+                    rect = None
+
+            if rect is None:
+                i, j = int(ent.x), int(ent.y)
+                poly = self.view.tile_surface_poly(i, j)
+                if poly:
+                    rect = pygame.Rect(
+                        min(p[0] for p in poly),
+                        min(p[1] for p in poly),
+                        max(p[0] for p in poly) - min(p[0] for p in poly) + 1,
+                        max(p[1] for p in poly) - min(p[1] for p in poly) + 1,
+                    )
+
+            # 4) On pousse dans la pile de pick, avec un mask pixel-perfect si possible
+            if rect is not None:
+                if sprite is not None:
+                    mask = self.view._mask_for_surface(sprite)
+                else:
+                    mask = None
+                self.view.push_hit("entity", ent, rect, mask)
+        if self.espece and self.espece.lvl_up.active:
+            self.espece.lvl_up.render(screen, self.assets)
+            return
         # Marqueur de sélection
         self._draw_selection_marker(screen)
         
@@ -574,33 +612,52 @@ class Phase1:
         if self.save_message:
             add_notification(self.save_message)
             self.save_message = None
+        
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
+        """
+        Affiche un effet visuel autour de l'entité sélectionnée uniquement.
+        - Utilise le sprite 'vfx_aura_alpha' centré sur la tuile de l'entité.
+        - Ne montre rien pour les tiles / props.
+        """
         if not self.selected:
             return
-        color = (20, 240, 220)
-        thick = 2
 
         kind, payload = self.selected
-        if kind == "tile":
-            i, j = payload
-            poly = self.view.tile_surface_poly(i, j)
-            if poly:
-                pygame.draw.polygon(screen, color, poly, width=thick)
 
-        elif kind == "prop":
-            i, j, pid = payload
-            rect = self.view.prop_draw_rect(i, j, pid)
-            if rect:
-                pygame.draw.rect(screen, color, rect, width=thick)
+        # On ne dessine un marker QUE pour les entités
+        if kind != "entity":
+            return
 
-        elif kind == "entity":
-            ent = payload
-            # on encadre la tuile sous l’entité (lisible en iso)
-            poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
-            if poly:
-                pygame.draw.polygon(screen, color, poly, width=thick)
+        ent = payload
+
+        # Récupération du sprite d'aura dans les assets
+        aura = self.assets.get_image("vfx_aura_alpha")
+        if aura is None:
+            # Si jamais l'asset n'est pas trouvé, on ne dessine rien
+            # (éventuellement tu peux remettre un debug print ici)
+            # print("[Phase1] Sprite 'vfx_aura_alpha' introuvable dans assets")
+            return
+
+        # On récupère le polygone de la tuile sous l'entité pour connaître sa position à l'écran
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return
+
+        # On calcule un rectangle englobant le polygone pour trouver un centre écran propre
+        min_x = min(p[0] for p in poly)
+        max_x = max(p[0] for p in poly)
+        min_y = min(p[1] for p in poly)
+        max_y = max(p[1] for p in poly)
+
+        center_x = (min_x + max_x) // 2
+        center_y = (min_y + max_y) // 2
+
+        # On centre l'aura sur cette tuile
+        aura_rect = aura.get_rect(center=(center_x, center_y))
+        screen.blit(aura, aura_rect)
+
 
     # ---------- FALLBACK PICK (ancien beam) ----------
     def _fallback_pick_tile(self, mx: int, my: int) -> Optional[tuple[int,int]]:

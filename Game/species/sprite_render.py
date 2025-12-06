@@ -92,7 +92,7 @@ class EspeceRenderer:
         surface_y = sy - int(2 * dy)         # y du plateau (même repère que le losange)
         px = int(sx - sprite.get_width() // 2)
 
-        FOOT_OFFSET = -10                   # +1..4 si tu veux “décoller” légèrement
+        FOOT_OFFSET = -10                   # Permet que l'individu soit affiché sur le sol (il est à l'interieur sans ça)
         py = int(surface_y - sprite.get_height() + FOOT_OFFSET)
 
         rect = pygame.Rect(px, py, sprite.get_width(), sprite.get_height())
@@ -115,31 +115,3 @@ class EspeceRenderer:
     def render(self, screen, view, world, tx: float, ty: float):
         sprite, rect = self.get_draw_surface_and_rect(view, world, tx, ty)
         screen.blit(sprite, rect.topleft)
-
-
-
-# A quoi ça sert ???
-class PlayerRenderer(EspeceRenderer):
-    def __init__(self, espece, assets,tx,ty,controls):
-        super().__init__(espece, assets)
-        self.controls=controls
-        self.tx = tx
-        self.ty = ty
-             # --- MOUVEMENT ---
-
-    def handle_input(self):
-        keys = pygame.key.get_pressed()
-        if keys[self.controls["up"]]:
-            self.tx += self.speed
-            self.ty -= self.speed
-        if keys[self.controls["down"]]:
-            self.tx -= self.speed
-            self.ty += self.speed
-        if keys[self.controls["left"]]:
-            self.tx -= self.speed
-            self.ty -= self.speed
-        if keys[self.controls["right"]]:
-            self.tx += self.speed
-            self.ty += self.speed
-        def render(self, screen, view, world):
-            self.EspeceRenderer.render(screen, view, world, self.tx, self.ty)

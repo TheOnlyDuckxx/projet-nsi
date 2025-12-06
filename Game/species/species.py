@@ -60,8 +60,9 @@ class Espece:
         self.species_level = 1
         self.xp = 0
         self.xp_to_next = 100
-        self.lvl_up=LevelUp(self.species_level)
         self.mutations = MutationManager(self)
+        self.lvl_up = LevelUp(self)
+
 
         # === Population ===
         self.individus = []

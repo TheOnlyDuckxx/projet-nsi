@@ -36,18 +36,48 @@ class MutationManager:
     # Application brute des effets
     # -------------------------
     def apply_effects(self, effets, nom):
+        """
+        Applique les effets :
+        - sur les stats de base de l'ESPÈCE (base_physique, base_sens, etc.)
+        - sur TOUTES les instances d'Individu déjà existantes.
+        """
+
+        # mapping catégorie JSON -> attributs de l'espèce
+        mapping_espece = {
+            "physique": "base_physique",
+            "sens": "base_sens",
+            "mental": "base_mental",
+            "environnement": "base_environnement",
+            "social": "base_social",
+            "genetique": "genetique",
+            # "combat" : plutôt une stat d'individu, pas de base d'espèce
+        }
+
         for categorie, d in effets.items():
-            cible = getattr(self.espece, categorie, None)
+            # 1) appliquer sur l'espèce (si ça a du sens)
+            attr_espece = mapping_espece.get(categorie)
+            if attr_espece:
+                cible_espece = getattr(self.espece, attr_espece, None)
+                if isinstance(cible_espece, dict):
+                    for stat, delta in d.items():
+                        if stat in cible_espece:
+                            cible_espece[stat] += delta
+                        else:
+                            print(f"[Mutations] Stat '{stat}' absente dans '{attr_espece}' (espèce)")
 
-            if not isinstance(cible, dict):
-                print(f"[Mutations] Catégorie '{categorie}' inconnue pour '{nom}'")
-                continue
-
-            for stat, delta in d.items():
-                if stat not in cible:
-                    print(f"[Mutations] Stat '{stat}' absente dans catégorie '{categorie}'")
+            # 2) appliquer sur chaque individu existant
+            for individu in self.espece.individus:
+                cible_individu = getattr(individu, categorie, None)
+                if not isinstance(cible_individu, dict):
+                    # ex : combat peut ne pas exister dans certains cas
                     continue
-                cible[stat] += delta
+                for stat, delta in d.items():
+                    if stat in cible_individu:
+                        cible_individu[stat] += delta
+                    else:
+                        # on ne crash pas, juste un log
+                        pass
+
 
     # -------------------------
     # Ajouter une mutation permanente
@@ -113,3 +143,35 @@ class MutationManager:
 
                 print(f"[Mutations] Effet temporaire '{nom}' terminé ❌")
                 to_remove.append(nom)
+    
+    def mutation_disponible(self, nom):
+        mutation = self.get_mutation(nom)
+        if mutation is None:
+            return False
+
+        # déjà active → pas proposée
+        if nom in self.actives:
+            return False
+
+        conditions = mutation.get("conditions", [])
+        incompatibles_1 = mutation.get("incompatibles", [])
+        incompatibles_2 = mutation.get("imcompatibles", [])  # faute possible dans le JSON
+        incompatibles = set(incompatibles_1) | set(incompatibles_2)
+
+        # toutes les conditions doivent être remplies
+        for cond in conditions:
+            if cond and cond not in self.actives:
+                return False
+
+        # aucune incompatibilité ne doit être active
+        for inc in incompatibles:
+            if inc in self.actives:
+                return False
+
+        return True
+
+    def mutations_disponibles(self):
+        """
+        Retourne la liste des clés de mutations qui peuvent être proposées au joueur.
+        """
+        return [nom for nom in self.data.keys() if self.mutation_disponible(nom)]

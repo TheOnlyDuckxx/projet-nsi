@@ -350,7 +350,8 @@ class IsoMapView:
                 
                 # --- HIT: tuile (surface losange) ---
                 surface_y = sy - (gimg.get_height() - int(dy * 2))     # y du plateau losange
-                tile_rect = pygame.Rect(int(sx - int(dx)//2), int(surface_y - int(dy)//2), int(dx), int(dy))
+                mw, mh = tile_mask.get_size()
+                tile_rect = pygame.Rect(int(sx - mw//2), int(surface_y - mh//2), mw, mh)
                 tile_mask = self._diamond_mask_for(int(dx), int(dy))
                 self.push_hit("tile", (i, j), tile_rect, tile_mask)
 
