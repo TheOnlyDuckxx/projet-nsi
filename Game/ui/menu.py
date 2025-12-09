@@ -652,14 +652,26 @@ class SpeciesCreationMenu(BaseMenu):
         self.error_msg: str = ""
 
         # --- Layout des Toggles ---
-        center_x = WIDTH // 2
+        base_list = list(self.base_mutations.items())
+
+        # Paramètres du layout multi-colonnes
+        max_per_col = 10                            # ← nb max dans la colonne 1 avant de décaler
+        col1_x = 150                                # ← colonne de gauche
+        col2_x = WIDTH // 2                         # ← colonne du milieu / droite
         start_y = 220
         gap_y = 45
 
-        base_list = list(self.base_mutations.items())
-
         for i, (mutation_id, data) in enumerate(base_list):
-            y = start_y + i * gap_y
+
+            # Choix colonne
+            if i < max_per_col:
+                x = col1_x
+                y = start_y + i * gap_y
+            else:
+                # items au-delà du max vont en colonne 2
+                x = col2_x
+                y = start_y + (i - max_per_col) * gap_y
+
             label = data.get("nom", mutation_id)
 
             def make_get(mid):
@@ -672,7 +684,7 @@ class SpeciesCreationMenu(BaseMenu):
 
             self.add(Toggle(
                 label,
-                (center_x, y),
+                (x, y),
                 get_value=make_get(mutation_id),
                 set_value=make_set(mutation_id),
                 font=self.btn_font,
@@ -709,11 +721,22 @@ class SpeciesCreationMenu(BaseMenu):
             zoom_speed=0.22,
         )
 
-        y_buttons = start_y + len(base_list) * gap_y + 60
+       # --- Boutons du bas adaptés automatiquement ---
+        # On calcule la plus grande hauteur atteinte parmi les colonnes
+        total_rows_col1 = min(len(base_list), max_per_col)
+        total_rows_col2 = max(0, len(base_list) - max_per_col)
+
+        height_col1 = start_y + total_rows_col1 * gap_y
+        height_col2 = start_y + total_rows_col2 * gap_y
+
+        y_buttons = max(height_col1, height_col2) + 80
+
+        # Position en bas : centrée
+        button_x = WIDTH // 2
 
         self.btn_reset = self.add(Button(
             "Réinitialiser",
-            (center_x - 200, y_buttons),
+            (button_x - 200, y_buttons),
             anchor="center",
             style=ghost,
             on_click=lambda b: self._reset_selection(),
@@ -721,7 +744,7 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.btn_validate = self.add(Button(
             "Valider",
-            (center_x, y_buttons),
+            (button_x, y_buttons),
             anchor="center",
             style=primary,
             on_click=lambda b: self._validate_and_back(),
@@ -729,12 +752,11 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.btn_back = self.add(Button(
             "Retour",
-            (center_x + 200, y_buttons),
+            (button_x + 200, y_buttons),
             anchor="center",
             style=ghost,
             on_click=lambda b: self.app.change_state("CREATION"),
         ))
-
     # --- Logique de sélection / incompatibilités ---
 
     def _toggle_mutation(self, mutation_id: str, enabled: bool):

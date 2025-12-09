@@ -283,6 +283,49 @@
         "phase": 3,
         "base":false
     },
+    "Machoire puissante":{
+        "nom": "Mâchoire puissante",
+        "description": "Augmentation de la force de la mâchoire pour une meilleure capacité de morsure.",
+        "effets": {
+            "combat": {
+                "attaque_melee": 10
+            },
+            "mental": {
+                "intimidation": 5
+            },
+            "social":{"communication":-5}
+        },
+        "conditions": [],
+        "incompatibles": ["Mâchoire réduite"],
+        "cout": 15,
+        "categorie": "physique",
+        "phase": 1,
+        "base":false
+    },
+    "Mâchoire réduite":{
+        "nom": "Mâchoire réduite",
+        "description": "Réduction de la taille de la mâchoire pour améliorer la parole et la manipulation d'outils.",
+        "effets": {
+            "mental": {
+                "intelligence": 10,
+                "dexterite": 5            
+            },
+            "social":{"communication":5},
+            "combat": {
+                "attaque_melee": -5
+            },
+            "physique": {
+                "endurance": -2
+            }
+
+        },
+        "conditions": [],
+        "incompatibles": ["Mâchoire puissante"],
+        "cout": 15,
+        "categorie": "physique",
+        "phase": 1,
+        "base":false
+    },
 
     "Carapace": {
     "nom": "Carapace",
@@ -309,6 +352,4 @@
         "phase": 1,
         "base":false
     }
-
-
 }
