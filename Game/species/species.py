@@ -75,8 +75,6 @@ class Espece:
         Crée un individu appartenant à cette espèce.
         """
         individu = Individu(self, x, y, assets)
-        self.individus.append(individu)
-        self.population = len(self.individus)
         return individu
 
     def remove_individu(self, individu):

@@ -297,6 +297,11 @@ class WorldCreationMenu(BaseMenu):
         self.font = app.assets.get_font("MightySouly", 22)
         self.btn_font = app.assets.get_font("MightySouly", 28)
 
+        # --- helpers pour positions relatives ---
+        rw = lambda p: int(WIDTH * p)   # relative width
+        rh = lambda p: int(HEIGHT * p)  # relative height
+        self.rw, self.rh = rw, rh
+
         # --- Charger les paramètres custom existants ---
         preset_path = os.path.join("Game", "data", "world_presets.json")
         try:
@@ -306,17 +311,17 @@ class WorldCreationMenu(BaseMenu):
         except (FileNotFoundError, json.JSONDecodeError):
             self.params = {}
 
-        # --- Layout panneau gauche ---
-        margin = 40
-        panel_width = WIDTH // 2 - 2 * margin
-        panel_height = HEIGHT - 220
+        # --- Layout panneau gauche (proportionnel) ---
+        margin = rw(0.03)                         # ~ 3% de la largeur
+        panel_width = rw(0.45)                    # ~ 45% de la largeur
+        panel_height = rh(0.70)                   # ~ 70% de la hauteur
         panel_x = margin
-        panel_y = 170
+        panel_y = HEIGHT // 2 - panel_height // 2 # centré verticalement
         self.panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
 
-        # --- Globe à droite ---
-        self.globe_radius = min(WIDTH, HEIGHT) // 4
-        self.globe_center = (int(WIDTH * 0.66), HEIGHT // 2 + 20)
+        # --- Globe à droite (proportionnel) ---
+        self.globe_radius = int(min(WIDTH, HEIGHT) * 0.25)
+        self.globe_center = (rw(0.73), HEIGHT // 2)
 
         self.N_POINTS = 40000
         self.N_HOTSPOTS = 50
@@ -330,14 +335,13 @@ class WorldCreationMenu(BaseMenu):
         self.world_name = self.params.get("world_name", "Monde sans nom")
         self.name_active = False
         self.name_rect = pygame.Rect(
-            self.panel_rect.x + 30,
-            self.panel_rect.y + 40,
-            self.panel_rect.width - 60,
-            36
+            self.panel_rect.x + int(self.panel_rect.width * 0.05),
+            self.panel_rect.y + int(self.panel_rect.height * 0.08),
+            int(self.panel_rect.width * 0.90),
+            int(self.panel_rect.height * 0.09),
         )
 
         # --- Définition des 12 paramètres ---
-        # key = clé dans le JSON, label = texte affiché, options = valeurs possibles
         self.param_defs = [
             ("world_size", "Taille du monde",
              ["Petite planète", "Moyenne", "Grande", "Gigantesque"]),
@@ -377,7 +381,7 @@ class WorldCreationMenu(BaseMenu):
         ]
 
         self.option_widgets: dict[str, OptionSelector] = {}
-        self._build_param_widgets()
+        self._build_param_widgets()  # → utilise maintenant panel_rect proportionnel
 
         # --- Styles de boutons (même look que le menu principal) ---
         primary = ButtonStyle(
@@ -406,21 +410,22 @@ class WorldCreationMenu(BaseMenu):
             zoom_speed=0.22,
         )
 
-        y_buttons = self.panel_rect.bottom - 50
+        # position verticale des boutons en bas du panneau (proportionnel)
+        y_buttons = self.panel_rect.bottom - int(self.panel_rect.height * 0.08)
 
         # BOUTON RETOUR (à gauche)
         self.btn_back = self.add(Button(
             "Retour",
-            (self.panel_rect.x + 60, y_buttons),
+            (self.panel_rect.x + int(self.panel_rect.width * 0.10), y_buttons),
             anchor="midleft",
             style=ghost,
             on_click=lambda b: self.app.change_state("MENU"),
         ))
 
-        # BOUTON LANCER (à droite)
+        # BOUTON SUIVANT (à droite)
         self.btn_next = self.add(Button(
             "Suivant",
-            (self.panel_rect.right - 60, y_buttons),
+            (self.panel_rect.right - int(self.panel_rect.width * 0.10), y_buttons),
             anchor="midright",
             style=primary,
             on_click=lambda b: self._go_to_species_creation(),
@@ -428,20 +433,26 @@ class WorldCreationMenu(BaseMenu):
 
     # ---------- Création des 12 sélecteurs ----------
     def _build_param_widgets(self):
-        col_width = self.panel_rect.width // 2 - 40
-        start_y = self.name_rect.bottom + 40
-        gap_y = 100
+        # largeur d'une colonne = 42% du panneau
+        col_width = int(self.panel_rect.width * 0.42)
+        # point de départ sous le champ nom
+        start_y = self.name_rect.bottom + int(self.panel_rect.height * 0.08)
+        # espacement vertical proportionnel
+        gap_y = int(self.panel_rect.height * 0.11)
+
+        left_x = self.panel_rect.x + int(self.panel_rect.width * 0.05)
+        right_x = self.panel_rect.x + int(self.panel_rect.width * 0.52)
 
         for idx, (key, label, options) in enumerate(self.param_defs):
             if idx < 6:
-                col_x = self.panel_rect.x + 30
+                col_x = left_x
                 row = idx
             else:
-                col_x = self.panel_rect.x + 30 + self.panel_rect.width // 2
+                col_x = right_x
                 row = idx - 6
 
             y = start_y + row * gap_y
-            rect = (col_x, y, col_width, 44)
+            rect = (col_x, y, col_width, int(self.panel_rect.height * 0.09))
 
             # valeur par défaut = milieu de la liste
             if len(options) % 2 == 1:
@@ -484,10 +495,9 @@ class WorldCreationMenu(BaseMenu):
                 elif e.key == pygame.K_BACKSPACE:
                     self.world_name = self.world_name[:-1]
                 else:
-                    # texte simple, on limite la longueur
                     if e.unicode and e.unicode.isprintable() and len(self.world_name) < 24:
                         self.world_name += e.unicode
-    
+
     def _generate_hotspot_globe(self):
         self.hotspots = []
         for _ in range(self.N_HOTSPOTS):
@@ -504,7 +514,6 @@ class WorldCreationMenu(BaseMenu):
             lat = h_lat + random.gauss(0, spread)
             lon = h_lon + random.gauss(0, spread)
 
-            # normalisation longitude
             if lon > math.pi:
                 lon -= 2 * math.pi
             if lon < -math.pi:
@@ -512,48 +521,37 @@ class WorldCreationMenu(BaseMenu):
 
             self.globe_points.append([lat, lon])
 
-    # ---------- Animation globe ----------
     def update(self, dt):
         # rotation = temps réel * vitesse
-        self.ROT = 0.4 * dt  # vitesse stable
-
-
+        self.ROT = 0.4 * dt
 
     def _draw_globe(self, screen):
         R = self.globe_radius
         cx, cy = self.globe_center
 
-        # Surface transparente pour éviter d'écraser le menu
         surf = pygame.Surface((2 * R, 2 * R), pygame.SRCALPHA)
         surf.fill((0, 0, 0, 0))
 
         for p in self.globe_points:
             lat, lon = p
-
-            # rotation longitude
             lon += self.ROT
             if lon > math.pi:
                 lon -= 2 * math.pi
             p[1] = lon
 
-            # Projection 2D
             x = R + R * math.cos(lat) * math.cos(lon)
             y = R + R * math.sin(lat)
 
-            # Dessin du pixel
             surf.set_at((int(x), int(y)), (255, 255, 255, 255))
 
-
-        # Blit final
         screen.blit(surf, (cx - R, cy - R))
 
-
-    # ---------- Render complet ----------
     def render(self, screen):
-        # fond + overlay + titre (copié de BaseMenu.render)
+        # fond + titre (proportionnel)
         screen.fill((10, 10, 15))
         title_surf = self.title_font.render(self.title, True, (230, 230, 230))
-        screen.blit(title_surf, (WIDTH // 2 - title_surf.get_width() // 2, 100))
+        title_y = int(HEIGHT * 0.10)
+        screen.blit(title_surf, (WIDTH // 2 - title_surf.get_width() // 2, title_y))
 
         # panneau de gauche
         panel_color = (235, 235, 238)
@@ -563,7 +561,8 @@ class WorldCreationMenu(BaseMenu):
 
         # nom du monde
         label_surf = self.font.render("Nom de votre monde", True, (40, 40, 40))
-        screen.blit(label_surf, (self.name_rect.x, self.name_rect.y - 28))
+        label_y = self.name_rect.y - int(self.panel_rect.height * 0.06)
+        screen.blit(label_surf, (self.name_rect.x, label_y))
 
         pygame.draw.rect(screen, (245, 245, 248), self.name_rect, border_radius=10)
         border = (80, 130, 220) if self.name_active else (190, 190, 200)
@@ -583,18 +582,14 @@ class WorldCreationMenu(BaseMenu):
         # globe à droite
         self._draw_globe(screen)
 
-    # ---------- Clic sur "Lancer la partie" ----------
     def _go_to_species_creation(self):
-        # Sauvegarder les paramètres du monde avant de changer d'écran
         self._set("world_name", self.world_name.strip() or "Monde sans nom")
         for key, widget in self.option_widgets.items():
             self._set(key, widget.value())
 
-        # Seed par défaut si néant
         if "seed" not in self.params:
             self.params["seed"] = "Aléatoire"
 
-        # Écrire dans le JSON
         preset_path = os.path.join("Game", "data", "world_presets.json")
         try:
             with open(preset_path, "r", encoding="utf-8") as f:
@@ -610,8 +605,8 @@ class WorldCreationMenu(BaseMenu):
         with open(preset_path, "w", encoding="utf-8") as f:
             json.dump(presets, f, indent=4, ensure_ascii=False)
 
-        # Aller vers le menu de création d'espèce
         self.app.change_state("SPECIES_CREATION")
+
 
 
 class SpeciesCreationMenu(BaseMenu):

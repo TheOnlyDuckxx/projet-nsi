@@ -19,7 +19,7 @@ class FogOfWar:
             if not (0 <= cx < self.width and 0 <= cy < self.height):
                 continue
 
-            r = int(get_radius(ent) * light_level)  # Ajuste la portée de vision selon la luminosité
+            r = int(get_radius(ent) + get_radius(ent) * light_level)  # Ajuste la portée de vision selon la luminosité
             r2 = r * r
 
             for y in range(max(0, cy-r), min(self.height, cy+r+1)):

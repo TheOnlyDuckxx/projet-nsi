@@ -587,7 +587,10 @@ class Phase1:
         if self.espece and self.espece.lvl_up.active:
             self.espece.lvl_up.render(screen, self.assets)
             return
-        # Marqueur de sélection
+        w, h = screen.get_size()
+        world_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        self.apply_day_night_lighting(world_surf)
+        screen.blit(world_surf, (0, 0))
         self._draw_selection_marker(screen)
         
         # HUD et panneaux
@@ -606,6 +609,31 @@ class Phase1:
             add_notification(self.save_message)
             self.save_message = None
         
+    def apply_day_night_lighting(self, screen):
+        # 0. Récupérer la luminosité (0.3 à 1.0)
+        light = self.day_night.get_light_level()
+        
+        # Si on est presque à 1.0 → pas besoin d’effet
+        if light >= 0.99:
+            return
+
+        # 1. Couleur ambiante (bleu nuit, blanc jour, etc.)
+        r, g, b = self.day_night.get_ambient_color()
+
+        # 2. On combine couleur ambiante + niveau de lumière
+        #    → plus la nuit est noire, plus on diminue ces valeurs
+        r = int(r * light)
+        g = int(g * light)
+        b = int(b * light)
+
+        # 3. Surface overlay plein écran
+        w, h = screen.get_size()
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        overlay.fill((r, g, b, 255))
+
+        # 4. BLEND_RGBA_MULT = on MULTIPLIE les pixels existants par cette couleur
+        #    (255,255,255) = pas de changement ; (76,76,120) = sombre bleuté
+        screen.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
