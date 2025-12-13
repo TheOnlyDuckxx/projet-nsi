@@ -1,7 +1,7 @@
 {
     "presets": {
         "Custom": {
-            "world_name": "MONDE COOL",
+            "world_name": "Monde sans nom",
             "seed": "Aléatoire",
             "world_size": "Moyenne",
             "water_coverage": "Tempéré",
@@ -9,10 +9,10 @@
             "atmosphere_density": "Normale",
             "resource_density": "Moyenne",
             "biodiversity": "Moyenne",
-            "tectonic_activity": "Moyenne",
+            "tectonic_activity": "Chaotique",
             "weather": "Variable",
             "gravity": "Moyenne",
-            "cosmic_radiation": "Moyenne",
+            "cosmic_radiation": "Faible",
             "mystic_influence": "Nulle",
             "dimensional_stability": "Stable"
         }
