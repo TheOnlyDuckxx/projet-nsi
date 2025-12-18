@@ -606,3 +606,16 @@ class BottomHUD:
 
         # Partie droite : quick craft
         self._draw_quickcraft(screen)
+
+class RightHUD:
+    """
+    Menu vertical avec 4 boutons nous permettant d'accèder à :
+        - Information complètes sur l'espece et détail des mutations
+        - Menu de gestion des evenements
+        - Arbre de technologie de craft
+        - Historique des actions importantes
+        - Options de la partie
+    """
+    def __init__():
+        pass
+    

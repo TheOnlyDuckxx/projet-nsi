@@ -25,11 +25,12 @@ class DayNightCycle:
         
         # Configuration des phases
         self.phases = {
-            "aube": (0.0, 0.15),      # 0% à 15% du cycle
-            "jour": (0.15, 0.6),       # 15% à 60%
-            "crépuscule": (0.6, 0.7),  # 60% à 70%
-            "nuit": (0.7, 1.0),        # 70% à 100%
+            "aube": (0.0, 0.25),        # plus long
+            "jour": (0.25, 0.60),
+            "crépuscule": (0.60, 0.85), # plus long
+            "nuit": (0.85, 1.0),
         }
+
         
         # Vitesse d'écoulement du temps (1.0 = temps normal, 2.0 = 2x plus rapide)
         self.time_speed = 2.0
@@ -60,7 +61,6 @@ class DayNightCycle:
     def get_current_phase(self):
         """Retourne la phase actuelle ('aube', 'jour', 'crépuscule', 'nuit')"""
         ratio = self.get_time_ratio()
-        
         for phase_name, (start, end) in self.phases.items():
             if start <= ratio < end:
                 return phase_name
@@ -90,24 +90,22 @@ class DayNightCycle:
         """Retourne True si c'est le jour (ou aube)"""
         return not self.is_night()
     
-    def get_light_level(self):
-        """
-        Retourne le niveau de luminosité (0.0 = nuit complète, 1.0 = jour complet)
-        Utile pour ajuster la visibilité, le brouillard de guerre, etc.
-        """
+    def _ease_in_out(self, t: float) -> float:
+        # t in [0,1] -> sortie in [0,1] très progressive
+        return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
+
+    def get_light_level(self, min_light=0.55):
         phase = self.get_current_phase()
-        progress = self.get_phase_progress()
-        
+        p = self._ease_in_out(self.get_phase_progress())
+
         if phase == "aube":
-            # Transition de 0.3 à 1.0
-            return 0.3 + (0.7 * progress)
+            return min_light + (1.0 - min_light) * p
         elif phase == "jour":
             return 1.0
         elif phase == "crépuscule":
-            # Transition de 1.0 à 0.3
-            return 1.0 - (0.7 * progress)
+            return 1.0 - (1.0 - min_light) * p
         else:  # nuit
-            return 0.3
+            return min_light
     
     def get_ambient_color(self):
         """

@@ -548,25 +548,18 @@ class Phase1:
         screen.fill((10, 12, 18))
         self.view.begin_hitframe()
         
-        # Rendu carte
+        # 1) Rendu carte + entités
         self.view.render(screen, world_entities=self.entities)
-        
-        # Rendu entités + ajout dans la pile
+
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
             draw_work_bar(self, screen, ent)
 
-            sprite = None
-            rect = None
-
-            # 1) On essaye de récupérer le renderer de l’individu / espèce
             renderer = getattr(ent, "renderer", None)
             if renderer is None and hasattr(ent, "espece"):
                 renderer = getattr(ent.espece, "renderer", None)
 
-            sprite = None
-            rect = None
-
+            sprite, rect = None, None
             if renderer and hasattr(renderer, "get_draw_surface_and_rect"):
                 try:
                     sprite, rect = renderer.get_draw_surface_and_rect(
@@ -575,65 +568,36 @@ class Phase1:
                 except Exception:
                     sprite, rect = None, None
 
-            # 2) Si on n'a ni sprite ni rect → pas de picking
             if rect is None:
                 continue
 
-            # 3) masque pixel-perfect si possible
             mask = self.view._mask_for_surface(sprite) if sprite is not None else None
-
-            # 4) push
             self.view.push_hit("entity", ent, rect, mask)
+
         if self.espece and self.espece.lvl_up.active:
             self.espece.lvl_up.render(screen, self.assets)
             return
-        w, h = screen.get_size()
-        world_surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        self.apply_day_night_lighting(world_surf)
-        screen.blit(world_surf, (0, 0))
+
+        # 2) Appliquer le filtre jour/nuit sur TOUT ce qui est déjà dessiné
+        self.apply_day_night_lighting(screen)
+
+        # 3) Marqueur de sélection
         self._draw_selection_marker(screen)
-        
-        # HUD et panneaux
+
+        # 4) HUD / pause / notifications
         if self.paused:
             self.draw_pause_screen(screen)
-        
-        # NOUVEAU : Panneau d'inspection si une entité est sélectionnée
+
         if not self.paused:
-            draw_inspection_panel(self,screen)
-        
+            draw_inspection_panel(self, screen)
+
         if not self.paused and self.bottom_hud is not None:
             self.bottom_hud.draw(screen)
 
-        # Message de sauvegarde
         if self.save_message:
             add_notification(self.save_message)
             self.save_message = None
-        
-    def apply_day_night_lighting(self, screen):
-        # 0. Récupérer la luminosité (0.3 à 1.0)
-        light = self.day_night.get_light_level()
-        
-        # Si on est presque à 1.0 → pas besoin d’effet
-        if light >= 0.99:
-            return
 
-        # 1. Couleur ambiante (bleu nuit, blanc jour, etc.)
-        r, g, b = self.day_night.get_ambient_color()
-
-        # 2. On combine couleur ambiante + niveau de lumière
-        #    → plus la nuit est noire, plus on diminue ces valeurs
-        r = int(r * light)
-        g = int(g * light)
-        b = int(b * light)
-
-        # 3. Surface overlay plein écran
-        w, h = screen.get_size()
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((r, g, b, 255))
-
-        # 4. BLEND_RGBA_MULT = on MULTIPLIE les pixels existants par cette couleur
-        #    (255,255,255) = pas de changement ; (76,76,120) = sombre bleuté
-        screen.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
@@ -900,3 +864,21 @@ class Phase1:
             if (w["i"], w["j"], str(w["pid"])) == tgt:
                 return True
         return False
+
+    def apply_day_night_lighting(self, surface: pygame.Surface):
+        light = self.day_night.get_light_level(min_light=0.55)
+
+        # 1) Brightness (gris) : 255 = normal, <255 = sombre
+        m = int(255 * light)
+        overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        overlay.fill((m, m, m, 255))
+        surface.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # 2) Tint (couleur) léger par-dessus (optionnel mais joli)
+        r, g, b = self.day_night.get_ambient_color()
+        tint = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+
+        # alpha faible sinon ça “salit” l’image
+        tint.fill((r, g, b, 35))
+        surface.blit(tint, (0, 0))
+
