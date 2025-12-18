@@ -6,6 +6,19 @@ Gère le temps, les transitions et les effets visuels.
 import pygame
 import math
 
+def _ease_in_out(self, t: float) -> float:
+    # t in [0,1] -> sortie in [0,1] très progressive
+    return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
+
+
+def _clamp(x, a=0.0, b=1.0):
+    return max(a, min(b, x))
+
+def smootherstep(x: float) -> float:
+    # 0..1 -> 0..1, dérivée nulle aux extrémités (transition douce)
+    x = _clamp(x, 0.0, 1.0)
+    return x*x*x*(x*(x*6 - 15) + 10)
+
 
 class DayNightCycle:
     """
@@ -90,47 +103,43 @@ class DayNightCycle:
         """Retourne True si c'est le jour (ou aube)"""
         return not self.is_night()
     
-    def _ease_in_out(self, t: float) -> float:
-        # t in [0,1] -> sortie in [0,1] très progressive
-        return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
-
-    def get_light_level(self, min_light=0.55):
-        phase = self.get_current_phase()
-        p = self._ease_in_out(self.get_phase_progress())
-
-        if phase == "aube":
-            return min_light + (1.0 - min_light) * p
-        elif phase == "jour":
-            return 1.0
-        elif phase == "crépuscule":
-            return 1.0 - (1.0 - min_light) * p
-        else:  # nuit
-            return min_light
     
+
+    def get_light_level(self, min_light=0.55, max_light=1.0, smooth_passes=2) -> float:
+        """
+        Retourne un coefficient de luminosité dans [min_light, max_light].
+        smooth_passes>1 = transition plus lente/progressive.
+        """
+        if self.cycle_duration <= 0:
+            return max_light
+
+        t = (self.time_elapsed / self.cycle_duration) % 1.0
+
+        # Courbe jour/nuit continue :
+        # raw = 0 à minuit, 1 à midi (sinus décalé)
+        raw = (math.sin(2 * math.pi * t - math.pi / 2) + 1) / 2
+
+        # On “ralentit” les transitions avec smootherstep (1 ou 2 passes)
+        eased = raw
+        for _ in range(max(1, int(smooth_passes))):
+            eased = smootherstep(eased)
+
+        return min_light + (max_light - min_light) * eased
+
     def get_ambient_color(self):
         """
-        Retourne la couleur ambiante pour teinter le jeu.
-        Format: (R, G, B) avec valeurs de 0 à 255
+        Optionnel : teinte un peu plus bleue la nuit, plus chaude le jour.
         """
-        phase = self.get_current_phase()
-        progress = self.get_phase_progress()
+        # Utilise une version sans clamp extrême (min_light plus bas ici si tu veux)
+        light = self.get_light_level(min_light=0.55, max_light=1.0, smooth_passes=2)
+        # Plus light est bas, plus on tire vers bleu.
+        night = 1.0 - _clamp((light - 0.55) / (1.0 - 0.55))
+
+        r = int(20 * night)
+        g = int(35 * night)
+        b = int(60 * night)
+        return (r, g, b)
         
-        # Couleurs de référence
-        night_color = (40, 50, 90)      # Bleu nuit
-        dawn_color = (255, 200, 150)    # Orange aube
-        day_color = (255, 255, 255)     # Blanc jour
-        dusk_color = (255, 150, 100)    # Orange/rouge crépuscule
-        
-        if phase == "aube":
-            # Interpolation entre nuit et jour via aube
-            return self._lerp_color(night_color, dawn_color, progress * 0.5)
-        elif phase == "jour":
-            return day_color
-        elif phase == "crépuscule":
-            # Interpolation entre jour et nuit via crépuscule
-            return self._lerp_color(dusk_color, night_color, progress)
-        else:  # nuit
-            return night_color
     
     def _lerp_color(self, color1, color2, t):
         """Interpolation linéaire entre deux couleurs"""

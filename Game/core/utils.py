@@ -1,8 +1,6 @@
 # UTILS.PY
 # Contient toutes les classes et fonctions utilitaires
 
-"""NE PAS ESSAYER DE COMPRENDRE CE FICHIER, C'EST 100% FAIT PAR CHAT GPT"""
-
 # --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
 import os, sys

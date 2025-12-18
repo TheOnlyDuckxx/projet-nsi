@@ -9,11 +9,11 @@ from Game.species.sprite_render import EspeceRenderer
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud import (
-
     add_notification,
     draw_inspection_panel,
     draw_work_bar,
     BottomHUD,
+    LeftHUD,
 )
 from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
@@ -47,6 +47,9 @@ class Phase1:
         self.bottom_hud: BottomHUD | None = None
         self.font = pygame.font.SysFont("consolas", 16)
         self.menu_button_rect = None
+        self.ui_menu_open = False
+        self.right_hud = LeftHUD(self)
+
 
         # Sélection actuelle: ("tile",(i,j)) | ("prop",(i,j,pid)) | ("entity",ent)
         self.selected: Optional[tuple] = None
@@ -307,6 +310,9 @@ class Phase1:
 
         if self.bottom_hud is not None:
             self.bottom_hud.handle(events)
+        
+        if self.right_hud and self.right_hud.handle(events):
+            return
 
         for e in events:
             if e.type == pygame.KEYDOWN:
@@ -467,7 +473,7 @@ class Phase1:
     def update(self, dt: float):
         if self.espece and self.espece.lvl_up.active:
             return
-        if self.paused:
+        if self.paused or self.ui_menu_open:
             return
         #mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
@@ -585,14 +591,18 @@ class Phase1:
         self._draw_selection_marker(screen)
 
         # 4) HUD / pause / notifications
-        if self.paused:
+        if self.paused and not self.ui_menu_open:
             self.draw_pause_screen(screen)
 
-        if not self.paused:
+        if not self.paused and not self.ui_menu_open:
             draw_inspection_panel(self, screen)
 
-        if not self.paused and self.bottom_hud is not None:
+        if not self.paused and not self.ui_menu_open and self.bottom_hud is not None:
             self.bottom_hud.draw(screen)
+
+        # HUD droite : toujours visible (et affiche le menu si ouvert)
+        if self.right_hud:
+            self.right_hud.draw(screen)
 
         if self.save_message:
             add_notification(self.save_message)
@@ -866,7 +876,7 @@ class Phase1:
         return False
 
     def apply_day_night_lighting(self, surface: pygame.Surface):
-        light = self.day_night.get_light_level(min_light=0.55)
+        light = self.day_night.get_light_level(min_light=0.45)
 
         # 1) Brightness (gris) : 255 = normal, <255 = sombre
         m = int(255 * light)

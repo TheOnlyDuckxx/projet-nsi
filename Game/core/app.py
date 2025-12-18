@@ -6,7 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
-from Game.ui.menu import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
+from Game.ui.menu.menu_main import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
 from Game.core.assets import Assets
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
