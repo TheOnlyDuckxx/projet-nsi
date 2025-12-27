@@ -20,6 +20,7 @@ from Game.ui.hud import (
 from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
+from Game.gameplay.event import EventManager
 
 class Phase1:
     def __init__(self, app):
@@ -39,6 +40,7 @@ class Phase1:
         self.day_night = DayNightCycle(cycle_duration=600)
         self.day_night.set_time(6, 0)  # Commence à 6h du matin
         self.day_night.set_speed(3.0)   # Vitesse normale
+        self.event_manager = EventManager()
         
         # entités
         self.espece = None
@@ -476,7 +478,11 @@ class Phase1:
         if self.espece and self.espece.lvl_up.active:
             return
         if self.paused or self.ui_menu_open:
+            # Même en pause on continue les timers d'évènements
+            self.event_manager.update(dt, self)
             return
+
+        self.event_manager.update(dt, self)
         #mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
         

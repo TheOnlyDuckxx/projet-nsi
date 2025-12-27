@@ -119,6 +119,7 @@ class SaveManager:
             "zoom": phase1.view.zoom,
             "fog": fog_data,
             "day_night": day_night_data,   # <-- NEW
+            "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
         }
 
 
@@ -260,6 +261,13 @@ class SaveManager:
                     fog = getattr(phase1, "fog", None)
                     if fog is not None:
                         fog.explored = exp
+            
+            # ----------------- Évènements -----------------
+            events_state = data.get("events")
+            if events_state is not None:
+                mgr = getattr(phase1, "event_manager", None)
+                if mgr is not None:
+                    mgr.load_state(events_state)
             
             # ----------------- Jour / Nuit -----------------
             dn_data = data.get("day_night")
