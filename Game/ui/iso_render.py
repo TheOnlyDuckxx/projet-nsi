@@ -1,6 +1,7 @@
 # ui/iso_render.py
 from __future__ import annotations
-import pygame, math
+import pygame
+import math
 from typing import Optional, Tuple
 
 # Fallbacks si helpers indisponibles
@@ -306,13 +307,6 @@ class IsoMapView:
             self.screen_w, self.screen_h = sw, sh
             self.cx = sw // 2
             self.cy = sh // 2
-        
-        if self.cull_screen_margin_px is None:
-            base = self.assets.get_image("tile_grass")
-            margin_x = int(base.get_width()  * self.zoom)
-            margin_y = int(base.get_height() * self.zoom)
-        else:
-            margin_x = margin_y = int(self.cull_screen_margin_px)
 
         if not self.world:
             return
@@ -416,7 +410,6 @@ class IsoMapView:
         if abs(new_zoom - self.zoom) < 1e-6:
             return
 
-        old_zoom = self.zoom
         self.zoom = new_zoom
 
         # 3) recalcule les constantes proj APRÈS zoom
@@ -548,5 +541,4 @@ class IsoMapView:
             return
         if 0 <= i < self.world.width and 0 <= j < self.world.height:
             self.world.overlay[j][i] = pid
-
 

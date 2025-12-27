@@ -38,7 +38,6 @@ class EventsMenu:
         self.title_font = pygame.font.SysFont("consolas", max(28, int(h * 0.06)), bold=True)
         self.back_btn.style.font = pygame.font.SysFont("consolas", max(18, int(h * 0.035)), bold=True)
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
         screen.fill((60, 60, 65))  # gris neutre
 
 

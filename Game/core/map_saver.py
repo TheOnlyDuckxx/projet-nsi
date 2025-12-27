@@ -15,13 +15,12 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # --------------- MAINTENANT ON PEUT IMPORTER ---------------
-from typing import Tuple
-import numpy as np
 
 print(f"DEBUG - Project root: {project_root}")
 print(f"DEBUG - sys.path[0]: {sys.path[0]}")
 
 # Import de Game APRÈS avoir configuré sys.path
+# ruff: noqa: E402
 from Game.world.world_gen import WorldData, WorldParams
 print("✓ Import réussi!")
 
@@ -146,19 +145,19 @@ if __name__ == "__main__":
         generator = WorldGenerator(tiles_levels=6)
         world = generator.generate_island(params)
         
-        print(f"✓ Monde généré!")
+        print("✓ Monde généré!")
         print(f"  Taille: {world.width}x{world.height}")
         print(f"  Spawn: {world.spawn}")
         
         # Sauvegarde
-        print(f"\n→ Sauvegarde de la map...")
+        print("\n→ Sauvegarde de la map...")
         save_world_to_file(world, params, map_filename)
         
         print("\n" + "=" * 60)
         print("  TERMINÉ!")
         print("=" * 60)
-        print(f"\nVous pouvez maintenant lancer le jeu avec:")
-        print(f"  python3 Game/laucher_prebuilt.py")
+        print("\nVous pouvez maintenant lancer le jeu avec:")
+        print("  python3 Game/laucher_prebuilt.py")
         
     except Exception as e:
         print(f"\n✗ ERREUR: {e}")

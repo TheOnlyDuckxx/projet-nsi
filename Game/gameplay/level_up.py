@@ -1,7 +1,6 @@
 # Game/gameplay/level_up.py
 
 import random
-import math
 import pygame
 
 

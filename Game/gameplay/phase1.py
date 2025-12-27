@@ -1,11 +1,13 @@
 # --- imports en haut du fichier ---
-import pygame, random, heapq, json
-from typing import List, Tuple, Optional
+import pygame
+import random
+import heapq
+import json
+from typing import Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
-from Game.species.sprite_render import EspeceRenderer
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud import (
@@ -485,7 +487,6 @@ class Phase1:
             vision = ent.sens.get("vision", 5)
             return max(2, int(3 + vision * 0.7))
 
-        observers = self.entities  # pour Phase1, il n’y a qu’un seul individu
         if self.fog:
             light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel
             self.fog.recompute(self.entities, get_radius, light_level)
@@ -719,7 +720,6 @@ class Phase1:
             (1, 0), (-1, 0), (0, 1), (0, -1),
             (1, 1), (1, -1), (-1, 1), (-1, -1)
         ]
-        import math
         while openh:
             _, gc, cur = heapq.heappop(openh)
             if cur == goal:
@@ -891,4 +891,3 @@ class Phase1:
         # alpha faible sinon ça “salit” l’image
         tint.fill((r, g, b, 35))
         surface.blit(tint, (0, 0))
-

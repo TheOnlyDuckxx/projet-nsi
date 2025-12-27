@@ -4,13 +4,19 @@
 
 # --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
-from dataclasses import dataclass, asdict
-from typing import Optional, Tuple, List, Dict, Any
-import json, os, random, math, hashlib, struct
-from typing import Callable
+
+import hashlib
+import json
+import math
+import os
 import random
-ProgressCb = Optional[Callable[[float, str], None]]
+import struct
+from dataclasses import asdict, dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from Game.world.tiles import get_tile_id
+
+ProgressCb = Optional[Callable[[float, str], None]]
 
 
 def get_prop_id(name: str) -> int:
@@ -337,7 +343,6 @@ class WorldGenerator:
         w_height  = 0.30
         w_island  = 0.10
         w_sea     = 0.05
-        w_quant   = 0.10
         w_moist   = 0.15
         w_biome   = 0.20
         w_props   = 0.08
