@@ -6,7 +6,7 @@ from Game.core.utils import Button, ButtonStyle
 from Game.world.day_night import ClockRenderer
 
 from Game.ui.menu.menu_species import SpeciesMenu
-from Game.ui.menu.menu_events import EventsMenu
+from Game.ui.menu.menu_event import EventMenu
 from Game.ui.menu.menu_tech import TechMenu
 from Game.ui.menu.menu_history import HistoryMenu
 from Game.ui.menu.menu_options import OptionsMenu
@@ -626,7 +626,7 @@ class LeftHUD:
         # Menus
         self.menus = {
             "species": SpeciesMenu(phase, on_close=self._close_menu),
-            "events": EventsMenu(phase, on_close=self._close_menu),
+            "events": EventMenu(phase, on_close=self._close_menu),
             "tech": TechMenu(phase, on_close=self._close_menu),
             "history": HistoryMenu(phase, on_close=self._close_menu),
             "options": OptionsMenu(phase, on_close=self._close_menu),
