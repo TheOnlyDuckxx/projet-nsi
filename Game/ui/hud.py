@@ -1,7 +1,5 @@
 import pygame
 import time
-import textwrap
-import json
 from typing import List
 from Game.gameplay.craft import load_crafts
 from Game.core.utils import Button, ButtonStyle

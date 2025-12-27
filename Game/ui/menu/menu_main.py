@@ -6,7 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT
-from Game.core.utils import Button, ButtonStyle, Slider, Toggle, ValueSelector, OptionSelector
+from Game.core.utils import Button, ButtonStyle, Slider, Toggle
 import json 
 import os 
 import math

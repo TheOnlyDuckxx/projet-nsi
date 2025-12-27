@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")

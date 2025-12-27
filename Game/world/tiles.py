@@ -4,7 +4,7 @@
 
 # --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 # --------------- ID DU TERRAIN ---------------
 OCEAN       = 0

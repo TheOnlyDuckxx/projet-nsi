@@ -1,5 +1,6 @@
 #Pour que le jeu se lance à la racine
-import sys, os
+import sys
+import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 
 #Importation des modules

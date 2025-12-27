@@ -1,7 +1,9 @@
 # CONFIG.PY
 # Code qui gère les paramètres du jeu et les variables GLOBALES
 # --------------- IMPORTATION DES MODULES ---------------
-import json, os, pygame
+import json
+import os
+import pygame
 # --------------- VARIABLES GLOBALES ---------------
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -33,7 +35,7 @@ class Settings:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         
         if not os.path.exists(self.path):
-            print(f"⚠️ Fichier de configuration introuvable, création avec valeurs par défaut")
+            print("⚠️ Fichier de configuration introuvable, création avec valeurs par défaut")
             self.data = DEFAULTS.copy()
             self.save()
             self.apply_all()
@@ -45,7 +47,7 @@ class Settings:
                 
                 # Vérifier si le fichier est vide
                 if not content:
-                    print(f"⚠️ Fichier de configuration vide, réinitialisation")
+                    print("⚠️ Fichier de configuration vide, réinitialisation")
                     self.data = DEFAULTS.copy()
                     self.save()
                     self.apply_all()
@@ -61,7 +63,7 @@ class Settings:
                 
         except json.JSONDecodeError as e:
             print(f"Erreur de lecture du fichier de configuration: {e}")
-            print(f"   Le fichier sera réinitialisé avec les valeurs par défaut")
+            print("   Le fichier sera réinitialisé avec les valeurs par défaut")
             self.data = DEFAULTS.copy()
             self.save()
             
@@ -140,6 +142,6 @@ class Settings:
             self.apply("video.fps_cap",       self.data["video"]["fps_cap"])
         except KeyError as e:
             print(f"⚠️ Clé de configuration manquante: {e}")
-            print(f"   Réinitialisation des valeurs par défaut")
+            print("   Réinitialisation des valeurs par défaut")
             self.data = DEFAULTS.copy()
             self.save()

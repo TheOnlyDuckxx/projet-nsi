@@ -1,5 +1,6 @@
 # Game/ui/loading.py
-import pygame, threading
+import pygame
+import threading
 from Game.core.config import WIDTH, HEIGHT
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 

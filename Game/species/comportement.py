@@ -1,5 +1,6 @@
 # Game/species/comportement.py
-import os, json, random
+import json
+import random
 from Game.core.utils import resource_path
 from Game.ui.hud import add_notification
 

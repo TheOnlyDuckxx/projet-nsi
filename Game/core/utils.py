@@ -3,7 +3,8 @@
 
 # --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
-import os, sys
+import os
+import sys
 import pygame
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, Literal
@@ -159,7 +160,6 @@ class Button:
         """Retourne True si cliqué ce frame (et déclenche on_click si fourni)."""
         clicked = False
         mouse_pos = pygame.mouse.get_pos()
-        left_pressed = pygame.mouse.get_pressed(num_buttons=3)[0]
 
         self.is_hovered = self.rect.collidepoint(mouse_pos) and self.enabled
 
@@ -497,13 +497,11 @@ class OptionSelector:
                     self.is_open = not self.is_open
                     consumed = True
                 elif self.is_open:
-                    clicked_option = False
                     for i, _ in enumerate(self.options):
                         opt_rect = pygame.Rect(self.rect.x, self.rect.y + (i + 1) * self.rect.height,
                                                self.rect.width, self.rect.height)
                         if opt_rect.collidepoint(mx, my):
                             self.selected_index = i
-                            clicked_option = True
                             break
                     self.is_open = False
                     consumed = True  # on absorbe le clic quand le menu était ouvert
