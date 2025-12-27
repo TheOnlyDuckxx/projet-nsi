@@ -30,10 +30,13 @@ def add_notification(message: str):
     """
     Crée et ajoute une notification à afficher.
     """
-    if message in notifications:
-        return
     if not message:
         return
+
+    # Évite d'empiler plusieurs fois la même notification visible
+    for notif in notifications:
+        if notif.get("raw") == message:
+            return
 
     wrapped = _wrap_text(message, NOTIF_FONT, NOTIF_MAX_WIDTH - 2 * NOTIF_PADDING)
     width = min(
@@ -43,6 +46,7 @@ def add_notification(message: str):
     height = len(wrapped) * NOTIF_FONT.get_height() + 2 * NOTIF_PADDING
 
     notif = {
+        "raw": message,
         "text": wrapped,
         "start": time.time(),
         "width": width,
