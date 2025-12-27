@@ -1,6 +1,7 @@
 # CONFIG.PY
 # Code qui gère les paramètres du jeu et les variables GLOBALES
 # --------------- IMPORTATION DES MODULES ---------------
+import copy
 import json
 import os
 import pygame
@@ -36,7 +37,7 @@ class Settings:
         
         if not os.path.exists(self.path):
             print("⚠️ Fichier de configuration introuvable, création avec valeurs par défaut")
-            self.data = DEFAULTS.copy()
+            self.data = copy.deepcopy(DEFAULTS)
             self.save()
             self.apply_all()
             return
@@ -48,7 +49,7 @@ class Settings:
                 # Vérifier si le fichier est vide
                 if not content:
                     print("⚠️ Fichier de configuration vide, réinitialisation")
-                    self.data = DEFAULTS.copy()
+                    self.data = copy.deepcopy(DEFAULTS)
                     self.save()
                     self.apply_all()
                     return
@@ -56,20 +57,20 @@ class Settings:
                 # Charger le JSON
                 loaded_data = json.loads(content)
                 
-                # Fusionner avec les valeurs par défaut (compatibilité Python 3.8)
-                self.data = {**DEFAULTS, **loaded_data}
+                # Fusionner récursivement avec les valeurs par défaut
+                self.data = self._merge_defaults(DEFAULTS, loaded_data)
                 
                 print(f"✓ Configuration chargée depuis {self.path}")
                 
         except json.JSONDecodeError as e:
             print(f"Erreur de lecture du fichier de configuration: {e}")
             print("   Le fichier sera réinitialisé avec les valeurs par défaut")
-            self.data = DEFAULTS.copy()
+            self.data = copy.deepcopy(DEFAULTS)
             self.save()
             
         except Exception as e:
             print(f"Erreur inattendue lors du chargement de la configuration: {e}")
-            self.data = DEFAULTS.copy()
+            self.data = copy.deepcopy(DEFAULTS)
             self.save()
         
         self.apply_all()
@@ -82,6 +83,39 @@ class Settings:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"⚠️ Erreur lors de la sauvegarde de la configuration: {e}")
+
+    def _merge_defaults(self, defaults, loaded):
+        """
+        Fusion récursive des valeurs chargées avec les valeurs par défaut.
+        - Conserve les clés manquantes (important pour les nouvelles options).
+        - Préserve les valeurs spécifiques de l'utilisateur.
+        """
+        if not isinstance(defaults, dict):
+            return copy.deepcopy(loaded) if loaded is not None else copy.deepcopy(defaults)
+
+        if not isinstance(loaded, dict):
+            loaded = {}
+
+        merged = {}
+
+        # Parcours des clés par défaut pour s'assurer qu'elles existent toutes
+        for key, default_value in defaults.items():
+            if key in loaded:
+                merged_value = (
+                    self._merge_defaults(default_value, loaded[key])
+                    if isinstance(default_value, dict) and isinstance(loaded[key], dict)
+                    else loaded[key]
+                )
+            else:
+                merged_value = copy.deepcopy(default_value)
+            merged[key] = merged_value
+
+        # Ajouter les nouvelles clés qui n'existent pas dans les defaults
+        for key, value in loaded.items():
+            if key not in merged:
+                merged[key] = copy.deepcopy(value)
+
+        return merged
     
     # JSP ça fait quoi mais ça doit être important donc je le laisse la
     def get(self, path, default=None):
@@ -143,5 +177,5 @@ class Settings:
         except KeyError as e:
             print(f"⚠️ Clé de configuration manquante: {e}")
             print("   Réinitialisation des valeurs par défaut")
-            self.data = DEFAULTS.copy()
+            self.data = copy.deepcopy(DEFAULTS)
             self.save()
