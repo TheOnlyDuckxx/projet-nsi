@@ -1,0 +1,49 @@
+{
+  "events": [
+    {
+      "id": "new_arrival",
+      "title": "Nouvel arrivant",
+      "short_text": "Un nouveau visage s'approche du camp.",
+      "long_text": "À 23h, un voyageur solitaire se présente à votre camp. Il demande à rejoindre votre groupe.",
+      "unique": true,
+      "already_met": false,
+      "condition": {
+        "type": "time",
+        "hour": 23,
+        "minute": 0,
+        "once_per_day": true
+      },
+      "choices": [
+        {
+          "id": "welcome",
+          "label": "Accueillir",
+          "description": "Accepter le visiteur. (Effet placeholder pour l'instant)",
+          "effects_immediate": [
+            {
+              "type": "notification",
+              "message": "Le voyageur rejoint provisoirement votre groupe."
+            }
+          ]
+        },
+        {
+          "id": "refuse",
+          "label": "Refuser poliment",
+          "description": "Renvoyer le visiteur sans incident.",
+          "chance": 0.5,
+          "effects_immediate": [
+            {
+              "type": "notification",
+              "message": "Le voyageur comprend et repart."
+            }
+          ],
+          "on_fail": [
+            {
+              "type": "notification",
+              "message": "Il laisse un message mystérieux derrière lui…"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

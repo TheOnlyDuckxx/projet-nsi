@@ -65,6 +65,8 @@ class DayNightCycle:
         
         # Boucle le cycle
         if self.time_elapsed >= self.cycle_duration:
+            overflow = self.time_elapsed // self.cycle_duration
+            self.jour += int(overflow)
             self.time_elapsed = self.time_elapsed % self.cycle_duration
     
     def get_time_ratio(self):

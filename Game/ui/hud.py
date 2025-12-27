@@ -6,7 +6,7 @@ from Game.core.utils import Button, ButtonStyle
 from Game.world.day_night import ClockRenderer
 
 from Game.ui.menu.menu_species import SpeciesMenu
-from Game.ui.menu.menu_events import EventsMenu
+from Game.ui.menu.menu_event import EventMenu
 from Game.ui.menu.menu_tech import TechMenu
 from Game.ui.menu.menu_history import HistoryMenu
 from Game.ui.menu.menu_options import OptionsMenu
@@ -626,7 +626,7 @@ class LeftHUD:
         # Menus
         self.menus = {
             "species": SpeciesMenu(phase, on_close=self._close_menu),
-            "events": EventsMenu(phase, on_close=self._close_menu),
+            "events": EventMenu(phase, on_close=self._close_menu),
             "tech": TechMenu(phase, on_close=self._close_menu),
             "history": HistoryMenu(phase, on_close=self._close_menu),
             "options": OptionsMenu(phase, on_close=self._close_menu),
@@ -758,6 +758,8 @@ class LeftHUD:
         # Si un menu est ouvert → afficher UNIQUEMENT le menu
         if self.is_menu_open():
             self.menus[self.active_menu_key].draw(screen)
+            # Affiche les notifications par-dessus les écrans de menu
+            draw_notifications(screen)
             return  # <-- IMPORTANT
 
         # Sinon : afficher la barre HUD
