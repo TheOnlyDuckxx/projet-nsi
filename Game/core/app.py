@@ -8,6 +8,7 @@ import pygame
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
 from Game.ui.menu.menu_main import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
 from Game.core.assets import Assets
+from Game.core.audio import AudioManager
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
@@ -17,7 +18,11 @@ from Game.ui.hud import draw_notifications
 class App:
     def __init__(self):
         pygame.init()
-        
+
+        # init mixer (au cas où)
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         self.assets = Assets().load_all(resource_path("Game/assets"))
         self.running = True
@@ -25,10 +30,33 @@ class App:
         self.clock = pygame.time.Clock()
         self.states = {}
         self.state = None
-        self.settings=Settings()
+
+        self.settings = Settings()
+
+        # --- AUDIO ---
+        self.audio = AudioManager(resource_path("Game/assets/audio")).load_all()
+        self.audio.set_volumes(
+            enabled=bool(self.settings.get("audio.enabled", True)),
+            master=float(self.settings.get("audio.master_volume", 0.8)),
+            music=float(self.settings.get("audio.music_volume", 0.8)),
+            sfx=float(self.settings.get("audio.sfx_volume", 0.9)),
+        )
+
+        # si un setting change -> on réapplique volumes
+        self.settings.on_change(self._on_setting_changed)
+
         self.selected_base_mutations: list[str] = []
         self._register_states()
         self.change_state("MENU")
+
+    def _on_setting_changed(self, path, value):
+        if path.startswith("audio."):
+            self.audio.set_volumes(
+                enabled=bool(self.settings.get("audio.enabled", True)),
+                master=float(self.settings.get("audio.master_volume", 0.8)),
+                music=float(self.settings.get("audio.music_volume", 0.8)),
+                sfx=float(self.settings.get("audio.sfx_volume", 0.9)),
+            )
 
     # Définis les "STATES"
     def _register_states(self):

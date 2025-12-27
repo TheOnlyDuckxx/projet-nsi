@@ -3,6 +3,7 @@
 # --------------- IMPORTATION DES MODULES ---------------
 import json, os, pygame
 # --------------- VARIABLES GLOBALES ---------------
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 infoObject = pygame.display.Info()
 WIDTH = infoObject.current_w
@@ -11,7 +12,12 @@ FPS = 60
 TITLE = "EvoNSI"
 SCALE = 3  # pour sprites 16px → 48px
 DEFAULTS = {
-    "audio":   {"master_volume": 0.8},
+    "audio": {
+        "enabled": True,
+        "master_volume": 0.8,
+        "music_volume": 0.8,
+        "sfx_volume": 0.9
+    },
     "video":   {"fullscreen": False, "fps_cap": 60, "vsync": False},
     "gameplay":{"language": "fr"}
 }
@@ -54,13 +60,13 @@ class Settings:
                 print(f"✓ Configuration chargée depuis {self.path}")
                 
         except json.JSONDecodeError as e:
-            print(f"⚠️ Erreur de lecture du fichier de configuration: {e}")
+            print(f"Erreur de lecture du fichier de configuration: {e}")
             print(f"   Le fichier sera réinitialisé avec les valeurs par défaut")
             self.data = DEFAULTS.copy()
             self.save()
             
         except Exception as e:
-            print(f"⚠️ Erreur inattendue lors du chargement de la configuration: {e}")
+            print(f"Erreur inattendue lors du chargement de la configuration: {e}")
             self.data = DEFAULTS.copy()
             self.save()
         
@@ -72,7 +78,6 @@ class Settings:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
-            print(f"✓ Configuration sauvegardée dans {self.path}")
         except Exception as e:
             print(f"⚠️ Erreur lors de la sauvegarde de la configuration: {e}")
     
@@ -104,9 +109,15 @@ class Settings:
     # Application des paramètres côté moteur
     def apply(self, path, value):
         try:
-            if path == "audio.master_volume":
+            if path.startswith("audio."):
                 if pygame.mixer.get_init():
-                    pygame.mixer.music.set_volume(value)
+                    enabled = self.get("audio.enabled", True)
+                    if not enabled:
+                        pygame.mixer.music.set_volume(0.0)
+                    else:
+                        master = float(self.get("audio.master_volume", 0.8))
+                        musicv = float(self.get("audio.music_volume", 0.8))
+                        pygame.mixer.music.set_volume(master * musicv)
             elif path == "video.fullscreen":
                 flags = pygame.FULLSCREEN if value else 0
                 scr = pygame.display.get_surface()

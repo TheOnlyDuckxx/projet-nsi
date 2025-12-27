@@ -1,6 +1,7 @@
 {
   "audio": {
-    "master_volume": 0.45
+    "master_volume": 0.68,
+    "music_volume": 0.55
   },
   "video": {
     "fullscreen": true,

@@ -1,7 +1,7 @@
 {
     "presets": {
         "Custom": {
-            "world_name": "Monde sans nom",
+            "world_name": "Brotato",
             "seed": "Aléatoire",
             "world_size": "Moyenne",
             "water_coverage": "Tempéré",

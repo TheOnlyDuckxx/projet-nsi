@@ -83,6 +83,17 @@ class SaveManager:
 
             individus_data.append(ind_data)
 
+        day_night = getattr(phase1, "day_night", None)
+        day_night_data = None
+        if day_night is not None:
+            day_night_data = {
+                "cycle_duration": getattr(day_night, "cycle_duration", None),
+                "time_elapsed": getattr(day_night, "time_elapsed", 0.0),
+                "time_speed": getattr(day_night, "time_speed", 1.0),
+                "paused": getattr(day_night, "paused", False),
+                "jour": getattr(day_night, "jour", 0),
+            }
+
         # ---------- BROUILLARD DE GUERRE ----------
         fog_data = None
         fog = phase1.fog
@@ -107,7 +118,9 @@ class SaveManager:
             "camera": (phase1.view.cam_x, phase1.view.cam_y),
             "zoom": phase1.view.zoom,
             "fog": fog_data,
+            "day_night": day_night_data,   # <-- NEW
         }
+
 
     # ------------------------------------------------------------------
     # SAUVEGARDE
@@ -247,6 +260,24 @@ class SaveManager:
                     fog = getattr(phase1, "fog", None)
                     if fog is not None:
                         fog.explored = exp
+            
+            # ----------------- Jour / Nuit -----------------
+            dn_data = data.get("day_night")
+            if dn_data is not None:
+                from Game.world.day_night import DayNightCycle
+
+                dn = getattr(phase1, "day_night", None)
+                if dn is None:
+                    dn = DayNightCycle(cycle_duration=dn_data.get("cycle_duration", 600))
+                    phase1.day_night = dn
+
+                # On ne remplace pas forcément l'objet, on le met à jour
+                dn.cycle_duration = dn_data.get("cycle_duration", getattr(dn, "cycle_duration", 600))
+                dn.time_elapsed = float(dn_data.get("time_elapsed", 0.0)) % max(1e-6, dn.cycle_duration)
+                dn.time_speed = float(dn_data.get("time_speed", getattr(dn, "time_speed", 1.0)))
+                dn.paused = bool(dn_data.get("paused", False))
+                dn.jour = int(dn_data.get("jour", 0))
+
 
             phase1.save_message = "✓ Partie chargée !"
             phase1.save_message_timer = 3.0

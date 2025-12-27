@@ -18,8 +18,9 @@ import random
 class BaseMenu:
     def __init__(self, app, title:str):
         self.app = app
+        self.app.audio.play_music("main_chill", loops=-1)
         self.title = title
-        self.bg = pygame.transform.scale(app.assets.get_image("test_menu_background"),(WIDTH, HEIGHT))
+        self.bg = pygame.transform.scale(app.assets.get_image("menu_background"),(WIDTH, HEIGHT))
         self.title_font = app.assets.get_font("MightySouly", 64)
         self.btn_font = app.assets.get_font("MightySouly", 28)
         self.widgets = []
@@ -64,230 +65,411 @@ class OptionsMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="Options")
 
-        btn_font = app.assets.get_font("MightySouly", 28)
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
 
-        # --- Widgets ---
-        # Fullscreen
+        # Fonts dépendants de HEIGHT
+        title_size = clamp(int(HEIGHT * 0.085), 34, 84)
+        item_size  = clamp(int(HEIGHT * 0.040), 18, 44)
+        self.title_font = app.assets.get_font("MightySouly", title_size)
+        self.btn_font = app.assets.get_font("MightySouly", item_size)
+
+        # Largeur sliders
+        slider_w = clamp(int(WIDTH * 0.36), 280, 620)
+
+        x = WIDTH // 2
+
+        # --- Widgets (positions provisoires, on re-layout après) ---
         self.toggle_fullscreen = self.add(Toggle(
             "Plein écran",
-            (WIDTH//2, 260),
+            (x, 0),
             get_value=lambda: app.settings.get("video.fullscreen", False),
             set_value=lambda v: app.settings.set("video.fullscreen", v),
-            font=btn_font
+            font=self.btn_font
         ))
 
-        # VSync
         self.toggle_vsync = self.add(Toggle(
             "VSync",
-            (WIDTH//2, 320),
+            (x, 0),
             get_value=lambda: app.settings.get("video.vsync", False),
             set_value=lambda v: app.settings.set("video.vsync", v),
-            font=btn_font
+            font=self.btn_font
         ))
 
-        # Volume maître (0..1)
-        self.slider_volume = self.add(Slider(
+        self.slider_master = self.add(Slider(
             "Volume général",
-            (WIDTH//2, 400),
-            width=420,
+            (x, 0),
+            width=slider_w,
             get_value=lambda: app.settings.get("audio.master_volume", 0.8),
             set_value=lambda v: app.settings.set("audio.master_volume", float(v)),
-            font=btn_font,
+            font=self.btn_font,
             min_v=0.0, max_v=1.0, step=0.01
         ))
 
-        # Limite FPS (30..240)
+        self.slider_music = self.add(Slider(
+            "Volume musique",
+            (x, 0),
+            width=slider_w,
+            get_value=lambda: app.settings.get("audio.music_volume", 0.8),
+            set_value=lambda v: app.settings.set("audio.music_volume", float(v)),
+            font=self.btn_font,
+            min_v=0.0, max_v=1.0, step=0.01
+        ))
+
+        self.slider_sfx = self.add(Slider(
+            "Volume sfx",
+            (x, 0),
+            width=slider_w,
+            get_value=lambda: app.settings.get("audio.sfx_volume", 0.8),
+            set_value=lambda v: app.settings.set("audio.sfx_volume", float(v)),
+            font=self.btn_font,
+            min_v=0.0, max_v=1.0, step=0.01
+        ))
+
         self.slider_fps = self.add(Slider(
             "Limite FPS",
-            (WIDTH//2, 470),
-            width=420,
+            (x, 0),
+            width=slider_w,
             get_value=lambda: float(app.settings.get("video.fps_cap", 60)),
             set_value=lambda v: app.settings.set("video.fps_cap", int(v)),
-            font=btn_font,
+            font=self.btn_font,
             min_v=30, max_v=240, step=5
         ))
 
-        # Boutons du bas
-        ghost = ButtonStyle(draw_background=False, font=btn_font, text_color=(230,230,230), hover_zoom=1.08)
-        self.btn_back = Button("← Retour", (WIDTH//2, 560), anchor="center", style=ghost,
-                               on_click=lambda b: app.change_state("MENU"))
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
+        self.btn_back = Button(
+            "← Retour",
+            (x, 0),
+            anchor="center",
+            style=ghost,
+            on_click=lambda b: app.change_state("MENU")
+        )
         self.add(self.btn_back)
+
+        # --- Layout vertical centré (anti-chevauchement) ---
+        self._layout_centered()
+
+    def _layout_centered(self):
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        x = WIDTH // 2
+
+        # Pré-rendu titre pour mesurer
+        title_surf = self.title_font.render(self.title, True, (230, 230, 230))
+        title_h = title_surf.get_height()
+
+        title_gap = clamp(int(HEIGHT * 0.050), 18, 60)
+        item_gap  = clamp(int(HEIGHT * 0.030), 10, 30)
+        back_gap  = clamp(int(HEIGHT * 0.040), 16, 46)
+
+        items = [
+            self.toggle_fullscreen,
+            self.toggle_vsync,
+            self.slider_master,
+            self.slider_music,
+            self.slider_sfx,
+            self.slider_fps,
+        ]
+
+        def item_block_h(w):
+            # Toggle = hauteur du bouton
+            if hasattr(w, "btn"):
+                return w.btn.rect.height
+
+            # Slider : label est à bar_top - 36, knob dépasse => il faut une “hauteur de bloc” plus grande
+            # (on s'aligne sur votre implémentation Slider._rebuild_rects) :contentReference[oaicite:3]{index=3}
+            label_h = w.label_surf.get_height()
+            return 36 + label_h + (2 * w.knob_r) + 18  # marge sécurité
+
+        blocks = [item_block_h(w) for w in items]
+        total_h = title_h + title_gap + sum(blocks) + item_gap * (len(items) - 1) + back_gap + self.btn_back.rect.height
+
+        top_y = HEIGHT // 2 - total_h // 2
+
+        # Stocke pour render
+        self._title_surf = title_surf
+        self._title_pos = (x - title_surf.get_width() // 2, top_y)
+
+        cursor = top_y + title_h + title_gap
+
+        for w, bh in zip(items, blocks):
+            if hasattr(w, "btn"):
+                # Toggle
+                w.btn.move_to((x, cursor + bh // 2))
+            else:
+                # Slider : on place le centre de la barre en tenant compte du label au-dessus
+                label_h = w.label_surf.get_height()
+                bar_center_y = cursor + 36 + label_h + 8 + w.knob_r
+                w.pos = (x, bar_center_y)
+                w._rebuild_rects()
+            cursor += bh + item_gap
+
+        # Bouton retour sous le bloc
+        cursor += back_gap
+        self.btn_back.move_to((x, cursor + self.btn_back.rect.height // 2))
 
     def handle_input(self, events):
         super().handle_input(events)
-        # Raccourci ECHAP
         for e in events:
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                 self.app.change_state("MENU")
 
     def render(self, screen):
-        super().render(screen)  # fond + titre + widgets (draw est appelé dans BaseMenu)
+        # même fond que partout (menu_background + overlay)
+        screen.blit(self.bg, (0, 0))
+        screen.blit(self._overlay, (0, 0))
+
+        # titre centré (pas celui de BaseMenu à y=120)
+        screen.blit(self._title_surf, self._title_pos)
+
+        for w in self.widgets:
+            w.draw(screen)
+        for w in self.widgets:
+            if hasattr(w, "draw_popup"):
+                w.draw_popup(screen)
+
 
 
 
 class MainMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="EvoNSI")
-        
-        # ---- Styles de boutons ----
-        primary = ButtonStyle(
-            draw_background=True,
-            bg_color=(60, 80, 110),
-            hover_bg_color=(80, 110, 155),
-            active_bg_color=(40, 140, 240),
-            draw_border=True,
-            border_color=(20, 30, 45),
-            border_width=2,
-            radius=14,
-            font=self.btn_font,
-            text_color=(255, 255, 255),
-            hover_text_color=(255, 255, 255),
-            active_text_color=(255, 255, 255),
-            padding_x=26,
-            padding_y=14,
-            shadow=True,
-            shadow_offset=(3, 3),
-            shadow_alpha=90,
-            hover_zoom=1.10,
-            zoom_speed=0.22,
-        )
 
-        # Style spécial pour le bouton "Reprendre" (vert)
-        resume_style = ButtonStyle(
-            draw_background=True,
-            bg_color=(40, 100, 60),
-            hover_bg_color=(60, 140, 80),
-            active_bg_color=(80, 180, 100),
-            draw_border=True,
-            border_color=(20, 50, 30),
-            border_width=2,
-            radius=14,
-            font=self.btn_font,
-            text_color=(255, 255, 255),
-            hover_text_color=(255, 255, 255),
-            active_text_color=(255, 255, 255),
-            padding_x=26,
-            padding_y=14,
-            shadow=True,
-            shadow_offset=(3, 3),
-            shadow_alpha=90,
-            hover_zoom=1.10,
-            zoom_speed=0.22,
-        )
+        # ---------- Helpers ----------
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
 
-        ghost = ButtonStyle(
-            draw_background=False,
-            font=self.btn_font,
-            text_color=(230, 230, 230),
-            hover_zoom=1.08,
-            zoom_speed=0.22,
-        )
+        self._clamp = clamp
 
-        # Importer Phase1 pour vérifier la sauvegarde
+        # ---------- Zone overlay (40% WIDTH) ----------
+        self.overlay_w = int(WIDTH * 0.40)
+        self.overlay_surf = pygame.Surface((self.overlay_w, HEIGHT), pygame.SRCALPHA)
+        # Noir transparent
+        self.overlay_surf.fill((0, 0, 0, 160))  # alpha 0..255 (augmente si tu veux plus sombre)
+
+        # ---------- Fonts (dépendants de HEIGHT) ----------
+        title_size = clamp(int(HEIGHT * 0.10), 42, 96)
+        btn_size = clamp(int(HEIGHT * 0.04), 18, 44)
+        self.title_font = app.assets.get_font("MightySouly", title_size)
+        self.btn_font = app.assets.get_font("MightySouly", btn_size)
+
+        # ---------- Sprite de bouton ----------
+        # Tu as demandé "menus_bouton"
+        try:
+            self._btn_sprite = app.assets.get_image("menus_bouton").convert_alpha()
+        except Exception:
+            # petit fallback au cas où l'asset a un autre nom dans ton dossier
+            self._btn_sprite = app.assets.get_image("boutons_menu").convert_alpha()
+
+        self._sprite_cache: dict[tuple[int, int], pygame.Surface] = {}
+
+        # ---------- Boutons ----------
         from Game.gameplay.phase1 import Phase1
         self.has_save = Phase1.save_exists()
 
-        # Calculer les positions en fonction de la présence d'une sauvegarde
-        y0 = HEIGHT // 2 + 20
-        gap = 70
-        
-        # Ajuster la position de départ si on a une sauvegarde
+        self._buttons = []
+        self._rebuild_layout()
+
+    # ------------ Bouton sprite interne ------------
+    class _SpriteButton:
+        def __init__(self, text, rect: pygame.Rect, font, on_click):
+            self.text = text
+            self.rect = rect
+            self.font = font
+            self.on_click = on_click
+            self.hovered = False
+            self.pressed = False
+
+        def handle(self, events):
+            mx, my = pygame.mouse.get_pos()
+            self.hovered = self.rect.collidepoint(mx, my)
+
+            for e in events:
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.hovered:
+                    self.pressed = True
+                if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                    if self.pressed and self.hovered:
+                        self.on_click()
+                    self.pressed = False
+
+    def _get_scaled_sprite(self, w: int, h: int) -> pygame.Surface:
+        key = (max(1, w), max(1, h))
+        if key not in self._sprite_cache:
+            self._sprite_cache[key] = pygame.transform.smoothscale(self._btn_sprite, key)
+        return self._sprite_cache[key]
+
+    def _rebuild_layout(self):
+        """Recrée la liste des boutons + positions (centrés dans l'overlay gauche)."""
+        self._buttons.clear()
+
+        # Dimensions boutons (dépendants de WIDTH/HEIGHT)
+        btn_w = self._clamp(int(self.overlay_w * 0.78), 180, self.overlay_w - 30)
+        btn_h = self._clamp(int(HEIGHT * 0.10), 48, 120)
+        gap = self._clamp(int(HEIGHT * 0.03), 10, 44)
+        title_gap = self._clamp(int(HEIGHT * 0.05), 12, 60)
+
+        # Liste des actions (avec ou sans sauvegarde)
+        actions = []
         if self.has_save:
-            y0 -= gap // 2  # Décaler vers le haut pour faire de la place
+            actions.append(("▶ REPRENDRE LA PARTIE", lambda: self.app.change_state("PHASE1", load_save=True)))
+        actions += [
+            ("NOUVELLE PARTIE", lambda: self.app.change_state("CREATION")),
+            ("OPTIONS", lambda: self.app.change_state("OPTIONS")),
+            ("Crédits", lambda: self.app.change_state("CREDITS")),
+            ("Quitter", lambda: self.app.quit_game()),
+        ]
 
-        # ---- Bouton "Reprendre" (uniquement si sauvegarde existe) ----
-        if self.has_save:
-            self.btn_resume = self.add(Button(
-                "▶ REPRENDRE LA PARTIE",
-                (WIDTH // 2, y0 - gap),
-                anchor="center",
-                style=resume_style,
-                on_click=lambda b: self.app.change_state("PHASE1", load_save=True),
-            ))
+        # Mesure titre pour centrer le bloc (titre + boutons) verticalement
+        title_surf = self.title_font.render(self.title, True, (235, 235, 235))
+        title_h = title_surf.get_height()
 
-        # ---- Boutons normaux ----
-        self.btn_start = self.add(Button(
-            "NOUVELLE PARTIE",
-            (WIDTH // 2, y0 ),
-            anchor="center",
-            style=primary,
-            on_click=lambda b: self.app.change_state("CREATION"),
-        ))
+        n = len(actions)
+        total_h = title_h + title_gap + (n * btn_h) + ((n - 1) * gap)
 
-        self.btn_options = self.add(Button(
-            "OPTIONS",
-            (WIDTH // 2, y0 + gap),
-            anchor="center",
-            style=primary,
-            on_click=lambda b: self.app.change_state("OPTIONS"),
-        ))
+        start_y = (HEIGHT // 2) - (total_h // 2)
+        center_x = self.overlay_w // 2
 
-        self.btn_credits = self.add(Button(
-            "Crédits",
-            (WIDTH // 2, y0 + 2*gap),
-            anchor="center",
-            style=ghost,
-            on_click=lambda b: self.app.change_state("CREDITS"),
-        ))
+        # Stocke pour render
+        self._title_surf = title_surf
+        self._title_pos = (center_x - title_surf.get_width() // 2, start_y)
 
-        self.btn_quit = self.add(Button(
-            "Quitter",
-            (WIDTH // 2, y0 + 3*gap),
-            anchor="center",
-            style=ghost,
-            on_click=lambda b: self.app.quit_game(),
-        ))
+        # Place boutons
+        y = start_y + title_h + title_gap
+        for label, cb in actions:
+            rect = pygame.Rect(
+                center_x - btn_w // 2,
+                y,
+                btn_w,
+                btn_h
+            )
+            self._buttons.append(self._SpriteButton(label, rect, self.btn_font, cb))
+            y += btn_h + gap
 
     def enter(self):
-        """Appelé quand on entre dans ce menu - rafraîchit la détection de sauvegarde"""
+        """Rafraîchit la détection de sauvegarde quand on revient au menu."""
         from Game.gameplay.phase1 import Phase1
         new_has_save = Phase1.save_exists()
-        
-        # Si l'état de la sauvegarde a changé, reconstruire le menu
         if new_has_save != self.has_save:
-            self.__init__(self.app)
+            self.has_save = new_has_save
+            self._rebuild_layout()
 
     def handle_input(self, events):
-        super().handle_input(events)
+        for b in self._buttons:
+            b.handle(events)
 
     def render(self, screen):
-        super().render(screen)
+        # 1) fond
+        screen.blit(self.bg, (0, 0))
+
+        # 2) overlay gauche 40%
+        screen.blit(self.overlay_surf, (0, 0))
+
+        # 3) titre centré dans l'overlay
+        screen.blit(self._title_surf, self._title_pos)
+
+        # 4) boutons sprite (centrés dans l'overlay)
+        for b in self._buttons:
+            sprite = self._get_scaled_sprite(b.rect.width, b.rect.height)
+            screen.blit(sprite, b.rect.topleft)
+
+            # effets hover / pressed (facultatif mais utile visuellement)
+            if b.hovered:
+                ov = pygame.Surface(b.rect.size, pygame.SRCALPHA)
+                ov.fill((255, 255, 255, 25))
+                screen.blit(ov, b.rect.topleft)
+            if b.pressed:
+                ov = pygame.Surface(b.rect.size, pygame.SRCALPHA)
+                ov.fill((0, 0, 0, 35))
+                screen.blit(ov, b.rect.topleft)
+
+            # texte centré
+            txt = b.font.render(b.text, True, (245, 245, 245))
+            screen.blit(txt, (b.rect.centerx - txt.get_width() // 2, b.rect.centery - txt.get_height() // 2))
+
     
 
 
 class CreditMenu(BaseMenu):
-    def __init__(self,app):
-        super().__init__(app, title="Credits")
-        self.credit_font = app.assets.get_font("MightySouly", 20)
-        self.txt ="""
-        Jeu créé par : \n
-            - Romain Trohel\n
-            - Paul Juillet\n
-            - Timéo Barré--Golvet\n
-        Commencé le 2/10/25 et terminé le ...
-        """
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
-        self.btn_back = Button("← Retour", (WIDTH//2, 560), anchor="center", style=ghost,on_click=lambda b: self.app.change_state("MENU"))
-        self.add(self.btn_back)
-    def render(self, screen):
-        super().render(screen)
+    def __init__(self, app):
+        super().__init__(app, title="Crédits")
 
-        # Couleur du texte
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        title_size  = clamp(int(HEIGHT * 0.085), 34, 84)
+        credit_size = clamp(int(HEIGHT * 0.032), 16, 34)
+        btn_size    = clamp(int(HEIGHT * 0.040), 18, 44)
+
+        self.title_font  = app.assets.get_font("MightySouly", title_size)
+        self.credit_font = app.assets.get_font("MightySouly", credit_size)
+        self.btn_font    = app.assets.get_font("MightySouly", btn_size)
+
+        self.lines = [
+            "Jeu créé par :",
+            "• Romain Trohel",
+            "• Paul Juillet",
+            "• Timéo Barré--Golvet",
+            "",
+            "Commencé le 02/10/2025 et terminé le ...",
+        ]
+
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
+        self.btn_back = Button("← Retour", (WIDTH//2, HEIGHT//2), anchor="center", style=ghost,
+                               on_click=lambda b: self.app.change_state("MENU"))
+        self.add(self.btn_back)
+
+        self._compute_layout()
+
+    def _compute_layout(self):
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        x = WIDTH // 2
         color = (230, 230, 230)
 
-        # Découpe le texte par ligne
-        lines = self.txt.strip().split('\n')
+        self._title_surf = self.title_font.render(self.title, True, color)
 
-        # Position de départ verticale
-        start_y = 250
+        self._text_surfs = [self.credit_font.render(line, True, color) for line in self.lines]
+        line_gap = clamp(int(HEIGHT * 0.012), 4, 16)
+        title_gap = clamp(int(HEIGHT * 0.035), 10, 40)
+        back_gap = clamp(int(HEIGHT * 0.050), 14, 60)
 
-        for i, line in enumerate(lines):
-            # On rend chaque ligne séparément
-            credit_line = self.credit_font.render(line.strip(), True, color)
-            # Centrage horizontal
-            x = WIDTH // 2 - credit_line.get_width() // 2
-            y = start_y + i*(credit_line.get_height()-5)
-            screen.blit(credit_line, (x, y))
+        text_h = sum(s.get_height() for s in self._text_surfs) + (len(self._text_surfs) - 1) * line_gap
+        total_h = self._title_surf.get_height() + title_gap + text_h + back_gap + self.btn_back.rect.height
+
+        top_y = HEIGHT // 2 - total_h // 2
+
+        self._title_pos = (x - self._title_surf.get_width() // 2, top_y)
+
+        # positions des lignes centrées
+        y = top_y + self._title_surf.get_height() + title_gap
+        self._lines_pos = []
+        for s in self._text_surfs:
+            self._lines_pos.append((x - s.get_width() // 2, y))
+            y += s.get_height() + line_gap
+
+        # bouton retour bien sous le texte
+        y += back_gap
+        self.btn_back.move_to((x, y + self.btn_back.rect.height // 2))
+
+    def handle_input(self, events):
+        super().handle_input(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+
+    def render(self, screen):
+        screen.blit(self.bg, (0, 0))
+        screen.blit(self._overlay, (0, 0))
+
+        screen.blit(self._title_surf, self._title_pos)
+        for s, pos in zip(self._text_surfs, self._lines_pos):
+            screen.blit(s, pos)
+
+        for w in self.widgets:
+            w.draw(screen)
+
 
 
 class WorldCreationMenu(BaseMenu):

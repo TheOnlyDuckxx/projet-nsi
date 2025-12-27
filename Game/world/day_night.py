@@ -10,7 +10,6 @@ def _ease_in_out(self, t: float) -> float:
     # t in [0,1] -> sortie in [0,1] très progressive
     return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
 
-
 def _clamp(x, a=0.0, b=1.0):
     return max(a, min(b, x))
 
@@ -35,6 +34,7 @@ class DayNightCycle:
         """
         self.cycle_duration = cycle_duration  # durée totale d'un cycle en secondes
         self.time_elapsed = 0  # temps écoulé depuis le début du cycle (0 à cycle_duration)
+        self.jour = 0 # COMBIEN DE CYCLE COMPLET DEPUIS LA CREATION DE LA PARTIE
         
         # Configuration des phases
         self.phases = {
@@ -254,26 +254,3 @@ class ClockRenderer:
             txt = font.render(time_str, True, (240, 240, 240))
             txt_rect = txt.get_rect(center=(center_x, center_y + self.radius + 12))
             screen.blit(txt, txt_rect)
-
-
-# Exemple d'utilisation dans Phase1 ou un autre manager:
-"""
-# Dans __init__:
-self.day_night = DayNightCycle(cycle_duration=600)  # 10 minutes par cycle
-self.day_night.set_time(6, 0)  # Commence à 6h du matin
-self.clock_renderer = ClockRenderer(radius=18)
-
-# Dans update:
-self.day_night.update(dt)
-
-# Pour obtenir des infos:
-if self.day_night.is_night():
-    # Augmenter le danger, réduire la visibilité...
-    pass
-
-light_level = self.day_night.get_light_level()
-# Utiliser light_level pour ajuster le brouillard de guerre
-
-# Dans le HUD:
-self.clock_renderer.draw(screen, cx, cy, self.day_night, self.small_font)
-"""
