@@ -758,6 +758,8 @@ class LeftHUD:
         # Si un menu est ouvert → afficher UNIQUEMENT le menu
         if self.is_menu_open():
             self.menus[self.active_menu_key].draw(screen)
+            # Affiche les notifications par-dessus les écrans de menu
+            draw_notifications(screen)
             return  # <-- IMPORTANT
 
         # Sinon : afficher la barre HUD

@@ -2,6 +2,7 @@ import pygame
 from typing import List, Tuple
 
 from Game.core.utils import Button, ButtonStyle
+from Game.ui.hud import draw_notifications
 
 
 class EventMenu:
@@ -112,6 +113,9 @@ class EventMenu:
         # Bouton retour
         self.back_btn.move_to((margin, h - margin))
         self.back_btn.draw(screen)
+
+        # Notifications toujours visibles par-dessus
+        draw_notifications(screen)
 
     # ---------- Helpers ----------
     def _draw_event_list(self, screen, list_rect, events):
