@@ -54,13 +54,100 @@ class EventMenu:
         self.small_font = pygame.font.SysFont("consolas", max(12, int(h * 0.025)))
         self.back_btn.style.font = self.text_font
 
+    def _compute_layout_rects(self, screen_size):
+        w, h = screen_size
+        margin = int(min(w, h) * 0.04)
+        list_w = int(w * 0.38)
+
+        list_rect = pygame.Rect(margin, margin * 2, list_w, h - margin * 3)
+        detail_rect = pygame.Rect(
+            list_rect.right + margin,
+            margin * 2,
+            w - list_rect.right - 2 * margin,
+            h - margin * 3,
+        )
+        return margin, list_rect, detail_rect
+
+    def _rebuild_choice_buttons(self, detail_rect: pygame.Rect):
+        """(Re)calcule les boutons de choix pour gérer les clics ce frame."""
+        self.choice_buttons = []
+
+        events = self.phase.event_manager.get_sorted_events()
+        if not self.selected_event_id and events:
+            self.selected_event_id = events[0].definition_id
+            events[0].is_new = False
+
+        if not self.selected_event_id:
+            return
+
+        inst = self.phase.event_manager.instances.get(self.selected_event_id)
+        definition = self.phase.event_manager.get_definition(self.selected_event_id)
+        if inst is None or definition is None:
+            return
+
+        padding = 16
+        x = detail_rect.x + padding
+        y = detail_rect.y + padding
+        max_w = detail_rect.width - 2 * padding
+
+        # Décalages identiques à _draw_detail (titre + état + texte descriptif)
+        title_height = self.section_font.render(definition.title, True, (0, 0, 0)).get_height()
+        y += title_height + 8
+
+        state_text = f"État : {inst.state}"
+        state_height = self.text_font.render(state_text, True, (0, 0, 0)).get_height()
+        y += state_height + 12
+
+        for line in self._wrap_text(definition.long_text, self.text_font, max_w):
+            line_height = self.text_font.render(line, True, (0, 0, 0)).get_height()
+            y += line_height + 4
+
+        y += 12
+        choices_title_h = self.section_font.render("Choix", True, (0, 0, 0)).get_height()
+        y += choices_title_h + 6
+
+        for choice in definition.choices:
+            enabled = True
+            if choice.requirements:
+                enabled = self.phase.event_manager._evaluate_condition(
+                    choice.requirements, self.phase, inst.definition_id
+                )
+
+            btn = Button(
+                choice.label,
+                pos=(x, y),
+                anchor="topleft",
+                style=ButtonStyle(
+                    draw_background=True,
+                    radius=10,
+                    padding_x=12,
+                    padding_y=8,
+                    hover_zoom=1.03,
+                    font=self.text_font,
+                ),
+                on_click=lambda _b, cid=choice.id: self.phase.event_manager.resolve_event(
+                    inst.definition_id, cid, self.phase
+                ),
+                enabled=enabled and inst.state in {"active", "new"},
+            )
+            self.choice_buttons.append(btn)
+
+            y += btn.rect.height + 4
+            if choice.description:
+                for dl in self._wrap_text(choice.description, self.small_font, max_w):
+                    line_height = self.small_font.render(dl, True, (0, 0, 0)).get_height()
+                    y += line_height + 2
+            y += 10
+
     def handle(self, events):
         if not self.active:
             return
 
         screen = self.phase.screen
         self._refresh_layout(screen.get_size())
+        margin, list_rect, detail_rect = self._compute_layout_rects(screen.get_size())
         self._compute_event_rects(screen.get_size())
+        self._rebuild_choice_buttons(detail_rect)
         self.back_btn.handle(events)
 
         for e in events:
@@ -96,14 +183,13 @@ class EventMenu:
 
         # Liste des évènements
         events = self.phase.event_manager.get_sorted_events()
-        list_rect = pygame.Rect(margin, margin * 2, list_w, h - margin * 3)
+        _, list_rect, detail_rect = self._compute_layout_rects(screen.get_size())
         pygame.draw.rect(screen, (45, 48, 60), list_rect, border_radius=12)
         pygame.draw.rect(screen, (90, 95, 110), list_rect, 2, border_radius=12)
 
         self._draw_event_list(screen, list_rect, events)
 
         # Zone détail
-        detail_rect = pygame.Rect(list_rect.right + margin, margin * 2, w - list_rect.right - 2 * margin, h - margin * 3)
         pygame.draw.rect(screen, (28, 30, 38), detail_rect, border_radius=12)
         pygame.draw.rect(screen, (80, 85, 96), detail_rect, 2, border_radius=12)
 
@@ -170,10 +256,7 @@ class EventMenu:
 
     def _compute_event_rects(self, screen_size):
         # Aligné sur le rendu (même calcul que _draw_event_list)
-        w, h = screen_size
-        margin = int(min(w, h) * 0.04)
-        list_w = int(w * 0.38)
-        list_rect = pygame.Rect(margin, margin * 2, list_w, h - margin * 3)
+        _, list_rect, _ = self._compute_layout_rects(screen_size)
         padding = 12
         row_h = 72
         y = list_rect.top + padding
@@ -188,6 +271,8 @@ class EventMenu:
         self.event_rects = rects
 
     def _draw_detail(self, screen, rect, events):
+        self._rebuild_choice_buttons(rect)
+
         if not self.selected_event_id and events:
             self.selected_event_id = events[0].definition_id
             events[0].is_new = False
@@ -227,31 +312,8 @@ class EventMenu:
         choices_title = self.section_font.render("Choix", True, (245, 245, 245))
         screen.blit(choices_title, (x, y))
         y += choices_title.get_height() + 6
-
-        self.choice_buttons = []
-        for choice in definition.choices:
-            enabled = True
-            if choice.requirements:
-                enabled = self.phase.event_manager._evaluate_condition(choice.requirements, self.phase, inst.definition_id)
-
-            btn = Button(
-                choice.label,
-                pos=(x, y),
-                anchor="topleft",
-                style=ButtonStyle(
-                    draw_background=True,
-                    radius=10,
-                    padding_x=12,
-                    padding_y=8,
-                    hover_zoom=1.03,
-                    font=self.text_font,
-                ),
-                on_click=lambda _b, cid=choice.id: self.phase.event_manager.resolve_event(inst.definition_id, cid, self.phase),
-                enabled=enabled and inst.state in {"active", "new"},
-            )
+        for btn, choice in zip(self.choice_buttons, definition.choices):
             btn.draw(screen)
-            self.choice_buttons.append(btn)
-
             y += btn.rect.height + 4
             if choice.description:
                 desc_lines = self._wrap_text(choice.description, self.small_font, max_w)
