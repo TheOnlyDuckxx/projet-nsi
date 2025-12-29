@@ -196,7 +196,7 @@ class EventMenu:
 
         self._refresh_layout(screen.get_size())
         w, h = screen.get_size()
-        margin = int(min(w, h) * 0.04)
+        margin = int(min(w * 0.04, h* 0.02))
         list_w = int(w * 0.38)
 
         screen.fill((35, 38, 48))

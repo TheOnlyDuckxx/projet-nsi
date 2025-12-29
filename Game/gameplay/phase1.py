@@ -615,7 +615,7 @@ class Phase1:
             self.bottom_hud.draw(screen)
 
         # HUD droite : toujours visible (et affiche le menu si ouvert)
-        if self.right_hud:
+        if not self.paused and self.right_hud:
             self.right_hud.draw(screen)
 
         if self.save_message:
