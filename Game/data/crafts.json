@@ -1,6 +1,7 @@
 { 
   "Entrepot": {
     "name": "Entrepot",
+    "description": "Un petit entrepôt pour stocker les ressources recueillies par le clan.",
     "image": "feu_de_camp",
     "sprite": "prop_entrepot",
     "cost": {
@@ -14,6 +15,7 @@
   },
   "Feu": {
     "name": "Feu",
+    "description": "Un foyer simple pour réchauffer et rassurer la tribu.",
     "image": "feu_de_camp",
     "sprite": "prop_rock",
     "cost": {
@@ -27,6 +29,7 @@
   },
   "Abri": {
     "name": "Abri",
+    "description": "Un abri basique pour protéger quelques membres du groupe.",
     "image": "abri",
     "sprite": "prop_rock",
     "cost": {
@@ -40,6 +43,7 @@
   },
   "Outils": {
     "name": "Outil",
+    "description": "Des outils rudimentaires pour améliorer la collecte.",
     "image": "outil",
     "sprite": "prop_rock",
     "cost": {
@@ -53,6 +57,7 @@
   },
   "Piège": {
     "name": "Piège",
+    "description": "Un piège simple pour capturer du gibier sans surveillance.",
     "image": "piege",
     "sprite": "prop_rock",
     "cost": {

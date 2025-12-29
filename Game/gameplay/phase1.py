@@ -61,6 +61,7 @@ class Phase1:
         self.save_message_timer = 0.0
         self.craft_system = Craft()
         self.selected_craft = None
+        self.construction_sites: dict[tuple[int, int], dict] = {}
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -363,14 +364,18 @@ class Phase1:
                             tile = self._fallback_pick_tile(mx, my)
 
                         if tile is not None and self.joueur and self.world:
-                            ok = self.craft_system.craft_item(
+                            if not self._tile_is_visible(tile):
+                                add_notification("Tuile hors du champ de vision.")
+                                return
+                            result = self.craft_system.craft_item(
                                 craft_id=self.selected_craft,
                                 builder=self.joueur,
                                 world=self.world,
                                 tile=tile,
                                 notify=add_notification,
                             )
-                            if ok:
+                            if result:
+                                self._register_construction_site(result)
                                 self.selected_craft = None  # on sort du mode placement
                         return  # on ne fait pas la logique de sélection classique
 
@@ -422,8 +427,12 @@ class Phase1:
                                 ent.ia["objectif"] = None           # NEW
                             elif k == "prop":
                                 target = (p[0], p[1])
-                                ent.ia["etat"] = "se_deplace_vers_prop"
-                                ent.ia["objectif"] = hit
+                                if self._is_construction_site(p[0], p[1]):
+                                    ent.ia["etat"] = "se_deplace_vers_construction"
+                                    ent.ia["objectif"] = ("construction", (p[0], p[1]))
+                                else:
+                                    ent.ia["etat"] = "se_deplace_vers_prop"
+                                    ent.ia["objectif"] = hit
                             elif k == "entity":
                                 target = (int(p.x), int(p.y))
                                 ent.ia["etat"] = "se_deplace"       # NEW
@@ -521,6 +530,8 @@ class Phase1:
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
 
+        self._update_construction_sites()
+
         if self.save_message_timer > 0:
             self.save_message_timer -= dt
             if self.save_message_timer <= 0:
@@ -571,6 +582,7 @@ class Phase1:
         # 1) Rendu carte + entités
         self.view.render(screen, world_entities=self.entities)
 
+        self._draw_construction_bars(screen)
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
             draw_work_bar(self, screen, ent)
@@ -678,6 +690,15 @@ class Phase1:
                 return t
         return None
 
+    def _tile_is_visible(self, tile: tuple[int, int]) -> bool:
+        if not self.fog:
+            return True
+        i, j = tile
+        try:
+            return bool(self.fog.visible[j][i])
+        except Exception:
+            return True
+
     # ---------- PATHFINDING & COLLISIONS ----------
     def _is_walkable(self, i: int, j: int) -> bool:
         w = self.world
@@ -710,6 +731,16 @@ class Phase1:
             if "water" in lname or "ocean" in lname or "sea" in lname or "lake" in lname:
                 return False
         return True
+
+    def _get_construction_cell(self, i: int, j: int):
+        try:
+            return self.world.overlay[j][i] if self.world else None
+        except Exception:
+            return None
+
+    def _is_construction_site(self, i: int, j: int) -> bool:
+        cell = self._get_construction_cell(i, j)
+        return isinstance(cell, dict) and cell.get("state") == "building"
 
     def _astar_path(self, start: tuple[int,int], goal: tuple[int,int]) -> list[tuple[int,int]]:
         if not self._is_walkable(*goal):
@@ -798,7 +829,7 @@ class Phase1:
 
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
-        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") == "recolte":
+        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") in ("recolte", "construction"):
             if hasattr(ent, "comportement"):
                 ent.comportement.cancel_work("movement_started")
             else:
@@ -811,6 +842,9 @@ class Phase1:
                 # ent.ia["objectif"] est du type ("prop", (i, j, pid))
                 if hasattr(ent, "comportement"):
                     ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
+            elif ent.ia["etat"] == "se_deplace_vers_construction":
+                if hasattr(ent, "comportement"):
+                    ent.comportement.build_construction(ent.ia.get("objectif"), self.world)
 
         # Init du segment courant
         if ent._move_to is None:
@@ -887,6 +921,96 @@ class Phase1:
             if (w["i"], w["j"], str(w["pid"])) == tgt:
                 return True
         return False
+
+    def _register_construction_site(self, craft_result):
+        tile = craft_result.get("tile")
+        site = craft_result.get("site")
+        if not tile or not site:
+            return
+        key = (int(tile[0]), int(tile[1]))
+        self.construction_sites[key] = {
+            "name": site.get("name", site.get("craft_id", "Construction")),
+            "work_required": site.get("work_required", 1.0),
+            "work_done": site.get("work_done", 0.0),
+        }
+        self._assign_idle_workers_to_construction(key)
+
+    def _assign_idle_workers_to_construction(self, tile: tuple[int, int], max_workers: int = 3):
+        assigned = 0
+        for ent in self.entities:
+            if assigned >= max_workers:
+                break
+            if ent.ia.get("etat") != "idle" or getattr(ent, "work", None):
+                continue
+            if not self._is_construction_site(*tile):
+                break
+            self._ensure_move_runtime(ent)
+            target = self._find_nearest_walkable(tile)
+            if not target:
+                continue
+            raw_path = self._astar_path((int(ent.x), int(ent.y)), target)
+            if not raw_path:
+                if (int(ent.x), int(ent.y)) == target:
+                    ent.move_path = []
+                    ent._move_from = (float(ent.x), float(ent.y))
+                    ent._move_to = None
+                    ent._move_t = 0.0
+                    ent.ia["etat"] = "se_deplace_vers_construction"
+                    ent.ia["objectif"] = ("construction", tile)
+                    assigned += 1
+                continue
+            if raw_path and raw_path[0] == (int(ent.x), int(ent.y)):
+                raw_path = raw_path[1:]
+            waypoints = self._smooth_path(raw_path)
+            ent.move_path = waypoints
+            ent._move_from = (float(ent.x), float(ent.y))
+            ent._move_to = waypoints[0] if waypoints else None
+            ent._move_t = 0.0
+            ent.ia["etat"] = "se_deplace_vers_construction"
+            ent.ia["objectif"] = ("construction", tile)
+            assigned += 1
+
+    def _update_construction_sites(self):
+        if not self.construction_sites:
+            return
+        finished: list[tuple[int, int]] = []
+        for key, meta in list(self.construction_sites.items()):
+            i, j = key
+            cell = self._get_construction_cell(i, j)
+            if isinstance(cell, dict) and cell.get("state") == "building":
+                meta["work_done"] = cell.get("work_done", meta.get("work_done", 0.0))
+                meta["work_required"] = cell.get("work_required", meta.get("work_required", 1.0))
+                continue
+            # Construction absente ou terminée
+            finished.append(key)
+        for key in finished:
+            meta = self.construction_sites.pop(key, {})
+            cell = self._get_construction_cell(*key)
+            if meta and cell not in (None, 0, False):
+                add_notification(f"{meta.get('name', 'Construction')} terminée.")
+
+    def _draw_construction_bars(self, screen):
+        if not self.construction_sites:
+            return
+        for (i, j), meta in self.construction_sites.items():
+            cell = self._get_construction_cell(i, j)
+            if not (isinstance(cell, dict) and cell.get("state") == "building"):
+                continue
+            required = max(1e-3, float(cell.get("work_required", meta.get("work_required", 1.0))))
+            progress = max(0.0, min(1.0, float(cell.get("work_done", meta.get("work_done", 0.0))) / required))
+            poly = self.view.tile_surface_poly(int(i), int(j))
+            if not poly:
+                continue
+            cx = sum(p[0] for p in poly) / len(poly)
+            top = min(p[1] for p in poly) - 14
+            bar_w, bar_h = 54, 7
+            bg = pygame.Rect(int(cx - bar_w/2), int(top - bar_h), bar_w, bar_h)
+            fg = bg.inflate(-2, -2)
+            fg.width = int(fg.width * progress)
+            s = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
+            s.fill((0, 0, 0, 170))
+            screen.blit(s, (bg.x, bg.y))
+            pygame.draw.rect(screen, (200, 210, 120), fg, border_radius=2)
 
     def apply_day_night_lighting(self, surface: pygame.Surface):
         light = self.day_night.get_light_level(min_light=0.45)

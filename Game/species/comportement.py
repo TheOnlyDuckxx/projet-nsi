@@ -102,6 +102,33 @@ class Comportement:
         # normalise pour comparer proprement
         return (int(i), int(j), str(pid))
 
+    def _construction_cell(self, world, i, j):
+        try:
+            return world.overlay[int(j)][int(i)] if world and getattr(world, "overlay", None) is not None else None
+        except Exception:
+            return None
+
+    def build_construction(self, objectif, world):
+        if not objectif or objectif[0] != "construction":
+            self.e.ia["etat"] = "idle"
+            return
+        i, j = objectif[1]
+        cell = self._construction_cell(world, i, j)
+        if not (isinstance(cell, dict) and cell.get("state") == "building"):
+            self.e.ia["etat"] = "idle"
+            self.e.work = None
+            return
+
+        required = max(1e-3, float(cell.get("work_required", 1.0)))
+        done = float(cell.get("work_done", 0.0))
+        self.e.work = {
+            "type": "build",
+            "i": int(i),
+            "j": int(j),
+            "progress": max(0.0, min(1.0, done / required)),
+        }
+        self.e.ia["etat"] = "construction"
+
     def recolter_ressource(self, objectif, world):
         if not objectif or objectif[0] != "prop":
             self.e.ia["etat"] = "idle"
@@ -149,7 +176,7 @@ class Comportement:
 
         # si on était en "recolte" ou en chemin vers un prop, repasse idle
         etat = self.e.ia.get("etat")
-        if etat in ("recolte", "se_deplace_vers_prop"):
+        if etat in ("recolte", "se_deplace_vers_prop", "construction", "se_deplace_vers_construction"):
             self.e.ia["etat"] = "idle"
 
         # on oublie l'objectif lié
@@ -171,7 +198,42 @@ class Comportement:
         puis supprime le prop de la map.
         """
         w = getattr(self.e, "work", None)
-        if not w or self.e.ia.get("etat") != "recolte":
+        if not w:
+            return
+
+        if w.get("type") == "build":
+            if self.e.ia.get("etat") != "construction":
+                return
+
+            cell = self._construction_cell(world, w.get("i"), w.get("j"))
+            if not (isinstance(cell, dict) and cell.get("state") == "building"):
+                self.e.work = None
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+                return
+
+            required = max(1e-3, float(cell.get("work_required", 1.0)))
+            speed = 0.8 + 0.12 * float(self.e.mental.get("dexterite", 5)) \
+                + 0.06 * float(self.e.physique.get("force", 5)) \
+                + 0.05 * float(self.e.mental.get("intelligence", 5))
+            speed = max(0.2, min(6.0, speed))
+
+            cell["work_done"] = float(cell.get("work_done", 0.0)) + dt * speed
+            w["progress"] = min(1.0, cell["work_done"] / required)
+
+            if cell["work_done"] >= required:
+                # Finalise la construction sur la carte
+                pid = cell.get("pid")
+                try:
+                    world.overlay[int(w["j"])][int(w["i"])] = pid
+                except Exception:
+                    pass
+                self.e.work = None
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+            return
+
+        if self.e.ia.get("etat") != "recolte":
             return
 
         w["t"] += dt
@@ -219,4 +281,3 @@ class Comportement:
 
         self.e.work = None
         self.e.ia["etat"] = "idle"
-
