@@ -63,7 +63,7 @@ class BottomHUD:
             hover_zoom=1.0,
         )
 
-        self.craft_buttons: List[Button] = []
+        self.craft_buttons: List[tuple[str, Button]] = []
 
         for craft_id, craft_def in self.crafts.items():
             image_name = craft_def.get("image", "feu_de_camp")
@@ -79,14 +79,17 @@ class BottomHUD:
                 anchor="center",
                 style=craft_style,
                 on_click=self._make_craft_cb(craft_id),
+                on_right_click=self._make_craft_info_cb(craft_id),
                 icon=surf,
             )
-            self.craft_buttons.append(btn)
+            self.craft_buttons.append((craft_id, btn))
 
         # Rects de layout (calculés à chaque frame)
         self.panel_rect = pygame.Rect(0, 0, 100, 100)
         self.left_rect = pygame.Rect(0, 0, 50, 50)
         self.right_rect = pygame.Rect(0, 0, 50, 50)
+        self.context_menu = None
+        self._context_menu_just_opened = False
 
     # ---------- Callbacks ----------
 
@@ -96,12 +99,22 @@ class BottomHUD:
             craft_def = self.crafts.get(craft_id, {})
             label = craft_def.get("name", craft_id)
             add_notification(f"Placement de : {label} (clique sur une tuile)")
+            self.context_menu = None
+            self._context_menu_just_opened = False
+        return _cb
+
+    def _make_craft_info_cb(self, craft_id: str):
+        def _cb(btn: Button):
+            self._open_craft_menu(craft_id, btn.rect)
         return _cb
 
     def _on_toggle(self, _btn):
         self.visible = not self.visible
         # change l’icone du bouton pour que ce soit plus clair
         self.toggle_button.text = "▲" if not self.visible else "▼"
+        if not self.visible:
+            self.context_menu = None
+            self._context_menu_just_opened = False
 
     # ---------- Layout ----------
 
@@ -143,12 +156,12 @@ class BottomHUD:
 
         # Boutons de craft alignés en ligne dans la partie droite
         if self.craft_buttons:
-            bw = self.craft_buttons[0].rect.width
+            bw = self.craft_buttons[0][1].rect.width
             gap = 10
             total = len(self.craft_buttons) * bw + (len(self.craft_buttons) - 1) * gap
             start_x = self.right_rect.x + (self.right_rect.width - total) // 2 + bw // 2
             center_y = self.right_rect.y + 40
-            for i, btn in enumerate(self.craft_buttons):
+            for i, (_cid, btn) in enumerate(self.craft_buttons):
                 cx = start_x + i * (bw + gap)
                 btn.move_to((cx, center_y))
 
@@ -163,8 +176,9 @@ class BottomHUD:
         self.toggle_button.handle(events)
         if not self.visible:
             return
-        for btn in self.craft_buttons:
+        for craft_id, btn in self.craft_buttons:
             btn.handle(events)
+        self._handle_context_menu_events(events)
 
     # ---------- Dessin des sous-parties ----------
 
@@ -237,8 +251,11 @@ class BottomHUD:
         pygame.draw.rect(screen, (70, 120, 70), self.right_rect, 2, border_radius=10)
 
         # Boutons
-        for btn in self.craft_buttons:
+        for craft_id, btn in self.craft_buttons:
             btn.draw(screen)
+            if self.phase.selected_craft == craft_id:
+                highlight = btn.rect.inflate(10, 10)
+                pygame.draw.rect(screen, (200, 230, 120), highlight, width=3, border_radius=12)
 
     # ---------- Dessin global ----------
 
@@ -267,3 +284,146 @@ class BottomHUD:
 
         # Partie droite : quick craft
         self._draw_quickcraft(screen)
+        self._draw_context_menu(screen)
+
+    # ---------- Menu contextuel ----------
+
+    def _handle_context_menu_events(self, events):
+        if not self.context_menu:
+            return
+        if self._context_menu_just_opened:
+            self._context_menu_just_opened = False
+            return
+        rect = self.context_menu["rect"]
+        for e in events:
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3):
+                if not rect.collidepoint(e.pos):
+                    self.context_menu = None
+                    self._context_menu_just_opened = False
+
+    def _open_craft_menu(self, craft_id: str, button_rect: pygame.Rect):
+        craft_def = self.crafts.get(craft_id)
+        if not craft_def:
+            self.context_menu = None
+            self._context_menu_just_opened = False
+            return
+
+        title_surf = self.font.render(craft_def.get("name", craft_id), True, (245, 245, 245))
+        desc_text = craft_def.get("description", "Aucune description.")
+        desc_lines = desc_text.split("\n")
+        desc_surfs = [self.small_font.render(line, True, (230, 230, 230)) for line in desc_lines]
+
+        cost = craft_def.get("cost", {})
+        if cost:
+            cost_label = self.small_font.render("Ressources requises :", True, (215, 230, 215))
+            cost_surfs = [
+                self.small_font.render(f"- {res} : {amt}", True, (210, 220, 210))
+                for res, amt in cost.items()
+            ]
+        else:
+            cost_label = self.small_font.render("Aucune ressource requise", True, (215, 230, 215))
+            cost_surfs = []
+
+        sprite_surf = None
+        sprite_key = craft_def.get("sprite")
+        if sprite_key:
+            try:
+                sprite_surf = self.assets.get_image(sprite_key)
+            except Exception:
+                sprite_surf = None
+
+        pad = 12
+        gap = 6
+        section_gap = 10
+
+        max_width = title_surf.get_width()
+        if sprite_surf:
+            max_width = max(max_width, sprite_surf.get_width())
+        if desc_surfs:
+            max_width = max(max_width, max(s.get_width() for s in desc_surfs))
+        if cost_label:
+            max_width = max(max_width, cost_label.get_width())
+        if cost_surfs:
+            max_width = max(max_width, max(s.get_width() for s in cost_surfs))
+
+        height = pad + title_surf.get_height()
+        height += section_gap
+        if sprite_surf:
+            height += sprite_surf.get_height()
+            height += section_gap
+        if desc_surfs:
+            height += sum(s.get_height() for s in desc_surfs) + gap * (len(desc_surfs) - 1)
+            height += section_gap
+        if cost_label:
+            height += cost_label.get_height()
+        if cost_surfs:
+            height += gap + sum(s.get_height() for s in cost_surfs) + gap * (len(cost_surfs) - 1)
+        height += pad
+
+        width = max_width + pad * 2
+
+        if self.screen:
+            sw, sh = self.screen.get_size()
+        else:
+            sw = sh = 0
+
+        pos_x = button_rect.right + 12
+        pos_y = button_rect.top
+        if pos_x + width > sw - self.margin:
+            pos_x = button_rect.left - width - 12
+        if pos_y + height > sh - self.margin:
+            pos_y = sh - height - self.margin
+
+        rect = pygame.Rect(pos_x, pos_y, width, height)
+
+        self.context_menu = {
+            "rect": rect,
+            "title": title_surf,
+            "description": desc_surfs,
+            "cost_label": cost_label,
+            "cost_surfs": cost_surfs,
+            "sprite": sprite_surf,
+            "gap": gap,
+            "section_gap": section_gap,
+            "pad": pad,
+        }
+        self._context_menu_just_opened = True
+
+    def _draw_context_menu(self, screen):
+        if not self.context_menu:
+            return
+        menu = self.context_menu
+        rect: pygame.Rect = menu["rect"]
+        pad = menu["pad"]
+        gap = menu["gap"]
+        section_gap = menu["section_gap"]
+
+        pygame.draw.rect(screen, (16, 60, 22), rect, border_radius=10)
+        pygame.draw.rect(screen, (90, 150, 90), rect, 2, border_radius=10)
+
+        x = rect.x + pad
+        y = rect.y + pad
+
+        screen.blit(menu["title"], (x, y))
+        y += menu["title"].get_height() + section_gap
+
+        sprite_surf = menu["sprite"]
+        if sprite_surf:
+            sprite_rect = sprite_surf.get_rect()
+            sprite_rect.x = rect.centerx - sprite_rect.width // 2
+            sprite_rect.y = y
+            screen.blit(sprite_surf, sprite_rect)
+            y += sprite_rect.height + section_gap
+
+        for surf in menu["description"]:
+            screen.blit(surf, (x, y))
+            y += surf.get_height() + gap
+        if menu["description"]:
+            y += section_gap - gap
+
+        if menu["cost_label"]:
+            screen.blit(menu["cost_label"], (x, y))
+            y += menu["cost_label"].get_height()
+        for surf in menu["cost_surfs"]:
+            y += gap
+            screen.blit(surf, (x, y))
