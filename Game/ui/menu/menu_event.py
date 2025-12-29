@@ -221,7 +221,7 @@ class EventMenu:
         # Bouton retour
         self.back_btn.move_to((margin, h - margin))
         self.back_btn.draw(screen)
-        from Game.ui.hud import draw_notifications
+        from Game.ui.hud.notification import draw_notifications
         # Notifications toujours visibles par-dessus
         draw_notifications(screen)
 

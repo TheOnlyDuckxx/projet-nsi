@@ -6,8 +6,8 @@ import random
 from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 
-from Game.ui.hud import add_notification
 from Game.core.utils import resource_path
+from Game.ui.hud.notification import add_notification
 
 
 # ---------- Data classes ----------

@@ -2,7 +2,7 @@
 import json
 import random
 from Game.core.utils import resource_path
-from Game.ui.hud import add_notification
+from Game.ui.hud.notification import add_notification
 
 class Comportement:
     def __init__(self, espece):
@@ -219,5 +219,4 @@ class Comportement:
 
         self.e.work = None
         self.e.ia["etat"] = "idle"
-
 
