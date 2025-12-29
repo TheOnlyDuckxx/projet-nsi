@@ -80,8 +80,11 @@ class IsoMapView:
         self._hit_stack = []      # pile (kind, payload, rect, mask) pour le picking
         self._mask_cache = {}     # cache de pygame.Mask par Surface (id)
         self._diamond_mask = None # mask losange pour la surface des tuiles
-       
 
+        # Transparence des props
+        self.props_transparent = False
+        self.transparent_prop_alpha = 90
+        self.default_prop_alpha = 255
 
 
         # Auto-calibrage depuis un sprite "sol" de référence
@@ -160,6 +163,12 @@ class IsoMapView:
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]: self.cam_x += speed
         if keys[pygame.K_w] or keys[pygame.K_UP]:    self.cam_y -= speed
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:  self.cam_y += speed
+
+    # ---------- Toggle props transparency ----------
+    def set_props_transparency(self, transparent: bool, alpha: int | None = None) -> None:
+        self.props_transparent = transparent
+        if alpha is not None:
+            self.transparent_prop_alpha = alpha
 
     # ---------- Render ----------
     def _proj_consts(self):
@@ -365,7 +374,8 @@ class IsoMapView:
                 pid = self.world.overlay[j][i]
                 if pid:
                     gray = (not visible)
-                    pimg = self._get_scaled_prop(pid, gray=gray)
+                    alpha = self.transparent_prop_alpha if self.props_transparent else self.default_prop_alpha
+                    pimg = self._get_scaled_prop(pid, gray=gray, alpha=alpha)
                     if pimg:
                         surface_y = sy - (gimg.get_height() - dy * 2)
                         psx = sx - pimg.get_width() // 2
@@ -447,8 +457,10 @@ class IsoMapView:
 
 
 
-    def _get_scaled_prop(self, pid: int, gray=False) -> Optional[pygame.Surface]:
-        key = (pid, self._zoom_key(), gray)
+    def _get_scaled_prop(self, pid: int, gray=False, alpha: int | None = None) -> Optional[pygame.Surface]:
+        if alpha is None:
+            alpha = self.default_prop_alpha
+        key = (pid, self._zoom_key(), gray, alpha)
         cache = self._gray_prop_cache if gray else self._prop_cache
 
         surf = cache.get(key)
@@ -464,6 +476,7 @@ class IsoMapView:
         if gray:
             surf = self._make_gray(surf)
 
+        surf.set_alpha(alpha)
         cache[key] = surf
         return surf
 
@@ -541,4 +554,3 @@ class IsoMapView:
             return
         if 0 <= i < self.world.width and 0 <= j < self.world.height:
             self.world.overlay[j][i] = pid
-
