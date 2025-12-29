@@ -14,12 +14,17 @@ class FogOfWar:
     def recompute(self, observers, get_radius, light_level):
         self.clear_visible()
 
+        light = max(0.0, min(1.0, light_level))
+
         for ent in observers:
             cx, cy = int(ent.x), int(ent.y)
             if not (0 <= cx < self.width and 0 <= cy < self.height):
                 continue
 
-            r = int(get_radius(ent) + get_radius(ent) * light_level)  # Ajuste la portée de vision selon la luminosité
+            base_radius = get_radius(ent)
+            # On arrondit pour éviter que la vision ne clignote quand la luminosité
+            # oscille très légèrement autour de 1.0 (milieu de journée).
+            r = max(1, int(round(base_radius * (1.0 + light))))
             r2 = r * r
 
             for y in range(max(0, cy-r), min(self.height, cy+r+1)):
@@ -32,4 +37,4 @@ class FogOfWar:
                     dx = x - cx
                     if dx*dx + dy2 <= r2:
                         row_vis[x] = True
-                        row_exp[x] = True 
+                        row_exp[x] = True

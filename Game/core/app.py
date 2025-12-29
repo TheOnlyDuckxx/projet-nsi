@@ -12,7 +12,7 @@ from Game.core.audio import AudioManager
 from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
-from Game.ui.hud import draw_notifications
+from Game.ui.hud.notification import draw_notifications
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:

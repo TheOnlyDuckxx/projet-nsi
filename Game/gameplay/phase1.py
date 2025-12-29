@@ -10,13 +10,10 @@ from Game.world.tiles import get_ground_sprite_name
 from Game.species.species import Espece
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
-from Game.ui.hud import (
-    add_notification,
-    draw_inspection_panel,
-    draw_work_bar,
-    BottomHUD,
-    LeftHUD,
-)
+from Game.ui.hud.bottom_hud import BottomHUD
+from Game.ui.hud.game_hud import draw_inspection_panel, draw_work_bar
+from Game.ui.hud.left_hud import LeftHUD
+from Game.ui.hud.notification import add_notification
 from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
