@@ -16,6 +16,9 @@ class EventMenu:
         self.phase = phase
         self.on_close = on_close
         self.active = False
+        self._choices_dirty = True
+        self._last_screen_size = None
+        self._last_selected_event_id = None
 
         if not pygame.font.get_init():
             pygame.font.init()
@@ -35,6 +38,13 @@ class EventMenu:
     # ---------- API ----------
     def open(self):
         self.active = True
+        self._choices_dirty = True
+
+    def _on_choice_clicked(self, event_id: str, choice_id: str):
+        # Résout l'event
+        self.phase.event_manager.resolve_event(event_id, choice_id, self.phase)
+        # Force un refresh UI (boutons désactivés, état "resolved", tri, etc.)
+        self._choices_dirty = True
 
     def close(self):
         self.active = False
@@ -125,9 +135,7 @@ class EventMenu:
                     hover_zoom=1.03,
                     font=self.text_font,
                 ),
-                on_click=lambda _b, cid=choice.id: self.phase.event_manager.resolve_event(
-                    inst.definition_id, cid, self.phase
-                ),
+                on_click=lambda _b, eid=inst.definition_id, cid=choice.id: self._on_choice_clicked(eid, cid),
                 enabled=enabled and inst.state in {"active", "new"},
             )
             self.choice_buttons.append(btn)
@@ -144,27 +152,42 @@ class EventMenu:
             return
 
         screen = self.phase.screen
-        self._refresh_layout(screen.get_size())
-        margin, list_rect, detail_rect = self._compute_layout_rects(screen.get_size())
-        self._compute_event_rects(screen.get_size())
-        self._rebuild_choice_buttons(detail_rect)
+        screen_size = screen.get_size()
+
+        self._refresh_layout(screen_size)
+        margin, list_rect, detail_rect = self._compute_layout_rects(screen_size)
+        self._compute_event_rects(screen_size)
+
+        # bouton retour (persistant, ok)
         self.back_btn.handle(events)
 
+        # 1) gérer sélection liste
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 pos = e.pos
-                # Sélection d'un évènement dans la liste
                 for rect, ev_id in self.event_rects:
                     if rect.collidepoint(pos):
-                        self.selected_event_id = ev_id
+                        if self.selected_event_id != ev_id:
+                            self.selected_event_id = ev_id
+                            self._choices_dirty = True
                         inst = self.phase.event_manager.instances.get(ev_id)
                         if inst:
                             inst.is_new = False
                         break
-            # Choix (boutons)
+
+        # 2) rebuild boutons SEULEMENT si nécessaire
+        if (self._choices_dirty
+            or self._last_screen_size != screen_size
+            or self._last_selected_event_id != self.selected_event_id):
+            self._rebuild_choice_buttons(detail_rect)
+            self._choices_dirty = False
+            self._last_screen_size = screen_size
+            self._last_selected_event_id = self.selected_event_id
+
+        # 3) handle boutons (persistants entre frames)
         for btn in self.choice_buttons:
-            if btn.handle(events):
-                pass
+            btn.handle(events)
+
 
     # ---------- Dessin ----------
     def draw(self, screen):
@@ -271,8 +294,6 @@ class EventMenu:
         self.event_rects = rects
 
     def _draw_detail(self, screen, rect, events):
-        self._rebuild_choice_buttons(rect)
-
         if not self.selected_event_id and events:
             self.selected_event_id = events[0].definition_id
             events[0].is_new = False
