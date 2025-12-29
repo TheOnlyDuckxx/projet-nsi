@@ -55,6 +55,9 @@ class Phase1:
         self.right_hud = LeftHUD(self)
 
 
+        # Transparence des props (activée via touche H)
+        self.props_transparency_active = False
+
         # Sélection actuelle: ("tile",(i,j)) | ("prop",(i,j,pid)) | ("entity",ent)
         self.selected: Optional[tuple] = None
         self.save_message = ""
@@ -322,6 +325,9 @@ class Phase1:
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
+                elif e.key == pygame.K_h:
+                    self.props_transparency_active = True
+                    self.view.set_props_transparency(True)
                 elif e.key == pygame.K_r:
                     self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
                     self.view.set_world(self.world)
@@ -329,9 +335,13 @@ class Phase1:
                         sx, sy = self.world.spawn
                     except Exception:
                         sx, sy = 0, 0
-                    if self.joueur:
-                        self.joueur.x, self.joueur.y = float(sx), float(sy)
-                    self.selected = None
+                        if self.joueur:
+                            self.joueur.x, self.joueur.y = float(sx), float(sy)
+                        self.selected = None
+
+            elif e.type == pygame.KEYUP and e.key == pygame.K_h:
+                self.props_transparency_active = False
+                self.view.set_props_transparency(False)
 
             if not self.paused:
                 self.view.handle_event(e)
