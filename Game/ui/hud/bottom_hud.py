@@ -90,6 +90,8 @@ class BottomHUD:
         self.right_rect = pygame.Rect(0, 0, 50, 50)
         self.context_menu = None
         self._context_menu_just_opened = False
+        self._context_menu_dragging = False
+        self._context_menu_drag_offset = (0, 0)
 
     # ---------- Callbacks ----------
 
@@ -101,6 +103,7 @@ class BottomHUD:
             add_notification(f"Placement de : {label} (clique sur une tuile)")
             self.context_menu = None
             self._context_menu_just_opened = False
+            self._context_menu_dragging = False
         return _cb
 
     def _make_craft_info_cb(self, craft_id: str):
@@ -115,6 +118,7 @@ class BottomHUD:
         if not self.visible:
             self.context_menu = None
             self._context_menu_just_opened = False
+            self._context_menu_dragging = False
 
     # ---------- Layout ----------
 
@@ -296,16 +300,36 @@ class BottomHUD:
             return
         rect = self.context_menu["rect"]
         for e in events:
-            if e.type == pygame.MOUSEBUTTONDOWN and e.button in (1, 3):
-                if not rect.collidepoint(e.pos):
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                if e.button == 1 and rect.collidepoint(e.pos):
+                    header_h = self.context_menu.get("header_height", 28)
+                    if e.pos[1] <= rect.y + header_h:
+                        self._context_menu_dragging = True
+                        self._context_menu_drag_offset = (e.pos[0] - rect.x, e.pos[1] - rect.y)
+                        continue
+                if e.button in (1, 3) and not rect.collidepoint(e.pos):
                     self.context_menu = None
                     self._context_menu_just_opened = False
+                    self._context_menu_dragging = False
+            elif e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                self._context_menu_dragging = False
+            elif e.type == pygame.MOUSEMOTION and self._context_menu_dragging:
+                dx, dy = self._context_menu_drag_offset
+                new_x = e.pos[0] - dx
+                new_y = e.pos[1] - dy
+                if self.screen:
+                    sw, sh = self.screen.get_size()
+                    new_x = max(self.margin, min(sw - rect.width - self.margin, new_x))
+                    new_y = max(self.margin, min(sh - rect.height - self.margin, new_y))
+                rect.topleft = (new_x, new_y)
+                self.context_menu["rect"] = rect
 
     def _open_craft_menu(self, craft_id: str, button_rect: pygame.Rect):
         craft_def = self.crafts.get(craft_id)
         if not craft_def:
             self.context_menu = None
             self._context_menu_just_opened = False
+            self._context_menu_dragging = False
             return
 
         title_surf = self.font.render(craft_def.get("name", craft_id), True, (245, 245, 245))
@@ -367,10 +391,14 @@ class BottomHUD:
         else:
             sw = sh = 0
 
-        pos_x = button_rect.right + 12
-        pos_y = button_rect.top
+        pos_x = button_rect.centerx - width // 2
+        pos_y = self.panel_rect.top - height - 12 if self.visible else button_rect.top - height - 12
+        if pos_x < self.margin:
+            pos_x = self.margin
         if pos_x + width > sw - self.margin:
-            pos_x = button_rect.left - width - 12
+            pos_x = sw - width - self.margin
+        if pos_y < self.margin:
+            pos_y = self.margin
         if pos_y + height > sh - self.margin:
             pos_y = sh - height - self.margin
 
@@ -386,6 +414,7 @@ class BottomHUD:
             "gap": gap,
             "section_gap": section_gap,
             "pad": pad,
+            "header_height": title_surf.get_height() + pad,
         }
         self._context_menu_just_opened = True
 

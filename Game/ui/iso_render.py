@@ -371,10 +371,13 @@ class IsoMapView:
                             e.draw(screen, self, self.world)
 
                 # --- PROP DE LA TUILE ---
-                pid = self.world.overlay[j][i]
+                cell = self.world.overlay[j][i]
+                pid = cell.get("pid") if isinstance(cell, dict) else cell
                 if pid:
                     gray = (not visible)
                     alpha = self.transparent_prop_alpha if self.props_transparent else self.default_prop_alpha
+                    if isinstance(cell, dict) and cell.get("state") == "building":
+                        alpha = int(alpha * 0.65)
                     pimg = self._get_scaled_prop(pid, gray=gray, alpha=alpha)
                     if pimg:
                         surface_y = sy - (gimg.get_height() - dy * 2)

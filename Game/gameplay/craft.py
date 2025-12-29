@@ -19,6 +19,20 @@ class Craft:
     def __init__(self, crafts_file: str = "Game/data/crafts.json"):
         self.crafts: Dict = load_crafts(crafts_file)
 
+    def _compute_work_required(self, craft_def: Dict) -> float:
+        """
+        Évalue la quantité de travail nécessaire pour terminer une construction.
+        Basé principalement sur le coût en ressources, avec un minimum pour les crafts gratuits.
+        """
+        if "work_required" in craft_def:
+            try:
+                return float(craft_def["work_required"])
+            except Exception:
+                pass
+        cost = craft_def.get("cost", {}) or {}
+        total_cost = sum(max(0, float(v)) for v in cost.values())
+        return float(8.0 + total_cost * 1.5)
+
     # ---------- Utils inventaire ----------
 
     def _inventory_counts(self, inventory: List[Dict]) -> Dict[str, int]:
@@ -91,7 +105,7 @@ class Craft:
         world=None,
         tile: Optional[Tuple[int, int]] = None,
         notify: Optional[Callable[[str], None]] = None,
-    ) -> bool:
+    ) -> Optional[Dict]:
         """
         Tente de crafter et de placer le résultat.
         - builder : entité qui porte l'inventaire (builder.carrying)
@@ -153,7 +167,18 @@ class Craft:
                 if notify:
                     notify("Craft mal configuré : pas de 'pid'.")
                 return False
-            world.overlay[tile[1]][tile[0]] = pid
+            site = {
+                "pid": pid,
+                "state": "building",
+                "work_done": 0.0,
+                "work_required": self._compute_work_required(craft_def),
+                "name": craft_def.get("name", craft_id),
+                "craft_id": craft_id,
+            }
+            world.overlay[tile[1]][tile[0]] = site
+            if notify:
+                notify(f"Construction lancée : {craft_def.get('name', craft_id)}")
+            return {"tile": tile, "site": site, "craft_id": craft_id}
 
         elif out_type == "item":
             # Exemple pour des crafts d'objets à ajouter dans l'inventaire
@@ -171,7 +196,7 @@ class Craft:
 
         if notify:
             notify(f"{craft_def.get('name', craft_id)} construit.")
-        return True
+        return {"tile": tile, "site": None, "craft_id": craft_id}
 
 
     
