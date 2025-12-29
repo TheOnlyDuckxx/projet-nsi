@@ -76,6 +76,7 @@ class Button:
         anchor: Anchor = "center",
         style: Optional[ButtonStyle] = None,
         on_click: Optional[Callable[["Button"], None]] = None,
+        on_right_click: Optional[Callable[["Button"], None]] = None,
         hotkey: Optional[int] = None,
         icon: Optional[pygame.Surface] = None,      # icône à gauche du texte
         icon_gap: int = 8,
@@ -88,6 +89,7 @@ class Button:
         self.anchor = anchor
         self.style = style or ButtonStyle()
         self.on_click = on_click
+        self.on_right_click = on_right_click
         self.hotkey = hotkey
         self.icon = icon
         self.icon_gap = icon_gap
@@ -98,6 +100,7 @@ class Button:
         # États internes
         self.is_hovered = False
         self.is_pressed = False
+        self.is_right_pressed = False
         self._cursor_set = False
         self.scale = 1.0
 
@@ -157,8 +160,9 @@ class Button:
             setattr(self.rect, self.anchor, prev_anchor_pos)
 
     def handle(self, events) -> bool:
-        """Retourne True si cliqué ce frame (et déclenche on_click si fourni)."""
+        """Retourne True si cliqué (gauche ou droit) ce frame et déclenche les callbacks si fournis."""
         clicked = False
+        right_clicked = False
         mouse_pos = pygame.mouse.get_pos()
 
         self.is_hovered = self.rect.collidepoint(mouse_pos) and self.enabled
@@ -188,10 +192,20 @@ class Button:
                     clicked = True
                 self.is_pressed = False
 
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 3 and self.is_hovered and self.on_right_click:
+                self.is_right_pressed = True
+
+            if e.type == pygame.MOUSEBUTTONUP and e.button == 3:
+                if self.is_right_pressed and self.is_hovered:
+                    right_clicked = True
+                self.is_right_pressed = False
+
         if clicked and self.on_click:
             self.on_click(self)
+        if right_clicked and self.on_right_click:
+            self.on_right_click(self)
 
-        return clicked
+        return clicked or right_clicked
         
     def draw(self, surface: pygame.Surface):
         s = self.style
