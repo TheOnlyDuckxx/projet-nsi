@@ -3,7 +3,7 @@ import pygame
 
 def draw_work_bar(self, screen, ent):
     w = getattr(ent, "work", None)
-    if not w or ent.ia["etat"] not in ("recolte", "construction"):
+    if not w or ent.ia["etat"] not in ("recolte", "interaction", "demonte"):
         return
     poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
     if not poly:

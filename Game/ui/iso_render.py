@@ -159,10 +159,10 @@ class IsoMapView:
     def update(self, dt: float, keys=None) -> None:
         if keys is None: keys = pygame.key.get_pressed()
         speed = (self.pan_keys_speed / max(self.zoom, 0.1)) * dt
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:  self.cam_x -= speed
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]: self.cam_x += speed
-        if keys[pygame.K_w] or keys[pygame.K_UP]:    self.cam_y -= speed
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:  self.cam_y += speed
+        if keys[pygame.K_LEFT]:  self.cam_x -= speed
+        if keys[pygame.K_RIGHT]: self.cam_x += speed
+        if keys[pygame.K_UP]:    self.cam_y -= speed
+        if keys[pygame.K_DOWN]:  self.cam_y += speed
 
     # ---------- Toggle props transparency ----------
     def set_props_transparency(self, transparent: bool, alpha: int | None = None) -> None:

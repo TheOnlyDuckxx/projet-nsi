@@ -63,6 +63,7 @@ class Phase1:
         self.craft_system = Craft()
         self.selected_craft = None
         self.construction_sites: dict[tuple[int, int], dict] = {}
+        self.warehouse: dict[str, int] = {}
 
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
@@ -70,6 +71,13 @@ class Phase1:
         self._dragging_selection = False
         self._drag_threshold = 6
         self._ui_click_blocked = False
+
+    def _attach_phase_to_entities(self):
+        for ent in self.entities:
+            try:
+                ent.phase = self
+            except Exception:
+                pass
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -255,6 +263,7 @@ class Phase1:
                     assets=self.assets,
                 )
                 self.entities = [self.joueur,self.joueur2]
+                self._attach_phase_to_entities()
             if self.bottom_hud is None:
                 self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
             else:
@@ -305,6 +314,7 @@ class Phase1:
                 )
             self._apply_base_mutations_to_individus()
             self.entities = [self.joueur,self.joueur2]
+            self._attach_phase_to_entities()
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
             for e in self.entities:
@@ -381,6 +391,7 @@ class Phase1:
                                 world=self.world,
                                 tile=tile,
                                 notify=add_notification,
+                                storage=self.warehouse,
                             )
                             if result:
                                 self._register_construction_site(result)
@@ -668,6 +679,24 @@ class Phase1:
             return [self.selected[1]]
         return []
 
+    def deposit_to_warehouse(self, inventory: list[dict]) -> int:
+        """
+        Transfère tout l'inventaire fourni dans l'entrepôt partagé.
+        Retourne le nombre d'items transférés.
+        """
+        if not inventory:
+            return 0
+        moved = 0
+        for stack in list(inventory):
+            res_id = stack.get("id") or stack.get("name")
+            qty = int(stack.get("quantity", 0))
+            if not res_id or qty <= 0:
+                continue
+            self.warehouse[res_id] = self.warehouse.get(res_id, 0) + qty
+            moved += qty
+        inventory.clear()
+        return moved
+
     def _handle_single_left_click(self, mx: int, my: int):
         hit = self.view.pick_at(mx, my)
         if hit:
@@ -910,6 +939,11 @@ class Phase1:
             elif ent.ia["etat"] == "se_deplace_vers_construction":
                 if hasattr(ent, "comportement"):
                     ent.comportement.build_construction(ent.ia.get("objectif"), self.world)
+            elif ent.ia["etat"] == "se_deplace":
+                ent.ia["etat"] = "idle"
+                ent.ia["objectif"] = None
+                ent.ia["order_action"] = None
+                ent.ia["target_craft_id"] = None
 
         # Init du segment courant
         if ent._move_to is None:
@@ -1101,18 +1135,23 @@ class Phase1:
         if objectif and objectif[0] == "prop":
             i, j, _pid = objectif[1]
             cell = self._get_construction_cell(i, j)
+        craft_def = None
         if craft_id and self.craft_system:
             craft_def = self.craft_system.crafts.get(craft_id)
-            if craft_def:
-                return craft_def
         if isinstance(cell, dict):
-            return {
+            fallback = {
                 "cost": cell.get("cost", {}),
                 "name": cell.get("name") or cell.get("craft_id") or "Construction",
                 "pid": cell.get("pid"),
                 "craft_id": cell.get("craft_id"),
+                "interaction": cell.get("interaction"),
             }
-        return None
+            if craft_def:
+                merged = dict(fallback)
+                merged.update(craft_def)
+                return merged
+            return fallback
+        return craft_def
 
     def _register_construction_site(self, craft_result):
         tile = craft_result.get("tile")

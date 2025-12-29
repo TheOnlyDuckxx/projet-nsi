@@ -272,6 +272,19 @@ class Comportement:
             if message:
                 add_notification(message)
 
+            interaction_conf = w.get("interaction_conf") or {}
+            interaction_type = interaction_conf.get("type")
+            phase = getattr(self.e, "phase", None)
+            if interaction_type == "warehouse" and phase:
+                moved = phase.deposit_to_warehouse(self.e.carrying)
+                if moved > 0:
+                    add_notification(f"{self.e.nom} a stocké {moved} ressources.")
+            elif callable(interaction_conf.get("on_complete")):
+                try:
+                    interaction_conf["on_complete"](self.e, phase)
+                except Exception:
+                    pass
+
             self.e.work = None
             self.e.ia["etat"] = "idle"
             self.e.ia["objectif"] = None
@@ -361,7 +374,8 @@ class Comportement:
             return
 
         i, j, pid = objectif[1]
-        interaction_conf = craft_def.get("interaction") if craft_def else None
+        craft_def = craft_def or {}
+        interaction_conf = craft_def.get("interaction")
         message = None
         if isinstance(interaction_conf, dict):
             message = interaction_conf.get("message")
@@ -378,6 +392,8 @@ class Comportement:
             "t_need": float(duration),
             "progress": 0.0,
             "message": message,
+            "interaction_conf": interaction_conf if isinstance(interaction_conf, dict) else {},
+            "craft_id": craft_def.get("id") or craft_def.get("craft_id"),
         }
         self.e.ia["etat"] = "interaction"
         self.e.ia["order_action"] = "interact"
