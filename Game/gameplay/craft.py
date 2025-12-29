@@ -174,6 +174,7 @@ class Craft:
                 "work_required": self._compute_work_required(craft_def),
                 "name": craft_def.get("name", craft_id),
                 "craft_id": craft_id,
+                "cost": cost,
             }
             world.overlay[tile[1]][tile[0]] = site
             if notify:
