@@ -58,7 +58,7 @@ class LevelUp:
         disponibles = manager.mutations_disponibles()
 
         if not disponibles:
-            print("[LevelUp] Aucune mutation disponible 🤷")
+            print("[LevelUp] Aucune mutation disponible")
             self.choices = []
             return
 

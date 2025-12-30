@@ -525,7 +525,7 @@ class Phase1:
 
         def get_radius(ent):
             vision = ent.sens.get("vision", 5)
-            return max(2, int(3 + vision * 0.7))
+            return max(2, int(1 + vision * 0.7))
 
         if self.fog:
             light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel

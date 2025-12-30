@@ -93,7 +93,7 @@ class MutationManager:
         if nom not in self.actives:
             self.actives.append(nom)
 
-        print(f"[Mutations] '{nom}' appliquée 👍")
+        print(f"[Mutations] '{nom}' appliquée")
 
     # -------------------------
     # Ajouter une mutation temporaire
@@ -141,7 +141,7 @@ class MutationManager:
                 }
                 self.apply_effects(effets_inverse, nom)
 
-                print(f"[Mutations] Effet temporaire '{nom}' terminé ❌")
+                print(f"[Mutations] Effet temporaire '{nom}' terminé")
                 to_remove.append(nom)
     
     def mutation_disponible(self, nom):
