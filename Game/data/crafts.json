@@ -8,6 +8,10 @@
       "wood": 0,
       "stone": 0
     },
+    "interaction": {
+      "type": "warehouse",
+      "message": "Entrepôt : transfert des ressources."
+    },
     "output": {
       "type": "prop",
       "pid": 24   

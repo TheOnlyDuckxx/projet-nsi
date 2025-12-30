@@ -18,6 +18,7 @@ from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
+from Game.ui.hud.draggable_window import DraggableWindow
 
 class Phase1:
     def __init__(self, app):
@@ -57,11 +58,36 @@ class Phase1:
 
         # Sélection actuelle: ("tile",(i,j)) | ("prop",(i,j,pid)) | ("entity",ent)
         self.selected: Optional[tuple] = None
+        self.selected_entities: list = []
         self.save_message = ""
         self.save_message_timer = 0.0
         self.craft_system = Craft()
         self.selected_craft = None
         self.construction_sites: dict[tuple[int, int], dict] = {}
+        self.warehouse: dict[str, int] = {}
+        self.info_windows: list[DraggableWindow] = []
+        self.construction_assign_radius = 12.0
+        self.inspect_cursor_path = resource_path("Game/assets/vfx/9.cur")
+        self.default_cursor_path = resource_path("Game/assets/vfx/1.cur")
+        self.inspect_mode_active = False
+
+        # Sélection multi via clic + glisser
+        self._drag_select_start: Optional[tuple[int, int]] = None
+        self._drag_select_rect: Optional[pygame.Rect] = None
+        self._dragging_selection = False
+        self._drag_threshold = 6
+        self._ui_click_blocked = False
+
+    def _attach_phase_to_entities(self):
+        for ent in self.entities:
+            try:
+                ent.phase = self
+            except Exception:
+                pass
+        # Nettoie les fenêtres d'info éventuelles (pour éviter les références périmées)
+        self.info_windows = []
+        # Réinitialise le curseur
+        self._set_cursor(self.default_cursor_path)
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -215,6 +241,7 @@ class Phase1:
             if self.load():
                 if self.espece and not self.bottom_hud:
                     self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+                self._set_cursor(self.default_cursor_path)
                 return
 
         # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
@@ -247,6 +274,7 @@ class Phase1:
                     assets=self.assets,
                 )
                 self.entities = [self.joueur,self.joueur2]
+                self._attach_phase_to_entities()
             if self.bottom_hud is None:
                 self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
             else:
@@ -297,6 +325,7 @@ class Phase1:
                 )
             self._apply_base_mutations_to_individus()
             self.entities = [self.joueur,self.joueur2]
+            self._attach_phase_to_entities()
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
             for e in self.entities:
@@ -305,6 +334,7 @@ class Phase1:
             self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
         else:
             self.bottom_hud.species = self.espece
+        self._set_cursor(self.default_cursor_path)
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -320,12 +350,27 @@ class Phase1:
             return
 
         for e in events:
+            # Fenêtres d'information : priorité de gestion
+            consumed = False
+            for win in list(self.info_windows):
+                if win.closed:
+                    self.info_windows.remove(win)
+                    continue
+                if win.handle_event(e):
+                    consumed = True
+                    break
+            if consumed:
+                continue
+
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
                 elif e.key == pygame.K_h:
                     self.props_transparency_active = True
                     self.view.set_props_transparency(True)
+                elif e.key == pygame.K_i:
+                    self.inspect_mode_active = True
+                    self._set_cursor(self.inspect_cursor_path)
                 elif e.key == pygame.K_r:
                     self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
                     self.view.set_world(self.world)
@@ -340,6 +385,9 @@ class Phase1:
             elif e.type == pygame.KEYUP and e.key == pygame.K_h:
                 self.props_transparency_active = False
                 self.view.set_props_transparency(False)
+            elif e.type == pygame.KEYUP and e.key == pygame.K_i:
+                self.inspect_mode_active = False
+                self._set_cursor(self.default_cursor_path)
 
             if not self.paused:
                 self.view.handle_event(e)
@@ -347,6 +395,7 @@ class Phase1:
                 # --- CLIC GAUCHE ---
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = pygame.mouse.get_pos()
+                    keys_state = pygame.key.get_pressed()
 
                     # 1) Mode "placement de craft"
                     if self.selected_craft is not None:
@@ -373,95 +422,63 @@ class Phase1:
                                 world=self.world,
                                 tile=tile,
                                 notify=add_notification,
+                                storage=self.warehouse,
                             )
                             if result:
                                 self._register_construction_site(result)
                                 self.selected_craft = None  # on sort du mode placement
+                        self._reset_drag_selection()
                         return  # on ne fait pas la logique de sélection classique
 
-                    # 2) Mode "sélection" normal
-                    hit = self.view.pick_at(mx, my)
-                    if hit:
-                        kind, payload = hit
-                        if kind == "entity":
-                            self.selected = ("entity", payload)
-                        elif kind == "prop":
-                            self.selected = ("prop", payload)  # (i,j,pid)
+                    if self._ui_captures_click((mx, my)):
+                        self._ui_click_blocked = True
+                        self._reset_drag_selection()
+                        continue
+
+                    if keys_state[pygame.K_i]:
+                        hit = self.view.pick_at(mx, my)
+                        if hit and hit[0] == "prop":
+                            self._describe_craft_prop(hit[1])
+                            self._reset_drag_selection()
+                            continue
+
+                    self._ui_click_blocked = False
+                    self._dragging_selection = True
+                    self._drag_select_start = (mx, my)
+                    self._drag_select_rect = pygame.Rect(mx, my, 0, 0)
+
+                elif e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                    mx, my = e.pos
+                    if self._ui_click_blocked:
+                        self._ui_click_blocked = False
+                        self._reset_drag_selection()
+                        continue
+                    if self.selected_craft is not None:
+                        self._reset_drag_selection()
+                        continue
+                    if self._dragging_selection and self._drag_select_start:
+                        rect = self._drag_select_rect
+                        if rect and (rect.width > self._drag_threshold or rect.height > self._drag_threshold):
+                            self._select_entities_in_rect(rect)
                         else:
-                            self.selected = ("tile", payload)  # (i,j)
+                            self._handle_single_left_click(mx, my)
                     else:
-                        i_j = self._fallback_pick_tile(mx, my)
-                        self.selected = ("tile", i_j) if i_j else None
-            
-                       
+                        self._handle_single_left_click(mx, my)
+                    self._reset_drag_selection()
+
+                elif e.type == pygame.MOUSEMOTION and self._dragging_selection:
+                    self._update_drag_rect(e.pos)
 
                 # --- CLIC DROIT = ORDRE DE DÉPLACEMENT (si une créature est sélectionnée) ---
                 elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                     self.selected_craft = None
-                    if self.selected and self.selected[0] == "entity":
-                        ent = self.selected[1]
-                        mx, my = pygame.mouse.get_pos()
-                        hit = self.view.pick_at(mx, my)
-
-                        if hit and hit[0] == "prop" and self._same_prop_target(ent, hit):
-                            return  # on laisse la progression continuer
-
-                        # Sinon, on peut annuler le job précédent et poser le nouvel ordre
-                        if hasattr(ent, "comportement"):
-                            ent.comportement.cancel_work("player_new_order")
-                        else:
-                            if getattr(ent, "work", None):
-                                ent.work = None
-                            ent.ia["etat"] = "idle"
-                            ent.ia["objectif"] = None
-                        # --- FIN NEW ---
-
-                        # On vise une tuile de destination
-                        hit = self.view.pick_at(mx, my)
-                        target = None
-                        if hit:
-                            k, p = hit
-                            if k == "tile":
-                                target = p  # (i,j)
-                                ent.ia["etat"] = "se_deplace"       # NEW (cohérent)
-                                ent.ia["objectif"] = None           # NEW
-                            elif k == "prop":
-                                target = (p[0], p[1])
-                                if self._is_construction_site(p[0], p[1]):
-                                    ent.ia["etat"] = "se_deplace_vers_construction"
-                                    ent.ia["objectif"] = ("construction", (p[0], p[1]))
-                                else:
-                                    ent.ia["etat"] = "se_deplace_vers_prop"
-                                    ent.ia["objectif"] = hit
-                            elif k == "entity":
-                                target = (int(p.x), int(p.y))
-                                ent.ia["etat"] = "se_deplace"       # NEW
-                                ent.ia["objectif"] = None           
-
-                        if not target:
-                            target = self._fallback_pick_tile(mx, my)
-                        if not target:
-                            continue
-
-                        if not self._is_walkable(*target):
-                            target = self._find_nearest_walkable(target)
-                            
-
-                        if not target:
-                            continue
-
-                        raw_path = self._astar_path((int(ent.x), int(ent.y)), target)
-                        if raw_path:
-                            # Ignore la première case si c'est la position actuelle
-                            if raw_path and raw_path[0] == (int(ent.x), int(ent.y)):
-                                raw_path = raw_path[1:]
-                            # Lissage + waypoints flottants
-                            waypoints = self._smooth_path(raw_path)
-                            # Stocke des points (x,y) flottants dans move_path
-                            ent.move_path = waypoints
-                            ent._move_from = (float(ent.x), float(ent.y))
-                            ent._move_to = waypoints[0] if waypoints else None
-                            ent._move_t = 0.0
+                    entities = self._get_order_entities()
+                    if not entities:
+                        continue
+                    mx, my = pygame.mouse.get_pos()
+                    hit = self.view.pick_at(mx, my)
+                    harvest_mode = pygame.key.get_pressed()[pygame.K_d]
+                    self._issue_order_to_entities(entities, hit, harvest_mode, (mx, my))
 
 
 
@@ -516,7 +533,7 @@ class Phase1:
             self.fog = FogOfWar(self.world.width, self.world.height)
         self.view.fog = self.fog
 
-    
+
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
@@ -613,6 +630,9 @@ class Phase1:
         # 2) Appliquer le filtre jour/nuit sur TOUT ce qui est déjà dessiné
         self.apply_day_night_lighting(screen)
 
+        # 2bis) Sélection rectangle (drag)
+        self._draw_selection_box(screen)
+
         # 3) Marqueur de sélection
         self._draw_selection_marker(screen)
 
@@ -634,6 +654,190 @@ class Phase1:
             add_notification(self.save_message)
             self.save_message = None
 
+        # Fenêtres d'information
+        if self.info_windows:
+            for win in list(self.info_windows):
+                if win.closed:
+                    self.info_windows.remove(win)
+                    continue
+                win.draw(screen)
+
+
+    # ---------- SELECTION HELPERS ----------
+    def _entity_screen_rect(self, ent) -> Optional[pygame.Rect]:
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return None
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        rect = pygame.Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+        return rect
+
+    def _set_selected_entities(self, entities: list) -> None:
+        valid = [e for e in entities if e in self.entities]
+        self.selected_entities = valid
+        if valid:
+            self.selected = ("entity", valid[0])
+        elif self.selected and self.selected[0] == "entity":
+            self.selected = None
+        if not self.selected and not self.selected_entities:
+            self.info_windows = []
+
+    def _select_entities_in_rect(self, rect: pygame.Rect) -> None:
+        selected = []
+        for ent in self.entities:
+            er = self._entity_screen_rect(ent)
+            if not er:
+                continue
+            if rect.colliderect(er) and rect.collidepoint(er.center):
+                selected.append(ent)
+        self._set_selected_entities(selected)
+        if not selected:
+            self.selected = None
+
+    def _reset_drag_selection(self):
+        self._dragging_selection = False
+        self._drag_select_start = None
+        self._drag_select_rect = None
+
+    def _update_drag_rect(self, pos: tuple[int, int]):
+        if not self._dragging_selection or not self._drag_select_start:
+            return
+        sx, sy = self._drag_select_start
+        ex, ey = pos
+        x = min(sx, ex)
+        y = min(sy, ey)
+        w = abs(ex - sx)
+        h = abs(ey - sy)
+        self._drag_select_rect = pygame.Rect(x, y, w, h)
+
+    def _ui_captures_click(self, pos: tuple[int, int]) -> bool:
+        if self.bottom_hud:
+            if self.bottom_hud.context_menu and self.bottom_hud.context_menu.get("rect"):
+                if self.bottom_hud.context_menu["rect"].collidepoint(pos):
+                    return True
+            if self.bottom_hud.visible and self.bottom_hud.panel_rect.collidepoint(pos):
+                return True
+        for win in self.info_windows:
+            if not win.closed and win.rect.collidepoint(pos):
+                return True
+        return False
+
+    def _set_cursor(self, cur_path: str | None):
+        try:
+            if cur_path:
+                pygame.mouse.set_cursor(pygame.cursors.Cursor(cur_path))
+        except Exception:
+            pass
+
+    def _get_order_entities(self) -> list:
+        if self.selected_entities:
+            return [e for e in self.selected_entities if e in self.entities]
+        if self.selected and self.selected[0] == "entity" and self.selected[1] in self.entities:
+            return [self.selected[1]]
+        return []
+
+    def deposit_to_warehouse(self, inventory: list[dict]) -> int:
+        """
+        Transfère tout l'inventaire fourni dans l'entrepôt partagé.
+        Retourne le nombre d'items transférés.
+        """
+        if not inventory:
+            return 0
+        moved = 0
+        for stack in list(inventory):
+            res_id = stack.get("id") or stack.get("name")
+            qty = int(stack.get("quantity", 0))
+            if not res_id or qty <= 0:
+                continue
+            self.warehouse[res_id] = self.warehouse.get(res_id, 0) + qty
+            moved += qty
+        inventory.clear()
+        return moved
+
+    def _craft_def_from_cell(self, cell):
+        craft_def = None
+        if isinstance(cell, dict):
+            cid = cell.get("craft_id")
+            if cid and self.craft_system:
+                craft_def = self.craft_system.crafts.get(cid, {})
+            fallback = {
+                "name": cell.get("name") or cell.get("craft_id"),
+                "craft_id": cell.get("craft_id"),
+                "cost": cell.get("cost", {}),
+                "interaction": cell.get("interaction"),
+            }
+            if craft_def:
+                merged = dict(fallback)
+                merged.update(craft_def)
+                return merged
+            return fallback if fallback.get("name") or fallback.get("craft_id") else None
+        return None
+
+    def _describe_craft_prop(self, payload):
+        if not self.world:
+            return
+        i, j, pid = payload
+        try:
+            cell = self.world.overlay[j][i]
+        except Exception:
+            cell = None
+        craft_def = self._craft_def_from_cell(cell)
+        name = craft_def.get("name") if craft_def else None
+        if not name:
+            name = f"Prop {pid}"
+        desc = craft_def.get("description") if craft_def else None
+        interaction = craft_def.get("interaction") if craft_def else None
+
+        content_lines: list[str] = []
+        if desc:
+            content_lines.extend(desc.split("\n"))
+        else:
+            content_lines.append("Aucune description.")
+
+        # Infos spéciales entrepôt
+        if isinstance(interaction, dict) and interaction.get("type") == "warehouse":
+            if not self.warehouse:
+                content_lines.append("Entrepôt : aucun stock.")
+            else:
+                content_lines.append("Contenu de l'entrepôt :")
+                for res, qty in self.warehouse.items():
+                    content_lines.append(f"- {res} : {qty}")
+
+        title_surf = self.font.render(name, True, (245, 245, 245))
+        body_surfs = [self.small_font.render(line, True, (225, 225, 225)) for line in content_lines]
+
+        mx, my = pygame.mouse.get_pos()
+        win = DraggableWindow(title_surf, body_surfs, (mx, my))
+        self.info_windows.append(win)
+
+    def _handle_single_left_click(self, mx: int, my: int):
+        hit = self.view.pick_at(mx, my)
+        if hit:
+            kind, payload = hit
+            if kind == "entity":
+                self._set_selected_entities([payload])
+            elif kind == "prop":
+                self.selected = ("prop", payload)
+                self._set_selected_entities([])
+            else:
+                self.selected = ("tile", payload)
+                self._set_selected_entities([])
+        else:
+            i_j = self._fallback_pick_tile(mx, my)
+            self.selected = ("tile", i_j) if i_j else None
+            self._set_selected_entities([])
+        if not self.selected and not self.selected_entities:
+            self.info_windows = []
+
+    def _draw_selection_box(self, screen: pygame.Surface):
+        if not self._drag_select_rect or self._drag_select_rect.width <= 0 or self._drag_select_rect.height <= 0:
+            return
+        rect = self._drag_select_rect
+        overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        overlay.fill((80, 180, 120, 60))
+        screen.blit(overlay, rect.topleft)
+        pygame.draw.rect(screen, (80, 200, 120), rect, 1)
 
     # ---------- SELECTION MARKER ----------
     def _draw_selection_marker(self, screen: pygame.Surface):
@@ -642,42 +846,33 @@ class Phase1:
         - Utilise le sprite 'vfx_aura_alpha' centré sur la tuile de l'entité.
         - Ne montre rien pour les tiles / props.
         """
-        if not self.selected:
+        entities = []
+        if self.selected_entities:
+            entities = [e for e in self.selected_entities if e in self.entities]
+        elif self.selected and self.selected[0] == "entity":
+            entities = [self.selected[1]]
+        if not entities:
             return
 
-        kind, payload = self.selected
-
-        # On ne dessine un marker QUE pour les entités
-        if kind != "entity":
-            return
-
-        ent = payload
-
-        # Récupération du sprite d'aura dans les assets
         aura = self.assets.get_image("vfx_aura_alpha")
         if aura is None:
-            # Si jamais l'asset n'est pas trouvé, on ne dessine rien
-            # (éventuellement tu peux remettre un debug print ici)
-            # print("[Phase1] Sprite 'vfx_aura_alpha' introuvable dans assets")
             return
 
-        # On récupère le polygone de la tuile sous l'entité pour connaître sa position à l'écran
-        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
-        if not poly:
-            return
+        for ent in entities:
+            poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+            if not poly:
+                continue
 
-        # On calcule un rectangle englobant le polygone pour trouver un centre écran propre
-        min_x = min(p[0] for p in poly)
-        max_x = max(p[0] for p in poly)
-        min_y = min(p[1] for p in poly)
-        max_y = max(p[1] for p in poly)
+            min_x = min(p[0] for p in poly)
+            max_x = max(p[0] for p in poly)
+            min_y = min(p[1] for p in poly)
+            max_y = max(p[1] for p in poly)
 
-        center_x = (min_x + max_x) // 2
-        center_y = (min_y + max_y) // 2
+            center_x = (min_x + max_x) // 2
+            center_y = (min_y + max_y) // 2
 
-        # On centre l'aura sur cette tuile
-        aura_rect = aura.get_rect(center=(center_x, center_y))
-        screen.blit(aura, aura_rect)
+            aura_rect = aura.get_rect(center=(center_x, center_y))
+            screen.blit(aura, aura_rect)
 
 
     # ---------- FALLBACK PICK (ancien beam) ----------
@@ -731,6 +926,15 @@ class Phase1:
             if "water" in lname or "ocean" in lname or "sea" in lname or "lake" in lname:
                 return False
         return True
+
+    def _occupied_tiles(self, exclude: list | None = None) -> set[tuple[int, int]]:
+        exclude = set(exclude or [])
+        occupied = set()
+        for ent in self.entities:
+            if ent in exclude:
+                continue
+            occupied.add((int(ent.x), int(ent.y)))
+        return occupied
 
     def _get_construction_cell(self, i: int, j: int):
         try:
@@ -829,7 +1033,7 @@ class Phase1:
 
     def _update_entity_movement(self, ent, dt: float):
         # Rien à faire ?
-        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") in ("recolte", "construction"):
+        if getattr(ent, "move_path", None) and ent.move_path and ent.ia.get("etat") in ("recolte", "construction", "interaction", "demonte"):
             if hasattr(ent, "comportement"):
                 ent.comportement.cancel_work("movement_started")
             else:
@@ -839,12 +1043,23 @@ class Phase1:
                 ent.ia["objectif"] = None
         if not getattr(ent, "move_path", None) or not ent.move_path:
             if ent.ia["etat"] == "se_deplace_vers_prop":
-                # ent.ia["objectif"] est du type ("prop", (i, j, pid))
+                action = ent.ia.get("order_action")
+                craft_def = self._craft_def_from_order(ent) if action in ("interact", "dismantle") else None
                 if hasattr(ent, "comportement"):
-                    ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
+                    if action == "interact":
+                        ent.comportement.interact_with_craft(ent.ia.get("objectif"), self.world, craft_def)
+                    elif action == "dismantle":
+                        ent.comportement.dismantle_craft(ent.ia.get("objectif"), self.world, craft_def)
+                    else:
+                        ent.comportement.recolter_ressource(ent.ia.get("objectif"), self.world)
             elif ent.ia["etat"] == "se_deplace_vers_construction":
                 if hasattr(ent, "comportement"):
                     ent.comportement.build_construction(ent.ia.get("objectif"), self.world)
+            elif ent.ia["etat"] == "se_deplace":
+                ent.ia["etat"] = "idle"
+                ent.ia["objectif"] = None
+                ent.ia["order_action"] = None
+                ent.ia["target_craft_id"] = None
 
         # Init du segment courant
         if ent._move_to is None:
@@ -880,10 +1095,11 @@ class Phase1:
             ent.x = fx + (tx - fx) * ent._move_t
             ent.y = fy + (ty - fy) * ent._move_t
 
-    def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8) -> Optional[tuple[int, int]]:
-        """Retourne la case libre la plus proche du point cible (si eau/obstacle)."""
+    def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8, forbidden: set[tuple[int, int]] | None = None) -> Optional[tuple[int, int]]:
+        """Retourne la case libre la plus proche du point cible (si eau/obstacle), en évitant les cases interdites."""
         tx, ty = target
-        if self._is_walkable(tx, ty):
+        forbidden = forbidden or set()
+        if self._is_walkable(tx, ty) and (tx, ty) not in forbidden:
             return target
 
         best = None
@@ -894,6 +1110,8 @@ class Phase1:
                     nx, ny = tx + dx, ty + dy
                     if not self._is_walkable(nx, ny):
                         continue
+                    if (nx, ny) in forbidden:
+                        continue
                     d = abs(dx) + abs(dy)
                     if d < best_dist:
                         best = (nx, ny)
@@ -901,6 +1119,110 @@ class Phase1:
             if best:
                 break
         return best
+
+    def _apply_entity_order(self, ent, target: tuple[int, int], etat: str, objectif, action_mode: str | None, craft_id: str | None):
+        if hasattr(ent, "comportement"):
+            ent.comportement.cancel_work("player_new_order")
+        else:
+            if getattr(ent, "work", None):
+                ent.work = None
+            ent.ia["etat"] = "idle"
+            ent.ia["objectif"] = None
+
+        ent.ia["etat"] = etat
+        ent.ia["objectif"] = objectif
+        ent.ia["order_action"] = action_mode
+        ent.ia["target_craft_id"] = craft_id if action_mode in ("interact", "dismantle") else None
+        if etat == "se_deplace_vers_construction":
+            ent.ia["order_action"] = None
+            ent.ia["target_craft_id"] = None
+
+        start_pos = (int(ent.x), int(ent.y))
+        raw_path = self._astar_path(start_pos, target)
+        if not raw_path:
+            if start_pos == target:
+                ent.move_path = []
+                ent._move_from = (float(ent.x), float(ent.y))
+                ent._move_to = None
+                ent._move_t = 0.0
+                return True
+            return False
+        if raw_path and raw_path[0] == start_pos:
+            raw_path = raw_path[1:]
+        waypoints = self._smooth_path(raw_path)
+        if waypoints is None:
+            waypoints = []
+        ent.move_path = waypoints
+        ent._move_from = (float(ent.x), float(ent.y))
+        ent._move_to = waypoints[0] if waypoints else None
+        ent._move_t = 0.0
+        return True
+
+    def _issue_order_to_entities(self, entities: list, hit, harvest_mode: bool = False, click_pos: tuple[int, int] | None = None):
+        entities = [e for e in entities if e in self.entities]
+        if not entities:
+            return
+
+        base_target = None
+        objectif = None
+        etat = "se_deplace"
+        action_mode = None
+        craft_id = None
+
+        if hit:
+            kind, payload = hit
+            if kind == "tile":
+                base_target = payload
+                objectif = None
+                etat = "se_deplace"
+            elif kind == "entity":
+                base_target = (int(payload.x), int(payload.y))
+                objectif = None
+                etat = "se_deplace"
+            elif kind == "prop":
+                i, j, pid = payload
+                cell = self._get_construction_cell(i, j)
+                craft_id = cell.get("craft_id") if isinstance(cell, dict) else None
+                if self._is_construction_site(i, j):
+                    etat = "se_deplace_vers_construction"
+                    objectif = ("construction", (i, j))
+                    base_target = (i, j)
+                    action_mode = None
+                else:
+                    etat = "se_deplace_vers_prop"
+                    objectif = ("prop", (i, j, pid))
+                    base_target = (i, j)
+                    if isinstance(cell, dict) and craft_id:
+                        action_mode = "dismantle" if harvest_mode else "interact"
+                    else:
+                        action_mode = None
+        if base_target is None:
+            cx, cy = click_pos if click_pos else pygame.mouse.get_pos()
+            base_target = self._fallback_pick_tile(cx, cy)
+            if base_target:
+                etat = "se_deplace"
+                objectif = None
+
+        if base_target is None:
+            return
+
+        reserved = self._occupied_tiles(exclude=entities)
+        dismantle_assigned = False
+        for ent in entities:
+            if action_mode == "dismantle" and dismantle_assigned:
+                break
+            if objectif and objectif[0] == "prop" and self._same_prop_target(ent, ("prop", objectif[1])):
+                continue
+            desired = base_target
+            forbidden = set(reserved)
+            if not self._is_walkable(*desired) or desired in forbidden:
+                desired = self._find_nearest_walkable(desired, forbidden=forbidden)
+            if not desired:
+                continue
+            reserved.add(desired)
+            ok = self._apply_entity_order(ent, desired, etat, objectif, action_mode, craft_id)
+            if ok and action_mode == "dismantle":
+                dismantle_assigned = True
     
     def _same_prop_target(self, ent, hit):
         if not hit or hit[0] != "prop":
@@ -922,6 +1244,31 @@ class Phase1:
                 return True
         return False
 
+    def _craft_def_from_order(self, ent):
+        craft_id = ent.ia.get("target_craft_id")
+        objectif = ent.ia.get("objectif")
+        cell = None
+        if objectif and objectif[0] == "prop":
+            i, j, _pid = objectif[1]
+            cell = self._get_construction_cell(i, j)
+        craft_def = None
+        if craft_id and self.craft_system:
+            craft_def = self.craft_system.crafts.get(craft_id)
+        if isinstance(cell, dict):
+            fallback = {
+                "cost": cell.get("cost", {}),
+                "name": cell.get("name") or cell.get("craft_id") or "Construction",
+                "pid": cell.get("pid"),
+                "craft_id": cell.get("craft_id"),
+                "interaction": cell.get("interaction"),
+            }
+            if craft_def:
+                merged = dict(fallback)
+                merged.update(craft_def)
+                return merged
+            return fallback
+        return craft_def
+
     def _register_construction_site(self, craft_result):
         tile = craft_result.get("tile")
         site = craft_result.get("site")
@@ -937,6 +1284,7 @@ class Phase1:
 
     def _assign_idle_workers_to_construction(self, tile: tuple[int, int], max_workers: int = 3):
         assigned = 0
+        reserved = self._occupied_tiles()
         for ent in self.entities:
             if assigned >= max_workers:
                 break
@@ -944,10 +1292,17 @@ class Phase1:
                 continue
             if not self._is_construction_site(*tile):
                 break
+            # Filtre de distance pour éviter d'envoyer les entités trop loin
+            dx = int(ent.x) - tile[0]
+            dy = int(ent.y) - tile[1]
+            dist2 = dx * dx + dy * dy
+            if dist2 > (self.construction_assign_radius ** 2):
+                continue
             self._ensure_move_runtime(ent)
-            target = self._find_nearest_walkable(tile)
+            target = self._find_nearest_walkable(tile, forbidden=reserved)
             if not target:
                 continue
+            reserved.add(target)
             raw_path = self._astar_path((int(ent.x), int(ent.y)), target)
             if not raw_path:
                 if (int(ent.x), int(ent.y)) == target:
@@ -957,6 +1312,8 @@ class Phase1:
                     ent._move_t = 0.0
                     ent.ia["etat"] = "se_deplace_vers_construction"
                     ent.ia["objectif"] = ("construction", tile)
+                    ent.ia["order_action"] = None
+                    ent.ia["target_craft_id"] = None
                     assigned += 1
                 continue
             if raw_path and raw_path[0] == (int(ent.x), int(ent.y)):
@@ -968,6 +1325,8 @@ class Phase1:
             ent._move_t = 0.0
             ent.ia["etat"] = "se_deplace_vers_construction"
             ent.ia["objectif"] = ("construction", tile)
+            ent.ia["order_action"] = None
+            ent.ia["target_craft_id"] = None
             assigned += 1
 
     def _update_construction_sites(self):

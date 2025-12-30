@@ -6,6 +6,7 @@ from Game.core.utils import Button, ButtonStyle
 from Game.gameplay.craft import load_crafts
 from Game.world.day_night import ClockRenderer
 from .notification import add_notification
+from Game.ui.hud.draggable_window import DraggableWindow
 
 
 class BottomHUD:
@@ -338,15 +339,11 @@ class BottomHUD:
         desc_surfs = [self.small_font.render(line, True, (230, 230, 230)) for line in desc_lines]
 
         cost = craft_def.get("cost", {})
+        cost_surfs = []
         if cost:
-            cost_label = self.small_font.render("Ressources requises :", True, (215, 230, 215))
-            cost_surfs = [
-                self.small_font.render(f"- {res} : {amt}", True, (210, 220, 210))
-                for res, amt in cost.items()
-            ]
-        else:
-            cost_label = self.small_font.render("Aucune ressource requise", True, (215, 230, 215))
-            cost_surfs = []
+            cost_surfs.append(self.small_font.render("Ressources requises :", True, (215, 230, 215)))
+            for res, amt in cost.items():
+                cost_surfs.append(self.small_font.render(f"- {res} : {amt}", True, (210, 220, 210)))
 
         sprite_surf = None
         sprite_key = craft_def.get("sprite")
@@ -356,67 +353,19 @@ class BottomHUD:
             except Exception:
                 sprite_surf = None
 
-        pad = 12
-        gap = 6
-        section_gap = 10
-
-        max_width = title_surf.get_width()
+        content_surfs: list[pygame.Surface] = []
         if sprite_surf:
-            max_width = max(max_width, sprite_surf.get_width())
-        if desc_surfs:
-            max_width = max(max_width, max(s.get_width() for s in desc_surfs))
-        if cost_label:
-            max_width = max(max_width, cost_label.get_width())
-        if cost_surfs:
-            max_width = max(max_width, max(s.get_width() for s in cost_surfs))
+            content_surfs.append(sprite_surf)
+        content_surfs.extend(desc_surfs)
+        content_surfs.extend(cost_surfs)
 
-        height = pad + title_surf.get_height()
-        height += section_gap
-        if sprite_surf:
-            height += sprite_surf.get_height()
-            height += section_gap
-        if desc_surfs:
-            height += sum(s.get_height() for s in desc_surfs) + gap * (len(desc_surfs) - 1)
-            height += section_gap
-        if cost_label:
-            height += cost_label.get_height()
-        if cost_surfs:
-            height += gap + sum(s.get_height() for s in cost_surfs) + gap * (len(cost_surfs) - 1)
-        height += pad
-
-        width = max_width + pad * 2
-
-        if self.screen:
-            sw, sh = self.screen.get_size()
-        else:
-            sw = sh = 0
-
-        pos_x = button_rect.centerx - width // 2
-        pos_y = self.panel_rect.top - height - 12 if self.visible else button_rect.top - height - 12
-        if pos_x < self.margin:
-            pos_x = self.margin
-        if pos_x + width > sw - self.margin:
-            pos_x = sw - width - self.margin
-        if pos_y < self.margin:
-            pos_y = self.margin
-        if pos_y + height > sh - self.margin:
-            pos_y = sh - height - self.margin
-
-        rect = pygame.Rect(pos_x, pos_y, width, height)
-
-        self.context_menu = {
-            "rect": rect,
-            "title": title_surf,
-            "description": desc_surfs,
-            "cost_label": cost_label,
-            "cost_surfs": cost_surfs,
-            "sprite": sprite_surf,
-            "gap": gap,
-            "section_gap": section_gap,
-            "pad": pad,
-            "header_height": title_surf.get_height() + pad,
-        }
-        self._context_menu_just_opened = True
+        mx, my = button_rect.center
+        win = DraggableWindow(title_surf, content_surfs, (mx, my - 120))
+        if hasattr(self.phase, "info_windows"):
+            self.phase.info_windows.append(win)
+        self.context_menu = None
+        self._context_menu_just_opened = False
+        self._context_menu_dragging = False
 
     def _draw_context_menu(self, screen):
         if not self.context_menu:
@@ -456,3 +405,4 @@ class BottomHUD:
         for surf in menu["cost_surfs"]:
             y += gap
             screen.blit(surf, (x, y))
+            y += surf.get_height()

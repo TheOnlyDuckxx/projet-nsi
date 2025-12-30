@@ -46,37 +46,58 @@ class Craft:
             counts[key] = counts.get(key, 0) + qty
         return counts
 
-    def _consume_resources(self, inventory: List[Dict], cost: Dict[str, int]) -> None:
+    def _consume_resources(self, inventory: List[Dict], cost: Dict[str, int], storage: Dict[str, int] | None = None) -> None:
         """
-        Enlève les ressources du sac (mutant la liste inventory).
-        Hypothèse : _inventory_counts a déjà vérifié qu'on a assez.
+        Enlève les ressources en priorisant le stockage partagé (entrepôt),
+        puis dans le sac du builder.
         """
-        for res_name, needed in cost.items():
-            remaining = needed
+        shared = storage if storage is not None else {}
+
+        # 1) Dépense dans le stockage
+        remaining = dict(cost)
+        for res_name, needed in list(remaining.items()):
+            if res_name not in shared:
+                continue
+            take = min(shared.get(res_name, 0), needed)
+            shared[res_name] = max(0, shared.get(res_name, 0) - take)
+            remaining[res_name] -= take
+            if remaining[res_name] <= 0:
+                remaining.pop(res_name, None)
+
+        if not remaining:
+            return
+
+        # 2) Puis dans l'inventaire individuel
+        for res_name, needed in list(remaining.items()):
+            rem = needed
             for item in list(inventory):  # copie pour pouvoir remove
                 key = item.get("id") or item.get("name")
                 if key != res_name:
                     continue
 
                 qty = int(item.get("quantity", 1))
-                if qty > remaining:
-                    item["quantity"] = qty - remaining
-                    remaining = 0
+                if qty > rem:
+                    item["quantity"] = qty - rem
+                    rem = 0
                     break
                 else:
-                    remaining -= qty
+                    rem -= qty
                     inventory.remove(item)
 
-            if remaining > 0:
-                # En théorie ne devrait pas arriver si on a vérifié avant
-                break
+            remaining[res_name] = rem
+            if remaining[res_name] <= 0:
+                remaining.pop(res_name, None)
+
+        # Nettoie les stacks vides
+        inventory[:] = [it for it in inventory if it.get("quantity", 0) > 0]
 
     # ---------- Vérification ----------
 
-    def missing_resources(self, craft_id: str, inventory: List[Dict]) -> Dict[str, int]:
+    def missing_resources(self, craft_id: str, inventory: List[Dict], storage: Dict[str, int] | None = None) -> Dict[str, int]:
         """
         Retourne un dict {ressource: manquant} pour ce craft.
-        Vide si on peut crafter.
+        Vide si on peut crafter. Les ressources peuvent provenir
+        de l'inventaire du builder ET d'un stockage partagé.
         """
         craft_def = self.crafts.get(craft_id)
         if not craft_def:
@@ -87,10 +108,11 @@ class Craft:
             return {}
 
         counts = self._inventory_counts(inventory)
+        shared = storage or {}
         missing: Dict[str, int] = {}
 
         for res_name, required in cost.items():
-            have = counts.get(res_name, 0)
+            have = counts.get(res_name, 0) + int(shared.get(res_name, 0))
             if have < required:
                 missing[res_name] = required - have
 
@@ -105,6 +127,7 @@ class Craft:
         world=None,
         tile: Optional[Tuple[int, int]] = None,
         notify: Optional[Callable[[str], None]] = None,
+        storage: Dict[str, int] | None = None,
     ) -> Optional[Dict]:
         """
         Tente de crafter et de placer le résultat.
@@ -120,7 +143,7 @@ class Craft:
             return False
 
         inv = getattr(builder, "carrying", [])
-        miss = self.missing_resources(craft_id, inv)
+        miss = self.missing_resources(craft_id, inv, storage)
         if miss:
             if notify:
                 if "_unknown_craft" in miss:
@@ -158,7 +181,7 @@ class Craft:
         # --- On consomme les ressources ---
         cost = craft_def.get("cost", {})
         if cost:
-            self._consume_resources(inv, cost)
+            self._consume_resources(inv, cost, storage)
 
         # --- On applique le résultat ---
         if out_type == "prop" and world is not None and tile is not None:
@@ -174,6 +197,8 @@ class Craft:
                 "work_required": self._compute_work_required(craft_def),
                 "name": craft_def.get("name", craft_id),
                 "craft_id": craft_id,
+                "interaction": craft_def.get("interaction"),
+                "cost": cost,
             }
             world.overlay[tile[1]][tile[0]] = site
             if notify:
