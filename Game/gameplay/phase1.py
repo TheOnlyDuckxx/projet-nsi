@@ -68,8 +68,8 @@ class Phase1:
         self.warehouse: dict[str, int] = {}
         self.info_windows: list[DraggableWindow] = []
         self.construction_assign_radius = 12.0
-        self.inspect_cursor_path = resource_path("Game/assets/vfx/9.cur")
-        self.default_cursor_path = resource_path("Game/assets/vfx/1.cur")
+        self.inspect_cursor_path = resource_path("Game/assets/vfx/9.png")
+        self.default_cursor_path = resource_path("Game/assets/vfx/1.png")
         self.inspect_mode_active = False
 
         # Sélection multi via clic + glisser
@@ -724,12 +724,13 @@ class Phase1:
                 return True
         return False
 
-    def _set_cursor(self, cur_path: str | None):
+    def _set_cursor(self, image_path: str, hotspot=(0, 0)):
         try:
-            if cur_path:
-                pygame.mouse.set_cursor(pygame.cursors.Cursor(cur_path))
-        except Exception:
-            pass
+            surf = pygame.image.load(image_path).convert_alpha()
+            cursor = pygame.cursors.Cursor(hotspot, surf)
+            pygame.mouse.set_cursor(cursor)
+        except Exception as e:
+            print("[Cursor] Erreur set_cursor_image:", e, "path=", image_path)
 
     def _get_order_entities(self) -> list:
         if self.selected_entities:
