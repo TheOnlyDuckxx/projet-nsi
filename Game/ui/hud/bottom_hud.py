@@ -162,7 +162,7 @@ class BottomHUD:
         # Boutons de craft alignés en ligne dans la partie droite
         if self.craft_buttons:
             bw = self.craft_buttons[0][1].rect.width
-            gap = 10
+            gap = 20
             total = len(self.craft_buttons) * bw + (len(self.craft_buttons) - 1) * gap
             start_x = self.right_rect.x + (self.right_rect.width - total) // 2 + bw // 2
             center_y = self.right_rect.y + 40

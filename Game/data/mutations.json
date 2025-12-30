@@ -122,7 +122,7 @@
         "categorie": "sens",
         "phase": 1,
         "base":true},
-        "aveugle": {
+    "Aveugle": {
         "nom": "Aveugle",
         "description": "Perte de la vision, mais amélioration des autres sens.",
         "effets": {
