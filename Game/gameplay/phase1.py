@@ -80,6 +80,11 @@ class Phase1:
         self._ui_click_blocked = False
 
     def _attach_phase_to_entities(self):
+        if getattr(self, "espece", None) and hasattr(self.espece, "reproduction_system"):
+            try:
+                self.espece.reproduction_system.bind_phase(self)
+            except Exception:
+                pass
         for ent in self.entities:
             try:
                 ent.phase = self
@@ -519,23 +524,33 @@ class Phase1:
         self.event_manager.update(dt, self)
         #mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
+        if self.espece and getattr(self.espece, "reproduction_system", None):
+            try:
+                self.espece.reproduction_system.update(dt)
+            except Exception as e:
+                print(f"[Reproduction] update error: {e}")
         
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
 
         def get_radius(ent):
+            if getattr(ent, "is_egg", False):
+                return 1
             vision = ent.sens.get("vision", 5)
             return max(2, int(1 + vision * 0.7))
 
         if self.fog:
             light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel
-            self.fog.recompute(self.entities, get_radius, light_level)
-        else :
+            observers = [e for e in self.entities if not getattr(e, "is_egg", False)]
+            self.fog.recompute(observers, get_radius, light_level)
+        else:
             self.fog = FogOfWar(self.world.width, self.world.height)
         self.view.fog = self.fog
 
 
         for e in self.entities:
+            if getattr(e, "is_egg", False):
+                continue
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
             e.faim_timer+=dt

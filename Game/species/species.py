@@ -63,6 +63,9 @@ class Espece:
         self.mutations = MutationManager(self)
         self.lvl_up = LevelUp(self)
 
+        # === Reproduction ===
+        self.reproduction_system = ReproductionSystem(self)
+
 
         # === Population ===
         self.individus = []
@@ -93,18 +96,23 @@ class Espece:
             return
 
         self.xp += amount
-        leveled_up = False
+        levels_gained = 0
 
         while self.xp >= self.xp_to_next:
             self.xp -= self.xp_to_next
             self.species_level += 1
-            leveled_up = True
+            levels_gained += 1
 
             # Courbe de progression : +25% à chaque niveau (modifiable)
             self.xp_to_next = int(self.xp_to_next * 1.25)
 
-        if leveled_up:
+        if levels_gained > 0:
             self.lvl_up.update_level(self.species_level)
+            for _ in range(levels_gained):
+                try:
+                    self.reproduction_system.on_species_level_up()
+                except Exception as e:
+                    print(f"[Reproduction] Impossible de créer un œuf: {e}")
 
     def xp_ratio(self) -> float:
         """
@@ -183,7 +191,7 @@ class Individu:
         # === Sous-systèmes individuels ===
         self.mutations = espece.mutations
         self.comportement = Comportement(self)
-        self.reproduction = ReproductionSystem(self)
+        self.reproduction = espece.reproduction_system
         self.sensors = Sensors(self)
 
         # === Rendu ===
