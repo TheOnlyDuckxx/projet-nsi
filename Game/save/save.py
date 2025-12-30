@@ -45,13 +45,14 @@ class SaveManager:
                 "species_level": getattr(espece, "species_level", 1),
                 "xp": getattr(espece, "xp", 0),
                 "xp_to_next": getattr(espece, "xp_to_next", 100),
+                "reproduction": getattr(getattr(espece, "reproduction_system", None), "to_dict", lambda: {})(),
             }
 
         # ---------- INDIVIDUS ----------
         individus_data = []
         for ent in getattr(phase1, "entities", []):
             # On ne prend que les "vrais" individus (qui ont une espèce)
-            if not hasattr(ent, "espece"):
+            if not hasattr(ent, "espece") or getattr(ent, "is_egg", False):
                 continue
 
             ind_data = {
@@ -190,6 +191,8 @@ class SaveManager:
                 # Reconstruire l'espèce
                 nom_espece = espece_data.get("nom") or "Espece"
                 espece = Espece(nom_espece)
+                if hasattr(espece, "reproduction_system"):
+                    espece.reproduction_system.bind_phase(phase1)
 
                 # Restaure les stats globales si présentes
                 for attr_name in [
@@ -204,6 +207,12 @@ class SaveManager:
                 espece.species_level = espece_data.get("species_level", 1)
                 espece.xp = espece_data.get("xp", 0)
                 espece.xp_to_next = espece_data.get("xp_to_next", 100)
+                try:
+                    repro_state = espece_data.get("reproduction")
+                    if repro_state is not None:
+                        espece.reproduction_system.load_state(repro_state, assets=phase1.assets)
+                except Exception as e:
+                    print(f"[Save] Échec chargement reproduction: {e}")
 
                 phase1.espece = espece
 

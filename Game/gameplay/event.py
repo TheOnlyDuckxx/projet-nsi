@@ -132,6 +132,7 @@ class EventManager:
         self.runtime_flags: Dict[str, Any] = {}
         self.python_events: Dict[str, EventDefinition] = {}
         self._load_definitions()
+        self._register_builtin_events()
 
     # ---------- Loading ----------
     def _load_definitions(self):
@@ -145,6 +146,18 @@ class EventManager:
             print(f"[Events] Aucun fichier {self.data_path}, aucun évènement data-driven chargé.")
         except Exception as e:
             print(f"[Events] Erreur de chargement des événements: {e}")
+
+    def _register_builtin_events(self):
+        protect_egg = EventDefinition(
+            id="protect_first_egg",
+            title="Protéger l'œuf",
+            short_text="Un œuf est apparu ! Protégez-le jusqu'à l'éclosion.",
+            long_text="Votre espèce vient de pondre son premier œuf. Assurez-vous qu'il ne soit pas détruit avant l'éclosion.",
+            unique=True,
+            already_met=False,
+            cooldown=0.0,
+        )
+        self.register_python_event(protect_egg)
 
     def register_python_event(self, definition: EventDefinition):
         """Permet d'ajouter un évènement défini en Python (condition/effets complexes)."""
