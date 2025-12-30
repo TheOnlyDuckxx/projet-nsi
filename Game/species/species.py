@@ -171,6 +171,8 @@ class Individu:
             "autonomie": True,
             "etat": "idle",
             "objectif": None,
+            "order_action": None,
+            "target_craft_id": None,
             "vision_portee": 100,
         }
 

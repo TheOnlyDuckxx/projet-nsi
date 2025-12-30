@@ -3,7 +3,7 @@ import pygame
 
 def draw_work_bar(self, screen, ent):
     w = getattr(ent, "work", None)
-    if not w or ent.ia["etat"] not in ("recolte", "construction"):
+    if not w or ent.ia["etat"] not in ("recolte", "interaction", "demonte"):
         return
     poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
     if not poly:
@@ -27,10 +27,14 @@ def draw_work_bar(self, screen, ent):
 
 def draw_inspection_panel(self, screen):
     """Panneau d'inspection détaillé pour l'entité sélectionnée"""
-    if not self.selected or self.selected[0] != "entity":
-        return
-
-    ent = self.selected[1]
+    ent = None
+    if getattr(self, "selected_entities", None):
+        if self.selected_entities:
+            ent = self.selected_entities[0]
+    if ent is None:
+        if not self.selected or self.selected[0] != "entity":
+            return
+        ent = self.selected[1]
 
     # Configuration du panneau
     panel_width = 350

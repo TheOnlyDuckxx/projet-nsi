@@ -456,3 +456,4 @@ class BottomHUD:
         for surf in menu["cost_surfs"]:
             y += gap
             screen.blit(surf, (x, y))
+            y += surf.get_height()

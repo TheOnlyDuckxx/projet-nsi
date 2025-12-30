@@ -1,5 +1,6 @@
 # Game/species/comportement.py
 import json
+import math
 import random
 from Game.core.utils import resource_path
 from Game.ui.hud.notification import add_notification
@@ -98,6 +99,20 @@ class Comportement:
     # fallback basique
 
     # ---------- API publique ----------
+    def _dismantle_drops(self, craft_def):
+        drops = []
+        if not craft_def:
+            return drops
+        cost = craft_def.get("cost", {}) or {}
+        for res, amt in cost.items():
+            try:
+                qty = int(math.ceil(float(amt) * 0.3))
+            except Exception:
+                qty = 0
+            if qty > 0:
+                drops.append((res, qty))
+        return drops
+
     def _prop_key(self, i, j, pid):
         # normalise pour comparer proprement
         return (int(i), int(j), str(pid))
@@ -176,11 +191,13 @@ class Comportement:
 
         # si on était en "recolte" ou en chemin vers un prop, repasse idle
         etat = self.e.ia.get("etat")
-        if etat in ("recolte", "se_deplace_vers_prop", "construction", "se_deplace_vers_construction"):
+        if etat in ("recolte", "se_deplace_vers_prop", "construction", "se_deplace_vers_construction", "interaction", "demonte"):
             self.e.ia["etat"] = "idle"
 
         # on oublie l'objectif lié
         self.e.ia["objectif"] = None
+        self.e.ia["order_action"] = None
+        self.e.ia["target_craft_id"] = None
 
     def try_eating(self):
         item = self.e.find_item_in_inventory("berries")
@@ -225,12 +242,87 @@ class Comportement:
                 # Finalise la construction sur la carte
                 pid = cell.get("pid")
                 try:
-                    world.overlay[int(w["j"])][int(w["i"])] = pid
+                    world.overlay[int(w["j"])][int(w["i"])] = {
+                        "pid": pid,
+                        "state": "built",
+                        "craft_id": cell.get("craft_id"),
+                        "name": cell.get("name"),
+                        "built": True,
+                        "cost": cell.get("cost"),
+                    }
                 except Exception:
                     pass
                 self.e.work = None
                 self.e.ia["etat"] = "idle"
                 self.e.ia["objectif"] = None
+                self.e.ia["order_action"] = None
+                self.e.ia["target_craft_id"] = None
+            return
+
+        if w.get("type") == "interact":
+            if self.e.ia.get("etat") != "interaction":
+                return
+            w["t"] = float(w.get("t", 0.0)) + dt
+            t_need = max(0.2, float(w.get("t_need", 0.6)))
+            w["progress"] = min(1.0, w["t"] / t_need)
+            if w["t"] < t_need:
+                return
+
+            message = w.get("message")
+            if message:
+                add_notification(message)
+
+            interaction_conf = w.get("interaction_conf") or {}
+            interaction_type = interaction_conf.get("type")
+            phase = getattr(self.e, "phase", None)
+            if interaction_type == "warehouse" and phase:
+                moved = phase.deposit_to_warehouse(self.e.carrying)
+                if moved > 0:
+                    add_notification(f"{self.e.nom} a stocké {moved} ressources.")
+            elif callable(interaction_conf.get("on_complete")):
+                try:
+                    interaction_conf["on_complete"](self.e, phase)
+                except Exception:
+                    pass
+
+            self.e.work = None
+            self.e.ia["etat"] = "idle"
+            self.e.ia["objectif"] = None
+            self.e.ia["order_action"] = None
+            self.e.ia["target_craft_id"] = None
+            return
+
+        if w.get("type") == "dismantle":
+            if self.e.ia.get("etat") != "demonte":
+                return
+            w["t"] = float(w.get("t", 0.0)) + dt
+            t_need = max(0.3, float(w.get("t_need", 1.0)))
+            w["progress"] = min(1.0, w["t"] / t_need)
+            if w["t"] < t_need:
+                return
+
+            taken_total = 0
+            drops = w.get("drops", [])
+            if drops:
+                for item_id, qty in drops:
+                    took = self._add_to_inventory(item_id, int(qty))
+                    taken_total += took
+            if taken_total > 0:
+                self.e.add_xp(taken_total * 8)
+            elif drops:
+                add_notification(f"{self.e.nom} : inventaire plein !")
+
+            try:
+                if world and getattr(world, "overlay", None):
+                    world.overlay[int(w.get("j", 0))][int(w.get("i", 0))] = 0
+            except Exception:
+                pass
+
+            self.e.work = None
+            self.e.ia["etat"] = "idle"
+            self.e.ia["objectif"] = None
+            self.e.ia["order_action"] = None
+            self.e.ia["target_craft_id"] = None
             return
 
         if self.e.ia.get("etat") != "recolte":
@@ -244,7 +336,6 @@ class Comportement:
 
         # Récolte terminée → ajoute les items (sous limite de poids)
         taken_total = 0
-        print(self.e.espece.xp)
         for item_id, qty in w["drops"]:
             took = self._add_to_inventory(item_id, int(qty))
             taken_total += took
@@ -257,6 +348,8 @@ class Comportement:
             add_notification(f"{self.e.nom} : inventaire plein !")
             self.e.work = None
             self.e.ia["etat"] = "idle"
+            self.e.ia["order_action"] = None
+            self.e.ia["target_craft_id"] = None
             return
         self.e.add_xp(taken_total*10)
 
@@ -269,15 +362,69 @@ class Comportement:
 
         self.e.work = None
         self.e.ia["etat"] = "idle"
+        self.e.ia["order_action"] = None
+        self.e.ia["target_craft_id"] = None
 
+    # ---------- Interactions avec les constructions ----------
+    def interact_with_craft(self, objectif, world, craft_def=None):
+        if not objectif or objectif[0] != "prop":
+            self.e.ia["etat"] = "idle"
+            self.e.ia["order_action"] = None
+            self.e.ia["objectif"] = None
+            return
 
-        # Supprime le prop de la carte
-        try:
-            if world and getattr(world, "overlay", None):
-                if 0 <= w["j"] < len(world.overlay) and 0 <= w["i"] < len(world.overlay[0]):
-                    world.overlay[w["j"]][w["i"]] = 0
-        except Exception:
-            pass
+        i, j, pid = objectif[1]
+        craft_def = craft_def or {}
+        interaction_conf = craft_def.get("interaction")
+        message = None
+        if isinstance(interaction_conf, dict):
+            message = interaction_conf.get("message")
+        elif isinstance(interaction_conf, str):
+            message = interaction_conf
 
-        self.e.work = None
-        self.e.ia["etat"] = "idle"
+        duration = 0.6
+        self.e.work = {
+            "type": "interact",
+            "i": int(i),
+            "j": int(j),
+            "pid": pid,
+            "t": 0.0,
+            "t_need": float(duration),
+            "progress": 0.0,
+            "message": message,
+            "interaction_conf": interaction_conf if isinstance(interaction_conf, dict) else {},
+            "craft_id": craft_def.get("id") or craft_def.get("craft_id"),
+        }
+        self.e.ia["etat"] = "interaction"
+        self.e.ia["order_action"] = "interact"
+
+    def dismantle_craft(self, objectif, world, craft_def=None):
+        if not objectif or objectif[0] != "prop":
+            self.e.ia["etat"] = "idle"
+            self.e.ia["order_action"] = None
+            self.e.ia["objectif"] = None
+            return
+        i, j, pid = objectif[1]
+        drops = self._dismantle_drops(craft_def)
+
+        base = 2.4
+        force = float(self.e.physique.get("force", 5))
+        dex   = float(self.e.mental.get("dexterite", 5))
+        endu  = float(self.e.physique.get("endurance", 5))
+        accel = (0.6 + 0.08 * force + 0.06 * dex + 0.04 * endu) / 5.0
+        accel = max(0.3, min(3.0, accel))
+        duration = max(0.5, base / accel)
+
+        self.e.work = {
+            "type": "dismantle",
+            "i": int(i),
+            "j": int(j),
+            "pid": pid,
+            "t": 0.0,
+            "t_need": float(duration),
+            "progress": 0.0,
+            "drops": drops,
+            "craft_name": craft_def.get("name") if craft_def else None,
+        }
+        self.e.ia["etat"] = "demonte"
+        self.e.ia["order_action"] = "dismantle"

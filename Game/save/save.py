@@ -120,6 +120,7 @@ class SaveManager:
             "fog": fog_data,
             "day_night": day_night_data,   # <-- NEW
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
+            "warehouse": getattr(phase1, "warehouse", None),
         }
 
 
@@ -251,6 +252,11 @@ class SaveManager:
             phase1.view.cam_x = camx
             phase1.view.cam_y = camy
             phase1.view.zoom = data.get("zoom", 1.0)
+
+            # Re-lie la phase aux entités pour les interactions personnalisées
+            attach_fn = getattr(phase1, "_attach_phase_to_entities", None)
+            if callable(attach_fn):
+                attach_fn()
             # phase1.view.clamp_camera() si tu as ça
 
             # ----------------- Brouillard de guerre -----------------
@@ -269,6 +275,11 @@ class SaveManager:
                 if mgr is not None:
                     mgr.load_state(events_state)
             
+            # ----------------- Entrepôt partagé -----------------
+            warehouse_data = data.get("warehouse")
+            if warehouse_data is not None:
+                phase1.warehouse = dict(warehouse_data)
+
             # ----------------- Jour / Nuit -----------------
             dn_data = data.get("day_night")
             if dn_data is not None:
