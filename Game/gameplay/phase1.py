@@ -365,6 +365,7 @@ class Phase1:
                 # --- CLIC GAUCHE ---
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = pygame.mouse.get_pos()
+                    keys_state = pygame.key.get_pressed()
 
                     # 1) Mode "placement de craft"
                     if self.selected_craft is not None:
@@ -403,6 +404,13 @@ class Phase1:
                         self._ui_click_blocked = True
                         self._reset_drag_selection()
                         continue
+
+                    if keys_state[pygame.K_h]:
+                        hit = self.view.pick_at(mx, my)
+                        if hit and hit[0] == "prop":
+                            self._describe_craft_prop(hit[1])
+                            self._reset_drag_selection()
+                            continue
 
                     self._ui_click_blocked = False
                     self._dragging_selection = True
@@ -696,6 +704,54 @@ class Phase1:
             moved += qty
         inventory.clear()
         return moved
+
+    def _craft_def_from_cell(self, cell):
+        craft_def = None
+        if isinstance(cell, dict):
+            cid = cell.get("craft_id")
+            if cid and self.craft_system:
+                craft_def = self.craft_system.crafts.get(cid, {})
+            fallback = {
+                "name": cell.get("name") or cell.get("craft_id"),
+                "craft_id": cell.get("craft_id"),
+                "cost": cell.get("cost", {}),
+                "interaction": cell.get("interaction"),
+            }
+            if craft_def:
+                merged = dict(fallback)
+                merged.update(craft_def)
+                return merged
+            return fallback if fallback.get("name") or fallback.get("craft_id") else None
+        return None
+
+    def _describe_craft_prop(self, payload):
+        if not self.world:
+            return
+        i, j, pid = payload
+        try:
+            cell = self.world.overlay[j][i]
+        except Exception:
+            cell = None
+        craft_def = self._craft_def_from_cell(cell)
+        if not craft_def:
+            add_notification(f"Prop {pid} : aucune information.")
+            return
+        name = craft_def.get("name") or craft_def.get("craft_id") or f"Prop {pid}"
+        desc = craft_def.get("description") or ""
+        cost = craft_def.get("cost", {}) or {}
+        add_notification(f"[Info] {name}")
+        if desc:
+            add_notification(desc)
+        if cost:
+            parts = ", ".join(f"{k}: {v}" for k, v in cost.items())
+            add_notification(f"Coût: {parts}")
+        interaction = craft_def.get("interaction") or {}
+        if isinstance(interaction, dict) and interaction.get("type") == "warehouse":
+            if not self.warehouse:
+                add_notification("Entrepôt vide.")
+            else:
+                stock = ", ".join(f"{k}: {v}" for k, v in self.warehouse.items())
+                add_notification(f"Stock: {stock}")
 
     def _handle_single_left_click(self, mx: int, my: int):
         hit = self.view.pick_at(mx, my)
