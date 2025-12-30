@@ -68,6 +68,9 @@ class Phase1:
         self.warehouse: dict[str, int] = {}
         self.info_windows: list[DraggableWindow] = []
         self.construction_assign_radius = 12.0
+        self.inspect_cursor_path = resource_path("Game/assets/vfx/9.cur")
+        self.default_cursor_path = resource_path("Game/assets/vfx/1.cur")
+        self.inspect_mode_active = False
 
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
@@ -84,6 +87,8 @@ class Phase1:
                 pass
         # Nettoie les fenêtres d'info éventuelles (pour éviter les références périmées)
         self.info_windows = []
+        # Réinitialise le curseur
+        self._set_cursor(self.default_cursor_path)
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -237,6 +242,7 @@ class Phase1:
             if self.load():
                 if self.espece and not self.bottom_hud:
                     self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+                self._set_cursor(self.default_cursor_path)
                 return
 
         # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
@@ -329,6 +335,7 @@ class Phase1:
             self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
         else:
             self.bottom_hud.species = self.espece
+        self._set_cursor(self.default_cursor_path)
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -344,12 +351,27 @@ class Phase1:
             return
 
         for e in events:
+            # Fenêtres d'information : priorité de gestion
+            consumed = False
+            for win in list(self.info_windows):
+                if win.closed:
+                    self.info_windows.remove(win)
+                    continue
+                if win.handle_event(e):
+                    consumed = True
+                    break
+            if consumed:
+                continue
+
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
                 elif e.key == pygame.K_h:
                     self.props_transparency_active = True
                     self.view.set_props_transparency(True)
+                elif e.key == pygame.K_i:
+                    self.inspect_mode_active = True
+                    self._set_cursor(self.inspect_cursor_path)
                 elif e.key == pygame.K_r:
                     self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
                     self.view.set_world(self.world)
@@ -364,6 +386,9 @@ class Phase1:
             elif e.type == pygame.KEYUP and e.key == pygame.K_h:
                 self.props_transparency_active = False
                 self.view.set_props_transparency(False)
+            elif e.type == pygame.KEYUP and e.key == pygame.K_i:
+                self.inspect_mode_active = False
+                self._set_cursor(self.default_cursor_path)
 
             if not self.paused:
                 self.view.handle_event(e)
@@ -699,6 +724,13 @@ class Phase1:
                 return True
         return False
 
+    def _set_cursor(self, cur_path: str | None):
+        try:
+            if cur_path:
+                pygame.mouse.set_cursor(pygame.cursors.Cursor(cur_path))
+        except Exception:
+            pass
+
     def _get_order_entities(self) -> list:
         if self.selected_entities:
             return [e for e in self.selected_entities if e in self.entities]
@@ -796,6 +828,8 @@ class Phase1:
             i_j = self._fallback_pick_tile(mx, my)
             self.selected = ("tile", i_j) if i_j else None
             self._set_selected_entities([])
+        if not self.selected and not self.selected_entities:
+            self.info_windows = []
 
     def _draw_selection_box(self, screen: pygame.Surface):
         if not self._drag_select_rect or self._drag_select_rect.width <= 0 or self._drag_select_rect.height <= 0:
