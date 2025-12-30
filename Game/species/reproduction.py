@@ -25,12 +25,13 @@ class EggRenderer:
     def _get_img(self) -> pygame.Surface:
         if self.assets is None:
             return self._placeholder_surface()
-        try:
-            img = self.assets.get_image("egg")
-            if img is not None:
-                return img
-        except Exception:
-            pass
+        for key in ("oeuf1", "egg"):
+            try:
+                img = self.assets.get_image(key)
+                if img is not None:
+                    return img
+            except Exception:
+                continue
         return self._placeholder_surface()
 
     def get_draw_surface_and_rect(self, view, world, tx: float, ty: float):
@@ -87,11 +88,35 @@ class Egg:
         self.renderer = EggRenderer(assets)
         self.reproduction = None  # défini par le système après création
 
+        # Attributs minimaux pour le HUD/inspection
+        self.jauges = {
+            "sante": self.durability,
+            "energie": self.durability,
+            "faim": 0,
+            "soif": 0,
+        }
+        self.physique = {"weight_limit": 0}
+        self.sens = {}
+        self.mental = {}
+        self.social = {}
+        self.genetique = {}
+        self.carrying: list = []
+
     def take_damage(self, amount: float) -> None:
         self.durability = max(0.0, self.durability - max(0.0, float(amount)))
+        self.jauges["sante"] = self.durability
+        self.jauges["energie"] = self.durability
 
     def is_destroyed(self) -> bool:
         return self.durability <= 0
+
+    def remaining_hatch_minutes(self) -> float:
+        repro = getattr(self, "reproduction", None)
+        if repro and hasattr(repro, "_current_game_minutes"):
+            now = repro._current_game_minutes()
+        else:
+            now = 0.0
+        return max(0.0, float(self.hatch_time) - float(now))
 
     def draw(self, screen, view, world):
         if self.renderer:

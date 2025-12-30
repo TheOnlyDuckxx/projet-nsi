@@ -56,6 +56,51 @@ def draw_inspection_panel(self, screen):
 
     y_offset = 10
 
+    if getattr(ent, "is_egg", False):
+        title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
+        panel_surf.blit(title, (10, y_offset))
+        y_offset += 30
+
+        pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
+        y_offset += 12
+
+        pos_text = text_font.render(f"Position: ({int(ent.x)}, {int(ent.y)})", True, (200, 200, 200))
+        panel_surf.blit(pos_text, (10, y_offset))
+        y_offset += 22
+
+        dur_percent = ent.durability / max(1.0, ent.max_durability)
+        dur_text = text_font.render(
+            f"Durabilité: {ent.durability:.0f}/{ent.max_durability:.0f}",
+            True,
+            (220, 200, 120)
+        )
+        panel_surf.blit(dur_text, (10, y_offset))
+        y_offset += 18
+        bar_w, bar_h = 240, 12
+        bar_x, bar_y = 10, y_offset
+        pygame.draw.rect(panel_surf, (40, 40, 50), (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+        pygame.draw.rect(panel_surf, (180, 210, 120), (bar_x, bar_y, int(bar_w * dur_percent), bar_h), border_radius=3)
+        pygame.draw.rect(panel_surf, (100, 100, 120), (bar_x, bar_y, bar_w, bar_h), 1, border_radius=3)
+        y_offset += 22
+
+        rem_min = ent.remaining_hatch_minutes() if hasattr(ent, "remaining_hatch_minutes") else None
+        if rem_min is not None:
+            hours = int(rem_min // 60)
+            minutes = int(rem_min % 60)
+            time_text = text_font.render(
+                f"Éclosion dans ~ {hours}h {minutes:02d}m",
+                True,
+                (200, 220, 255),
+            )
+            panel_surf.blit(time_text, (10, y_offset))
+            y_offset += 20
+
+        hint_text = text_font.render("Protégez l'œuf jusqu'à l'éclosion.", True, (180, 180, 200))
+        panel_surf.blit(hint_text, (10, y_offset))
+
+        screen.blit(panel_surf, (panel_x, panel_y))
+        return
+
     # === TITRE ===
     title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
     panel_surf.blit(title, (10, y_offset))
