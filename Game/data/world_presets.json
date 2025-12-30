@@ -3,7 +3,7 @@
         "Custom": {
             "world_name": "nom",
             "seed": "Aléatoire",
-            "world_size": "Moyenne",
+            "world_size": "Petite",
             "water_coverage": "Tempéré",
             "temperature": "Tempéré",
             "atmosphere_density": "Normale",

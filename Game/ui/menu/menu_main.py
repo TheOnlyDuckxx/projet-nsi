@@ -234,7 +234,7 @@ class OptionsMenu(BaseMenu):
 
 class MainMenu(BaseMenu):
     def __init__(self, app):
-        super().__init__(app, title="EvoNSI")
+        super().__init__(app, title="The Long Evolution")
 
         # ---------- Helpers ----------
         def clamp(v, a, b):
@@ -312,7 +312,7 @@ class MainMenu(BaseMenu):
         # Liste des actions (avec ou sans sauvegarde)
         actions = []
         if self.has_save:
-            actions.append(("▶ REPRENDRE LA PARTIE", lambda: self.app.change_state("PHASE1", load_save=True)))
+            actions.append(("REPRENDRE LA PARTIE", lambda: self.app.change_state("PHASE1", load_save=True)))
         actions += [
             ("NOUVELLE PARTIE", lambda: self.app.change_state("CREATION")),
             ("OPTIONS", lambda: self.app.change_state("OPTIONS")),
