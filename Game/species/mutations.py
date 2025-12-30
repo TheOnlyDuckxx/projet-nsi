@@ -11,6 +11,16 @@ class MutationManager:
         self.temporaires = {}      # { nom : timestamp_expiration }
         self.data = self.load_mutations()
 
+    def _mutations_en_cours(self) -> set[str]:
+        """
+        Retourne l'ensemble des mutations actuellement appliquées à l'espèce,
+        qu'elles soient permanentes, temporaires ou définies comme mutations
+        de base au démarrage.
+        """
+        base = getattr(self.espece, "base_mutations", []) or []
+        temporaires = self.temporaires.keys()
+        return set(self.actives) | set(base) | set(temporaires)
+
     # -------------------------
     # Chargement JSON
     # -------------------------
@@ -149,8 +159,10 @@ class MutationManager:
         if mutation is None:
             return False
 
-        # déjà active → pas proposée
-        if nom in self.actives:
+        mutations_actuelles = self._mutations_en_cours()
+
+        # déjà acquise → pas proposée
+        if nom in mutations_actuelles:
             return False
 
         conditions = mutation.get("conditions", [])
@@ -165,7 +177,7 @@ class MutationManager:
 
         # aucune incompatibilité ne doit être active
         for inc in incompatibles:
-            if inc in self.actives:
+            if inc in mutations_actuelles:
                 return False
 
         return True
