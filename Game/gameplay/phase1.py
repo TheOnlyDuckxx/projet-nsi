@@ -18,6 +18,7 @@ from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
+from Game.ui.hud.draggable_window import DraggableWindow
 
 class Phase1:
     def __init__(self, app):
@@ -64,6 +65,8 @@ class Phase1:
         self.selected_craft = None
         self.construction_sites: dict[tuple[int, int], dict] = {}
         self.warehouse: dict[str, int] = {}
+        self.info_windows: list[DraggableWindow] = []
+        self.construction_assign_radius = 12.0
 
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
@@ -78,6 +81,8 @@ class Phase1:
                 ent.phase = self
             except Exception:
                 pass
+        # Nettoie les fenêtres d'info éventuelles (pour éviter les références périmées)
+        self.info_windows = []
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -405,7 +410,7 @@ class Phase1:
                         self._reset_drag_selection()
                         continue
 
-                    if keys_state[pygame.K_h]:
+                    if keys_state[pygame.K_i]:
                         hit = self.view.pick_at(mx, my)
                         if hit and hit[0] == "prop":
                             self._describe_craft_prop(hit[1])
@@ -503,7 +508,7 @@ class Phase1:
             self.fog = FogOfWar(self.world.width, self.world.height)
         self.view.fog = self.fog
 
-    
+
         for e in self.entities:
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
@@ -624,6 +629,14 @@ class Phase1:
             add_notification(self.save_message)
             self.save_message = None
 
+        # Fenêtres d'information
+        if self.info_windows:
+            for win in list(self.info_windows):
+                if win.closed:
+                    self.info_windows.remove(win)
+                    continue
+                win.draw(screen)
+
 
     # ---------- SELECTION HELPERS ----------
     def _entity_screen_rect(self, ent) -> Optional[pygame.Rect]:
@@ -642,6 +655,8 @@ class Phase1:
             self.selected = ("entity", valid[0])
         elif self.selected and self.selected[0] == "entity":
             self.selected = None
+        if not self.selected and not self.selected_entities:
+            self.info_windows = []
 
     def _select_entities_in_rect(self, rect: pygame.Rect) -> None:
         selected = []
@@ -677,6 +692,9 @@ class Phase1:
                 if self.bottom_hud.context_menu["rect"].collidepoint(pos):
                     return True
             if self.bottom_hud.visible and self.bottom_hud.panel_rect.collidepoint(pos):
+                return True
+        for win in self.info_windows:
+            if not win.closed and win.rect.collidepoint(pos):
                 return True
         return False
 
@@ -733,25 +751,33 @@ class Phase1:
         except Exception:
             cell = None
         craft_def = self._craft_def_from_cell(cell)
-        if not craft_def:
-            add_notification(f"Prop {pid} : aucune information.")
-            return
-        name = craft_def.get("name") or craft_def.get("craft_id") or f"Prop {pid}"
-        desc = craft_def.get("description") or ""
-        cost = craft_def.get("cost", {}) or {}
-        add_notification(f"[Info] {name}")
+        name = craft_def.get("name") if craft_def else None
+        if not name:
+            name = f"Prop {pid}"
+        desc = craft_def.get("description") if craft_def else None
+        interaction = craft_def.get("interaction") if craft_def else None
+
+        content_lines: list[str] = []
         if desc:
-            add_notification(desc)
-        if cost:
-            parts = ", ".join(f"{k}: {v}" for k, v in cost.items())
-            add_notification(f"Coût: {parts}")
-        interaction = craft_def.get("interaction") or {}
+            content_lines.extend(desc.split("\n"))
+        else:
+            content_lines.append("Aucune description.")
+
+        # Infos spéciales entrepôt
         if isinstance(interaction, dict) and interaction.get("type") == "warehouse":
             if not self.warehouse:
-                add_notification("Entrepôt vide.")
+                content_lines.append("Entrepôt : aucun stock.")
             else:
-                stock = ", ".join(f"{k}: {v}" for k, v in self.warehouse.items())
-                add_notification(f"Stock: {stock}")
+                content_lines.append("Contenu de l'entrepôt :")
+                for res, qty in self.warehouse.items():
+                    content_lines.append(f"- {res} : {qty}")
+
+        title_surf = self.font.render(name, True, (245, 245, 245))
+        body_surfs = [self.small_font.render(line, True, (225, 225, 225)) for line in content_lines]
+
+        mx, my = pygame.mouse.get_pos()
+        win = DraggableWindow(title_surf, body_surfs, (mx, my))
+        self.info_windows.append(win)
 
     def _handle_single_left_click(self, mx: int, my: int):
         hit = self.view.pick_at(mx, my)
@@ -1232,6 +1258,12 @@ class Phase1:
                 continue
             if not self._is_construction_site(*tile):
                 break
+            # Filtre de distance pour éviter d'envoyer les entités trop loin
+            dx = int(ent.x) - tile[0]
+            dy = int(ent.y) - tile[1]
+            dist2 = dx * dx + dy * dy
+            if dist2 > (self.construction_assign_radius ** 2):
+                continue
             self._ensure_move_runtime(ent)
             target = self._find_nearest_walkable(tile, forbidden=reserved)
             if not target:
