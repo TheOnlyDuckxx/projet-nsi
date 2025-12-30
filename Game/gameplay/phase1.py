@@ -48,6 +48,7 @@ class Phase1:
         # UI/HUD
         self.bottom_hud: BottomHUD | None = None
         self.font = pygame.font.SysFont("consolas", 16)
+        self.small_font = pygame.font.SysFont("consolas", 12)
         self.menu_button_rect = None
         self.ui_menu_open = False
         self.right_hud = LeftHUD(self)
