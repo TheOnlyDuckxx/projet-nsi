@@ -18,14 +18,20 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         16: "prop_bush",
         17: "prop_berry_bush",
         18: "prop_reeds",
-        #19: "prop_driftwood",
+        19: "prop_driftwood",
         20: "prop_flower",
         21: "prop_stump",
-        #22: "prop_log",
+        22: "prop_log",
         23: "prop_boulder",
         25:"prop_flower2",
         26:"prop_flower3",
-        24: "prop_entrepot",
+        102: "prop_entrepot",
+        28: "prop_blueberry_bush",
+        32: "prop_clay",
+        33: "prop_vine",
+        34: "prop_mushroom1",
+        35: "prop_mushroom2",
+        36: "prop_mushroom3", 
     }
     
     return mapping.get(pid, "prop_tree_2")

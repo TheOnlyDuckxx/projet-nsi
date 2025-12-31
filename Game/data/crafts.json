@@ -23,11 +23,11 @@
     "name": "Entrepot primitif",
     "description": "Stockage simple pour éviter de perdre des ressources au sol.",
     "image": "entrepot_primitif",
-    "sprite": "prop_warehouse_small",
+    "sprite": "prop_entrepot",
     "cost": {
-      "wood": 18,
-      "stone": 6,
-      "fiber": 6
+      "wood": 0,
+      "stone": 0,
+      "fiber": 0
     },
     "interaction": {
       "type": "warehouse",

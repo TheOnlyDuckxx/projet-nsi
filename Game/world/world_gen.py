@@ -21,6 +21,8 @@ ProgressCb = Optional[Callable[[float, str], None]]
 
 def get_prop_id(name: str) -> int:
     _MAP = {
+        "tree_3":8,
+        "tree_1":9,
         "tree_2": 10,
         "tree_dead": 12,
         "rock": 13,
@@ -36,7 +38,7 @@ def get_prop_id(name: str) -> int:
         "boulder": 23,     # gros rocher
         "flower2": 25,
         "flower3": 26,
-        "entrepot": 24,
+        "entrepot": 102,
         # A faire
         "blueberry_bush":28,
         "ore_copper": 29,     # veine de cuivre
@@ -44,11 +46,13 @@ def get_prop_id(name: str) -> int:
         "ore_gold": 31,       # veine d'or (rare)
         "clay_pit": 32,       # dépôt d'argile
         "vine": 33,           # liane (fibres)
-        "mushroom": 34,       # champignon (nourriture + risque)
-        "bone_pile": 35,      # tas d'os (cuir / outils)
-        "nest": 36,           # nid (graines + parfois nourriture)
-        "beehive": 37,        # ruche (nourriture rare, risque piqûre plus tard)
-        "freshwater_pool": 38 # mare (eau)
+        "mushroom1": 34,
+        "mushroom2": 35,
+        "mushroom3": 36,       # champignon (nourriture + risque)
+        "bone_pile": 37,      # tas d'os (cuir / outils)
+        "nest": 38,           # nid (graines + parfois nourriture)
+        "beehive": 39,        # ruche (nourriture rare, risque piqûre plus tard)
+        "freshwater_pool": 40 # mare (eau)
     }
     return _MAP.get(name, _MAP["tree_2"])
 
