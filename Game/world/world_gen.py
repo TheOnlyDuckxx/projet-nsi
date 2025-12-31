@@ -295,9 +295,15 @@ def smoothstep(t: float) -> float:
     return t * t * (3 - 2 * t)
 
 def value_noise2d(ix: int, iy: int, seed: int) -> float:
-    # Value-noise cheap mais suffisant pour un MVP (déterministe)
-    rnd = random.Random((ix * 73856093) ^ (iy * 19349663) ^ seed)
-    return rnd.uniform(-1.0, 1.0)
+    """Value-noise déterministe ultra-rapide (hash -> float [-1,1]).
+    Remplace l'ancienne version qui instançait random.Random à chaque appel (très coûteux).
+    """
+    n = (ix * 73856093) ^ (iy * 19349663) ^ (seed * 83492791)
+    n &= 0xFFFFFFFF
+    n ^= (n >> 13)
+    n = (n * 1274126177) & 0xFFFFFFFF
+    n ^= (n >> 16)
+    return (n / 0xFFFFFFFF) * 2.0 - 1.0
 
 def fbm2d(x: float, y: float, octaves: int, seed: int) -> float:
     amp, freq = 1.0, 1.0
@@ -321,6 +327,54 @@ def fbm2d(x: float, y: float, octaves: int, seed: int) -> float:
         amp *= 0.5
         freq *= 2.0
     return val / max(norm, 1e-9)
+
+
+# --------- Distance maps (optimisation) ---------
+from collections import deque
+from array import array
+
+def distance_to_mask_4(mask: List[List[int]]) -> List[array]:
+    """Distance de Manhattan (4-voisins) jusqu'à la cellule la plus proche où mask==1.
+    - O(W*H)
+    - Renvoie une matrice dist en array('H') (mémoire réduite).
+    """
+    H = len(mask)
+    W = len(mask[0]) if H else 0
+    INF = 65535
+    dist: List[array] = [array('H', [INF]) * W for _ in range(H)]
+    q = deque()
+
+    for y in range(H):
+        row_m = mask[y]
+        row_d = dist[y]
+        for x in range(W):
+            if row_m[x]:
+                row_d[x] = 0
+                q.append((x, y))
+
+    # BFS multi-source
+    while q:
+        x, y = q.popleft()
+        dnext = dist[y][x] + 1
+        # voisins 4
+        ny = y - 1
+        if ny >= 0 and dist[ny][x] > dnext:
+            dist[ny][x] = dnext
+            q.append((x, ny))
+        ny = y + 1
+        if ny < H and dist[ny][x] > dnext:
+            dist[ny][x] = dnext
+            q.append((x, ny))
+        nx = x - 1
+        if nx >= 0 and dist[y][nx] > dnext:
+            dist[y][nx] = dnext
+            q.append((nx, y))
+        nx = x + 1
+        if nx < W and dist[y][nx] > dnext:
+            dist[y][nx] = dnext
+            q.append((nx, y))
+
+    return dist
 
 
 # --------- Générateur principal (île) ---------
@@ -517,10 +571,24 @@ class WorldGenerator:
             report(acc + w_biome * ((y+1)/H), "Attribution des biomes…")
         acc += w_biome
 
+
+        # -------------------------------
+        # Optimisation : pré-calcul des distances (Manhattan) une seule fois
+        # (évite des scans en carré coûteux par tuile)
+        # -------------------------------
+        report(acc + 0.01, "Pré-calcul distances…")
+        land_mask = [[1 if levels[y][x] > 0 else 0 for x in range(W)] for y in range(H)]
+        ocean_mask = [[1 if levels[y][x] == 0 else 0 for x in range(W)] for y in range(H)]
+        fresh_mask = [[1 if fresh_type[y][x] > 0 else 0 for x in range(W)] for y in range(H)]
+
+        dist_to_land = distance_to_mask_4(land_mask)
+        dist_to_ocean = distance_to_mask_4(ocean_mask)
+        dist_to_fresh = distance_to_mask_4(fresh_mask)
+
         for y in range(H):
             for x in range(W):
                 if biome[y][x] == "ocean":
-                    d = self._distance_to_land(x, y, levels)
+                    d = dist_to_land[y][x]
                     if d < 2:   ground_id[y][x] = get_tile_id("water_shallow")
                     elif d < 5: ground_id[y][x] = get_tile_id("water")
                     else:       ground_id[y][x] = get_tile_id("water_deep")
@@ -545,14 +613,14 @@ class WorldGenerator:
 
         for y in range(1, H-1):
             for x in range(1, W-1):
-                if overlay[y][x] != 0:
+                if levels[y][x] <= 0:
                     continue
 
                 b = biome[y][x]
                 cm = cluster_mask(x, y)
-                near_water = (self._distance_to_water(x, y, levels) <= 2)
+                near_water = (dist_to_ocean[y][x] <= 2)
 
-                near_fresh = (self._distance_to_freshwater(x, y, fresh_type) <= 2)
+                near_fresh = (dist_to_fresh[y][x] <= 2)
                 on_fresh = (fresh_type[y][x] > 0)
 
                 # -------------------------------
@@ -992,23 +1060,37 @@ class WorldGenerator:
             x, y = nx, ny
 
 
+
     def _pick_river_sources(self, levels, land_h, rng, count_range=(3,6)):
         H, W = len(levels), len(levels[0])
+
+        # Optimisation : distance à l'océan calculée en O(W*H) (au lieu d'un scan par tuile)
+        ocean_mask = [[1 if levels[y][x] == 0 else 0 for x in range(W)] for y in range(H)]
+        dist_to_ocean = distance_to_mask_4(ocean_mask)
+
         cand = []
         # candidats haut perchés, loin des côtes
         for y in range(H):
+            row_levels = levels[y]
+            row_h = land_h[y]
+            row_d = dist_to_ocean[y]
             for x in range(W):
-                if levels[y][x] >= 2 and land_h[y][x] > 0.55 and self._distance_to_water(x,y,levels) > 5:
-                    cand.append((land_h[y][x], x, y))
+                if row_levels[x] >= 2 and row_h[x] > 0.55 and row_d[x] > 5:
+                    cand.append((row_h[x], x, y))
+
         cand.sort(reverse=True)  # plus hauts d'abord
         sources = []
         want = rng.randint(*count_range)
-        min_dist = max(10, min(W,H)//12)
-        for h,x,y in cand:
-            if len(sources) >= want: break
-            if all((abs(x-sx) + abs(y-sy)) >= min_dist for sx,sy in sources):
-                sources.append((x,y))
+        min_dist = max(10, min(W, H) // 12)
+
+        for h, x, y in cand:
+            if len(sources) >= want:
+                break
+            if all((abs(x - sx) + abs(y - sy)) >= min_dist for sx, sy in sources):
+                sources.append((x, y))
+
         return sources
+
 
     def _distance_to_freshwater(self, x, y, fresh_type):
         H, W = len(fresh_type), len(fresh_type[0])
