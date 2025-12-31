@@ -264,6 +264,20 @@ class ReproductionSystem:
         if assets is None and self.phase:
             assets = getattr(self.phase, "assets", None)
         new_ind = self.espece.create_individu(x=egg.x, y=egg.y, assets=assets)
+
+        # Chance qu'une mutation accompagne l'éclosion
+        try:
+            mutation_rate = float(self.espece.genetique.get("mutation_rate", 0.0) or 0.0)
+        except Exception:
+            mutation_rate = 0.0
+        if mutation_rate > 0 and random.random() < mutation_rate:
+            mutation_id = self.espece.mutations.pick_random_available_mutation()
+            if mutation_id:
+                self.espece.mutations.appliquer(mutation_id)
+                mutation_data = self.espece.mutations.get_mutation(mutation_id) or {}
+                mutation_label = mutation_data.get("nom", mutation_id)
+                add_notification(f"Une mutation '{mutation_label}' accompagne l'éclosion !")
+
         try:
             if hasattr(self.phase, "entities"):
                 self.phase.entities.append(new_ind)
