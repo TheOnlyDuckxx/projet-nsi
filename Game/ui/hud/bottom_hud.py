@@ -65,6 +65,9 @@ class BottomHUD:
         )
 
         self.craft_buttons: List[tuple[str, Button]] = []
+        self.craft_scroll = 0
+        self._craft_view_height = 0
+        self._craft_max_scroll = 0
 
         for craft_id, craft_def in self.crafts.items():
             image_name = craft_def.get("image", "feu_de_camp")
@@ -159,24 +162,78 @@ class BottomHUD:
             toggle_y = self.panel_rect.top - 10
             self.toggle_button.move_to((toggle_x, toggle_y))
 
-        # Boutons de craft alignés en ligne dans la partie droite
-        if self.craft_buttons:
-            bw = self.craft_buttons[0][1].rect.width
-            gap = 20
-            total = len(self.craft_buttons) * bw + (len(self.craft_buttons) - 1) * gap
-            start_x = self.right_rect.x + (self.right_rect.width - total) // 2 + bw // 2
-            center_y = self.right_rect.y + 40
-            for i, (_cid, btn) in enumerate(self.craft_buttons):
-                cx = start_x + i * (bw + gap)
-                btn.move_to((cx, center_y))
+        self._layout_craft_buttons()
+
+    def _layout_craft_buttons(self):
+        """
+        Positionne les boutons de craft en grille avec retour à la ligne et
+        scroll vertical.
+        """
+        if not self.craft_buttons:
+            self._craft_view_height = 0
+            self._craft_max_scroll = 0
+            return
+
+        padding_x = 20
+        padding_y = 34  # pour laisser la place au titre
+        gap_x = 16
+        gap_y = 12
+
+        start_x = self.right_rect.x + padding_x
+        start_y = self.right_rect.y + padding_y
+        available_w = max(0, self.right_rect.width - 2 * padding_x)
+
+        row_h = self.craft_buttons[0][1].rect.height
+        positions = []
+        x = start_x
+        y = start_y
+
+        for _cid, btn in self.craft_buttons:
+            bw = btn.rect.width
+            if x + bw > start_x + available_w and positions:
+                x = start_x
+                y += row_h + gap_y
+            cx = x + bw // 2
+            cy = y + row_h // 2
+            positions.append((btn, cx, cy))
+            x += bw + gap_x
+
+        if positions:
+            total_height = (positions[-1][2] - start_y) + row_h
+        else:
+            total_height = row_h
+
+        self._craft_view_height = max(row_h, self.right_rect.bottom - start_y - 8)
+        self._craft_max_scroll = max(0, total_height - self._craft_view_height)
+        self.craft_scroll = max(0, min(self.craft_scroll, self._craft_max_scroll))
+
+        for btn, cx, cy in positions:
+            btn.move_to((cx, cy - self.craft_scroll))
 
     # ---------- Interaction ----------
+
+    def _scroll_crafts(self, delta: int):
+        if self._craft_max_scroll <= 0:
+            self.craft_scroll = 0
+            return
+        self.craft_scroll = max(0, min(self.craft_scroll + delta, self._craft_max_scroll))
+
+    def _handle_scroll_input(self, events):
+        if not self.visible:
+            return
+        for e in events:
+            if e.type == pygame.MOUSEWHEEL:
+                mx, my = pygame.mouse.get_pos()
+                if self.right_rect.collidepoint((mx, my)):
+                    # e.y positif = scroll vers le haut
+                    self._scroll_crafts(-e.y * 30)
 
     def handle(self, events):
         """
         À appeler depuis Phase1.handle_input.
         On envoie les événements aux boutons du HUD.
         """
+        self._handle_scroll_input(events)
         self._update_layout()
         self.toggle_button.handle(events)
         if not self.visible:
@@ -255,12 +312,16 @@ class BottomHUD:
         pygame.draw.rect(screen, (20, 55, 20), self.right_rect, border_radius=10)
         pygame.draw.rect(screen, (70, 120, 70), self.right_rect, 2, border_radius=10)
 
-        # Boutons
+        prev_clip = screen.get_clip()
+        screen.set_clip(self.right_rect)
+
         for craft_id, btn in self.craft_buttons:
             btn.draw(screen)
             if self.phase.selected_craft == craft_id:
                 highlight = btn.rect.inflate(10, 10)
                 pygame.draw.rect(screen, (200, 230, 120), highlight, width=3, border_radius=12)
+
+        screen.set_clip(prev_clip)
 
     # ---------- Dessin global ----------
 
