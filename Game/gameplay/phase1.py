@@ -42,8 +42,10 @@ class Phase1:
         
         # entités
         self.espece = None
+        self.fauna_species: Espece | None = None
         self.joueur: Optional[Espece] = None
         self.entities: list = []
+        self.fauna_spawn_zones: list[dict] = []
 
         # UI/HUD
         self.bottom_hud: BottomHUD | None = None
@@ -92,9 +94,11 @@ class Phase1:
 
         # Données de progression / entités
         self.espece = None
+        self.fauna_species = None
         self.joueur = None
         self.joueur2 = None
         self.entities = []
+        self.fauna_spawn_zones = []
         self.warehouse = {}
         self.construction_sites = {}
         self.selected = None
@@ -123,11 +127,12 @@ class Phase1:
         self._set_cursor(self.default_cursor_path)
 
     def _attach_phase_to_entities(self):
-        if getattr(self, "espece", None) and hasattr(self.espece, "reproduction_system"):
-            try:
-                self.espece.reproduction_system.bind_phase(self)
-            except Exception:
-                pass
+        for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
+            if espece and hasattr(espece, "reproduction_system"):
+                try:
+                    espece.reproduction_system.bind_phase(self)
+                except Exception:
+                    pass
         for ent in self.entities:
             try:
                 ent.phase = self
@@ -231,6 +236,130 @@ class Phase1:
                 apply_to_individus=True,
             )
 
+    # ---------- FAUNE PASSIVE ----------
+    def _scale_stats_dict(self, source: dict, factor: float = 0.6, skip_keys: set[str] | None = None) -> dict:
+        skip_keys = skip_keys or set()
+        scaled = {}
+        for key, value in (source or {}).items():
+            if key in skip_keys:
+                scaled[key] = value
+                continue
+            if isinstance(value, (int, float)):
+                new_val = value * factor
+                if isinstance(value, int):
+                    scaled[key] = max(1, int(round(new_val)))
+                else:
+                    scaled[key] = round(new_val, 2)
+            else:
+                scaled[key] = value
+        return scaled
+
+    def _init_fauna_species(self):
+        if self.fauna_species:
+            return self.fauna_species
+
+        template = self.espece if self.espece else Espece("Espece")
+        fauna = Espece("Faune locale")
+
+        fauna.base_physique = self._scale_stats_dict(getattr(template, "base_physique", fauna.base_physique), 0.55, {"temperature_corporelle"})
+        fauna.base_sens = self._scale_stats_dict(getattr(template, "base_sens", fauna.base_sens), 0.55)
+        fauna.base_mental = self._scale_stats_dict(getattr(template, "base_mental", fauna.base_mental), 0.4)
+        fauna.base_environnement = self._scale_stats_dict(getattr(template, "base_environnement", fauna.base_environnement), 0.55)
+        fauna.base_social = self._scale_stats_dict(getattr(template, "base_social", fauna.base_social), 0.5)
+        fauna.genetique = self._scale_stats_dict(getattr(template, "genetique", fauna.genetique), 0.8)
+
+        fauna.base_mental["agressivite"] = 1
+        fauna.base_mental["intimidation"] = max(0, int(fauna.base_mental.get("intimidation", 1) * 0.5))
+        fauna.base_mental["courage"] = max(1, int(fauna.base_mental.get("courage", 1)))
+
+        self.fauna_species = fauna
+        return fauna
+
+    def _generate_fauna_spawn_zones(self, count: int = 6, radius: int = 8, force: bool = False):
+        if not self.world or (self.fauna_spawn_zones and not force):
+            return
+
+        base_seed = getattr(self.params, "seed", 0) or 0
+        try:
+            seed_int = int(base_seed)
+        except Exception:
+            seed_int = random.getrandbits(32)
+        rng = random.Random(seed_int + 4242)
+
+        zones: list[dict] = []
+        attempts = 0
+        max_attempts = count * 120
+        forbidden = self._occupied_tiles()
+
+        while len(zones) < count and attempts < max_attempts:
+            attempts += 1
+            i = rng.randrange(0, getattr(self.world, "width", 1))
+            j = rng.randrange(0, getattr(self.world, "height", 1))
+            if not self._is_walkable(i, j):
+                continue
+            if (i, j) in forbidden:
+                continue
+            too_close = any(abs(i - zx) + abs(j - zy) < radius for zx, zy in (z["pos"] for z in zones))
+            if too_close:
+                continue
+            zones.append({"pos": (i, j), "radius": radius, "spawned": False})
+
+        self.fauna_spawn_zones = zones
+
+    def _update_fauna_spawning(self):
+        if not self.fauna_spawn_zones or not self.world:
+            return
+
+        players = [p for p in (getattr(self, "joueur", None), getattr(self, "joueur2", None)) if p]
+        if not players:
+            return
+
+        for zone in self.fauna_spawn_zones:
+            if zone.get("spawned"):
+                continue
+            zx, zy = zone.get("pos", (None, None))
+            if zx is None or zy is None:
+                continue
+            radius = float(zone.get("radius", 8))
+            r2 = radius * radius
+            for p in players:
+                dx = (p.x - zx)
+                dy = (p.y - zy)
+                if dx * dx + dy * dy <= r2:
+                    self._spawn_fauna_group((zx, zy))
+                    zone["spawned"] = True
+                    break
+
+    def _spawn_fauna_group(self, center: tuple[int, int]):
+        species = self._init_fauna_species()
+        if not species:
+            return
+        base_seed = getattr(self.params, "seed", 0) or 0
+        try:
+            seed_int = int(base_seed)
+        except Exception:
+            seed_int = 0
+        cx, cy = int(center[0]), int(center[1])
+        rng = random.Random(seed_int ^ (cx * 73856093) ^ (cy * 19349663))
+        count = rng.randint(2, 4)
+        forbidden = self._occupied_tiles()
+
+        for _ in range(count):
+            ox = rng.uniform(-1.5, 1.5)
+            oy = rng.uniform(-1.5, 1.5)
+            target_tile = (int(round(cx + ox)), int(round(cy + oy)))
+            tile = self._find_nearest_walkable(target_tile, forbidden=forbidden)
+            if not tile:
+                continue
+            forbidden.add(tile)
+            ent = species.create_individu(x=float(tile[0]), y=float(tile[1]), assets=self.assets)
+            ent.move_speed = 2.4
+            ent.is_fauna = True
+            ent.ia["autonomie"] = True
+            ent.phase = self
+            self._ensure_move_runtime(ent)
+            self.entities.append(ent)
+
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
         # Toujours repartir sur un état propre avant d'appliquer une sauvegarde
@@ -242,6 +371,11 @@ class Phase1:
             if self.load():
                 if self.espece and not self.bottom_hud:
                     self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+                if not self.fauna_species:
+                    self._init_fauna_species()
+                if not self.fauna_spawn_zones:
+                    self._generate_fauna_spawn_zones()
+                self._attach_phase_to_entities()
                 self._set_cursor(self.default_cursor_path)
                 return
 
@@ -275,11 +409,14 @@ class Phase1:
                     assets=self.assets,
                 )
                 self.entities = [self.joueur,self.joueur2]
+                self._init_fauna_species()
                 self._attach_phase_to_entities()
             if self.bottom_hud is None:
                 self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
             else:
                 self.bottom_hud.species = self.espece
+            if not self.fauna_spawn_zones:
+                self._generate_fauna_spawn_zones()
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
 
         # 3) Sinon, génération classique depuis un preset (avec fallback)
@@ -320,12 +457,13 @@ class Phase1:
                 assets=self.assets,
             )
             self.joueur2 = self.espece.create_individu(
-                    x=float(sx+1),
-                    y=float(sy+1),
-                    assets=self.assets,
-                )
+                x=float(sx+1),
+                y=float(sy+1),
+                assets=self.assets,
+            )
             self._apply_base_mutations_to_individus()
             self.entities = [self.joueur,self.joueur2]
+            self._init_fauna_species()
             self._attach_phase_to_entities()
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
@@ -335,6 +473,8 @@ class Phase1:
             self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
         else:
             self.bottom_hud.species = self.espece
+        if not self.fauna_spawn_zones:
+            self._generate_fauna_spawn_zones()
         self._set_cursor(self.default_cursor_path)
 
     # ---------- INPUT ----------
@@ -529,6 +669,7 @@ class Phase1:
         
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+        self._update_fauna_spawning()
 
         def get_radius(ent):
             if getattr(ent, "is_egg", False):
@@ -538,7 +679,12 @@ class Phase1:
 
         if self.fog:
             light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel
-            observers = [e for e in self.entities if not getattr(e, "is_egg", False)]
+            observers = [
+                e
+                for e in self.entities
+                if not getattr(e, "is_egg", False)
+                and not getattr(e, "is_fauna", False)
+            ]
             self.fog.recompute(observers, get_radius, light_level)
         else:
             self.fog = FogOfWar(self.world.width, self.world.height)
