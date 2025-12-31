@@ -49,6 +49,8 @@ class Espece:
         self.genetique = {
             "taux_reproduction": 1.0, "mutation_rate": 0.10,
         }
+        self.mutation_interval = 1  # intervalle actuel entre deux mutations gagnées
+        self.next_mutation_level = 5  # premier niveau où une mutation est proposée
 
         self.arbre_phases3 = {
             "autorité": 5, "strategie": 5, "organisation": 5,
@@ -107,7 +109,21 @@ class Espece:
             self.xp_to_next = int(self.xp_to_next * 1.25)
 
         if levels_gained > 0:
-            self.lvl_up.update_level(self.species_level)
+            # Déterminer si une nouvelle mutation doit être proposée (progression ralentissante)
+            mutation_popup_triggered = False
+            while self.species_level >= self.next_mutation_level:
+                target_level = self.next_mutation_level
+                self.lvl_up.update_level(target_level)
+                mutation_popup_triggered = True
+
+                # L'intervalle augmente progressivement jusqu'à 5 niveaux entre chaque mutation
+                self.mutation_interval = min(5, self.mutation_interval + 1)
+                self.next_mutation_level += self.mutation_interval
+
+            # Garder current_level cohérent même si aucune mutation n'est déclenchée
+            if not mutation_popup_triggered:
+                self.lvl_up.current_level = self.species_level
+
             for _ in range(levels_gained):
                 try:
                     self.reproduction_system.on_species_level_up()

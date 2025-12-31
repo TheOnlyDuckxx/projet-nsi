@@ -1,6 +1,8 @@
 # Game/espece/mutations.py
 import json
+import random
 import time
+from typing import Optional
 from Game.core.utils import resource_path
 
 class MutationManager:
@@ -45,7 +47,7 @@ class MutationManager:
     # -------------------------
     # Application brute des effets
     # -------------------------
-    def apply_effects(self, effets, nom):
+    def apply_effects(self, effets, nom, *, apply_to_species: bool = True, apply_to_individus: bool = True):
         """
         Applique les effets :
         - sur les stats de base de l'ESPÈCE (base_physique, base_sens, etc.)
@@ -65,28 +67,30 @@ class MutationManager:
 
         for categorie, d in effets.items():
             # 1) appliquer sur l'espèce (si ça a du sens)
-            attr_espece = mapping_espece.get(categorie)
-            if attr_espece:
-                cible_espece = getattr(self.espece, attr_espece, None)
-                if isinstance(cible_espece, dict):
-                    for stat, delta in d.items():
-                        if stat in cible_espece:
-                            cible_espece[stat] += delta
-                        else:
-                            print(f"[Mutations] Stat '{stat}' absente dans '{attr_espece}' (espèce)")
+            if apply_to_species:
+                attr_espece = mapping_espece.get(categorie)
+                if attr_espece:
+                    cible_espece = getattr(self.espece, attr_espece, None)
+                    if isinstance(cible_espece, dict):
+                        for stat, delta in d.items():
+                            if stat in cible_espece:
+                                cible_espece[stat] += delta
+                            else:
+                                print(f"[Mutations] Stat '{stat}' absente dans '{attr_espece}' (espèce)")
 
             # 2) appliquer sur chaque individu existant
-            for individu in self.espece.individus:
-                cible_individu = getattr(individu, categorie, None)
-                if not isinstance(cible_individu, dict):
-                    # ex : combat peut ne pas exister dans certains cas
-                    continue
-                for stat, delta in d.items():
-                    if stat in cible_individu:
-                        cible_individu[stat] += delta
-                    else:
-                        # on ne crash pas, juste un log
-                        pass
+            if apply_to_individus:
+                for individu in self.espece.individus:
+                    cible_individu = getattr(individu, categorie, None)
+                    if not isinstance(cible_individu, dict):
+                        # ex : combat peut ne pas exister dans certains cas
+                        continue
+                    for stat, delta in d.items():
+                        if stat in cible_individu:
+                            cible_individu[stat] += delta
+                        else:
+                            # on ne crash pas, juste un log
+                            pass
 
 
     # -------------------------
@@ -133,6 +137,43 @@ class MutationManager:
 
         print(f"[Mutations] Effet temporaire '{temp.get('nom')}' activé pour {duree} sec.")
 
+    # -------------------------
+    # Mutations de base (sélection menu espèce)
+    # -------------------------
+    def apply_base_mutations(self, ids: list[str], *, apply_to_species: bool = True, apply_to_individus: bool = True):
+        """
+        Applique et enregistre les mutations sélectionnées lors de la création de partie.
+        Les mutations sont marquées comme actives pour être reconnues dans les conditions
+        et éviter qu'elles soient reproposées en jeu.
+        """
+        if not ids:
+            self.espece.base_mutations = []
+            return []
+
+        applied: list[str] = []
+        for mut_id in ids:
+            mutation = self.get_mutation(mut_id)
+            if mutation is None:
+                continue
+
+            effets = mutation.get("effets", {})
+            self.apply_effects(
+                effets,
+                mut_id,
+                apply_to_species=apply_to_species,
+                apply_to_individus=apply_to_individus,
+            )
+
+            if mut_id not in self.actives:
+                self.actives.append(mut_id)
+            applied.append(mut_id)
+
+        # Mémoriser la liste pour l'espèce (utilisé pour _mutations_en_cours)
+        if apply_to_species or not getattr(self.espece, "base_mutations", None):
+            self.espece.base_mutations = applied
+
+        return applied
+
 
     # -------------------------
     # Mise à jour des effets temporaires
@@ -157,6 +198,10 @@ class MutationManager:
     def mutation_disponible(self, nom):
         mutation = self.get_mutation(nom)
         if mutation is None:
+            return False
+
+        # Les mutations réservées à la création de partie ne doivent pas être proposées en jeu
+        if mutation.get("base", False):
             return False
 
         mutations_actuelles = self._mutations_en_cours()
@@ -187,3 +232,12 @@ class MutationManager:
         Retourne la liste des clés de mutations qui peuvent être proposées au joueur.
         """
         return [nom for nom in self.data.keys() if self.mutation_disponible(nom)]
+
+    def pick_random_available_mutation(self) -> Optional[str]:
+        """
+        Retourne une mutation disponible au hasard (exclut les mutations de base).
+        """
+        disponibles = self.mutations_disponibles()
+        if not disponibles:
+            return None
+        return random.choice(disponibles)

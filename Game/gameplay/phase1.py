@@ -157,51 +157,10 @@ class Phase1:
         if not ids or not self.espece:
             return
 
-        data_all = self._load_mutations_data()
-
-        # mapping des catégories JSON → attributs de l'espèce
-        cat_map = {
-            "physique": "base_physique",
-            "sens": "base_sens",
-            "mental": "base_mental",
-            "social": "base_social",
-            "environnement": "base_environnement",
-            "genetique": "genetique",
-        }
-
-        for mut_id in ids:
-            m = data_all.get(mut_id)
-            if not m:
-                print(f"[Phase1] Mutation de base inconnue : {mut_id}")
-                continue
-
-            effets = m.get("effets", {})
-            for cat, d_stats in effets.items():
-                if cat == "combat":
-                    # géré plus tard sur les individus
-                    continue
-
-                attr = cat_map.get(cat)
-                if not attr:
-                    print(f"[Phase1] Catégorie '{cat}' non gérée pour mutation '{mut_id}'")
-                    continue
-
-                cible = getattr(self.espece, attr, None)
-                if not isinstance(cible, dict):
-                    print(f"[Phase1] Attribut '{attr}' manquant sur Espece (mutation '{mut_id}')")
-                    continue
-
-                for stat, delta in d_stats.items():
-                    if stat not in cible:
-                        print(f"[Phase1] Stat '{stat}' absente dans '{attr}' (mutation '{mut_id}')")
-                        continue
-                    try:
-                        cible[stat] += delta
-                    except Exception:
-                        pass
-
-        # On garde la liste sur l'espèce (utile plus tard)
-        self.espece.base_mutations = ids
+        # Appliquer sur l'espèce uniquement (les individus n'existent pas encore)
+        self.espece.mutations.apply_base_mutations(
+            ids, apply_to_species=True, apply_to_individus=False
+        )
 
     def _apply_base_mutations_to_individus(self):
         """
@@ -213,32 +172,21 @@ class Phase1:
         if not ids:
             return
 
-        data_all = self._load_mutations_data()
-
-        individus = [getattr(self, "joueur", None), getattr(self, "joueur2", None)]
-        individus = [ind for ind in individus if ind is not None]
-
+        # Les individus sont maintenant présents : on applique uniquement les effets
+        # non recopiés via les stats de base (ex : catégorie combat).
         for mut_id in ids:
-            m = data_all.get(mut_id)
-            if not m:
+            mutation = self.espece.mutations.get_mutation(mut_id)
+            if not mutation:
                 continue
-
-            effets = m.get("effets", {})
-            combat_stats = effets.get("combat", {})
-            if not combat_stats:
+            effets_combat = mutation.get("effets", {}).get("combat")
+            if not effets_combat:
                 continue
-
-            for ind in individus:
-                if not hasattr(ind, "combat"):
-                    continue
-                for stat, delta in combat_stats.items():
-                    if stat not in ind.combat:
-                        print(f"[Phase1] Stat de combat '{stat}' absente sur Individu (mutation '{mut_id}')")
-                        continue
-                    try:
-                        ind.combat[stat] += delta
-                    except Exception:
-                        pass
+            self.espece.mutations.apply_effects(
+                {"combat": effets_combat},
+                mut_id,
+                apply_to_species=False,
+                apply_to_individus=True,
+            )
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
