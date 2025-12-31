@@ -79,6 +79,49 @@ class Phase1:
         self._drag_threshold = 6
         self._ui_click_blocked = False
 
+    def _reset_session_state(self):
+        """
+        Réinitialise tout l'état de la phase afin d'éviter qu'une partie
+        précédente ne pollue la suivante (ex : retour menu → nouvelle partie).
+        """
+        self.paused = False
+        self.ui_menu_open = False
+        self.world = None
+        self.params = None
+        self.fog = None
+
+        # Données de progression / entités
+        self.espece = None
+        self.joueur = None
+        self.joueur2 = None
+        self.entities = []
+        self.warehouse = {}
+        self.construction_sites = {}
+        self.selected = None
+        self.selected_entities = []
+        self.selected_craft = None
+        self.info_windows = []
+
+        # UI / interactions
+        self.save_message = ""
+        self.save_message_timer = 0.0
+        self.menu_button_rect = None
+        self.inspect_mode_active = False
+        self.props_transparency_active = False
+        self._drag_select_start = None
+        self._drag_select_rect = None
+        self._dragging_selection = False
+        self._ui_click_blocked = False
+
+        # Systèmes à remettre à zéro
+        self.day_night = DayNightCycle(cycle_duration=600)
+        self.day_night.set_time(6, 0)
+        self.day_night.set_speed(3.0)
+        self.event_manager = EventManager()
+        self.right_hud = LeftHUD(self)
+        self.bottom_hud = None
+        self._set_cursor(self.default_cursor_path)
+
     def _attach_phase_to_entities(self):
         if getattr(self, "espece", None) and hasattr(self.espece, "reproduction_system"):
             try:
@@ -190,6 +233,10 @@ class Phase1:
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
+        # Toujours repartir sur un état propre avant d'appliquer une sauvegarde
+        # ou de générer un nouveau monde.
+        self._reset_session_state()
+
         # 1) Si on demande explicitement de charger une sauvegarde et qu'elle existe
         if kwargs.get("load_save", False) and self.save_exists():
             if self.load():
@@ -344,6 +391,8 @@ class Phase1:
                 self._set_cursor(self.default_cursor_path)
 
             if not self.paused:
+                if e.type == pygame.MOUSEWHEEL and self._ui_captures_click(pygame.mouse.get_pos()):
+                    continue
                 self.view.handle_event(e)
 
                 # --- CLIC GAUCHE ---

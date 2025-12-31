@@ -58,6 +58,10 @@ class ButtonStyle:
     zoom_speed: float = 0.20     # easing (0.1 = lent / 0.35 = rapide)
 
 class Button:
+    # Gestion partagée du curseur (pour restaurer un éventuel curseur personnalisé)
+    _cursor_owner = None
+    _cursor_prev = None
+
     """
     Bouton modulaire :
     - Texte seul ou avec rectangle (draw_background=False/True)
@@ -170,11 +174,26 @@ class Button:
         # Gestion du curseur main
         if self.style.mouse_cursor_hand:
             if self.is_hovered and not self._cursor_set:
+                if Button._cursor_owner is None:
+                    try:
+                        Button._cursor_prev = pygame.mouse.get_cursor()
+                        Button._cursor_owner = self
+                    except Exception:
+                        Button._cursor_prev = None
+                        Button._cursor_owner = self
                 pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
                 self._cursor_set = True
             elif not self.is_hovered and self._cursor_set:
-                pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+                if Button._cursor_owner is self and Button._cursor_prev is not None:
+                    try:
+                        pygame.mouse.set_cursor(Button._cursor_prev)
+                    except Exception:
+                        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+                elif Button._cursor_owner is self:
+                    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
                 self._cursor_set = False
+                if Button._cursor_owner is self:
+                    Button._cursor_owner = None
 
         for e in events:
             # Hotkey clavier
