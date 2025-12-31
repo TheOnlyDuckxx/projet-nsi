@@ -1,37 +1,153 @@
 {
-    "example": {
-        "name": "Exemple",
-        "description": "Lorem ipsum",
-        "sprite": "example",
-        "poids": 0.9,
-        "type": "misc"
-    },
-    "wood": {
-        "name": "Bois brut",
-        "description": "Morceau de bois utilisable pour le feu ou la construction.",
-        "sprite": "wood",
-        "poids": 0.5,
-        "type": "resource"
-    },
-    "stone": {
-        "name": "Pierre",
-        "description": "Roche commune utilisée pour les outils primitifs.",
-        "sprite": "stone",
-        "poids": 1.0,
-        "type": "resource"
-    },
-    "berries": {
-        "name": "Baies",
-        "description": "Petits fruits comestibles utiles pour se nourrir.",
-        "sprite": "berries",
-        "poids": 0.2,
-        "type": "food"
-    },
-    "flint": {
-        "name": "Silex",
-        "description": "Pierre dure utilisée pour fabriquer des outils.",
-        "sprite": "flint",
-        "poids": 0.8,
-        "type": "resource"
-    }
+  "wood": {
+    "name": "Bois brut",
+    "description": "Bois commun utilisé pour la construction et le feu.",
+    "sprite": "wood",
+    "poids": 0.5,
+    "type": "resource"
+  },
+
+  "hard_wood": {
+    "name": "Bois dur",
+    "description": "Bois dense et résistant, idéal pour structures solides.",
+    "sprite": "hard_wood",
+    "poids": 0.8,
+    "type": "resource"
+  },
+
+  "straw": {
+    "name": "Paillage",
+    "description": "Végétaux secs servant à l’isolation ou à l’agriculture.",
+    "sprite": "straw",
+    "poids": 0.2,
+    "type": "resource"
+  },
+
+  "stone": {
+    "name": "Pierre",
+    "description": "Roche commune utilisée pour les outils primitifs.",
+    "sprite": "stone",
+    "poids": 1.0,
+    "type": "resource"
+  },
+
+  "flint": {
+    "name": "Silex",
+    "description": "Pierre dure utilisée pour le feu et les outils.",
+    "sprite": "flint",
+    "poids": 0.8,
+    "type": "resource"
+  },
+
+  "clay": {
+    "name": "Argile",
+    "description": "Terre malléable utilisée pour la poterie et les fours.",
+    "sprite": "clay",
+    "poids": 0.7,
+    "type": "resource"
+  },
+
+  "fiber": {
+    "name": "Fibres végétales",
+    "description": "Fibres naturelles servant à fabriquer cordes et tissus.",
+    "sprite": "fiber",
+    "poids": 0.3,
+    "type": "resource"
+  },
+
+  "rope": {
+    "name": "Corde",
+    "description": "Lien solide fabriqué à partir de fibres.",
+    "sprite": "rope",
+    "poids": 0.6,
+    "type": "crafted"
+  },
+
+  "leather": {
+    "name": "Cuir",
+    "description": "Peau animale traitée, résistante et isolante.",
+    "sprite": "leather",
+    "poids": 0.9,
+    "type": "resource"
+  },
+
+  "seed": {
+    "name": "Graines",
+    "description": "Semences permettant de cultiver des plantes.",
+    "sprite": "seed",
+    "poids": 0.1,
+    "type": "agriculture"
+  },
+
+  "water": {
+    "name": "Eau",
+    "description": "Ressource vitale pour la survie et l’agriculture.",
+    "sprite": "water",
+    "poids": 1.0,
+    "type": "fluid"
+  },
+
+  "food": {
+    "name": "Nourriture",
+    "description": "Ressource alimentaire générique.",
+    "sprite": "food",
+    "poids": 0.4,
+    "type": "food"
+  },
+
+  "berries": {
+    "name": "Baies",
+    "description": "Petits fruits comestibles.",
+    "sprite": "berries",
+    "poids": 0.2,
+    "type": "food"
+  },
+
+  "copper_ore": {
+    "name": "Minerais de cuivre",
+    "description": "Minerai malléable, première métallurgie.",
+    "sprite": "copper_ore",
+    "poids": 1.2,
+    "type": "ore"
+  },
+
+  "iron_ore": {
+    "name": "Minerais de fer",
+    "description": "Minerai robuste, essentiel pour armes et outils.",
+    "sprite": "iron_ore",
+    "poids": 1.5,
+    "type": "ore"
+  },
+
+  "gold_ore": {
+    "name": "Minerais d’or",
+    "description": "Métal rare utilisé pour le prestige et la religion.",
+    "sprite": "gold_ore",
+    "poids": 1.3,
+    "type": "ore"
+  },
+
+  "lithium_ore": {
+    "name": "Minerais de lithium",
+    "description": "Minerai léger aux propriétés énergétiques.",
+    "sprite": "lithium_ore",
+    "poids": 0.9,
+    "type": "ore"
+  },
+
+  "neantium_ore": {
+    "name": "Minerais de néantium",
+    "description": "Substance exotique altérant énergie et biologie.",
+    "sprite": "neantium_ore",
+    "poids": 1.4,
+    "type": "exotic"
+  },
+
+  "paulonium_ore": {
+    "name": "Minerais de paulonium",
+    "description": "Minerai instable et dangereux, très puissant.",
+    "sprite": "paulonium_ore",
+    "poids": 1.6,
+    "type": "exotic"
+  }
 }

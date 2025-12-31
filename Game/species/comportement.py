@@ -85,7 +85,107 @@ class Comportement:
             10:[
                 {"id": "wood", "min": 1, "max": 3, "p": 1.0}
             ],
-            
+            16: [  # bush
+                {"id": "fiber", "min": 1, "max": 3, "p": 0.60},
+                {"id": "seed",  "min": 1, "max": 2, "p": 0.25},
+                {"id": "straw", "min": 1, "max": 2, "p": 0.30}
+            ],
+
+            18: [  # reeds (roseaux)
+                {"id": "fiber", "min": 2, "max": 5, "p": 1.0},
+                {"id": "straw", "min": 1, "max": 3, "p": 0.50}
+            ],
+
+            33: [  # vine (liane)
+                {"id": "fiber", "min": 2, "max": 4, "p": 1.0},
+                {"id": "rope",  "min": 1, "max": 1, "p": 0.08}  # petit bonus rare
+            ],
+
+            34: [  # mushroom
+                {"id": "food",  "min": 1, "max": 2, "p": 0.70},
+                {"id": "water", "min": 1, "max": 1, "p": 0.10}
+                # (si vous gérez des statuts plus tard : 15% "poison" / maladie)
+            ],
+
+            36: [  # nest (nid)
+                {"id": "seed",  "min": 1, "max": 4, "p": 0.85},
+                {"id": "food",  "min": 1, "max": 2, "p": 0.25}
+            ],
+
+            37: [  # beehive (ruche)
+                {"id": "food",  "min": 2, "max": 5, "p": 0.50}
+                # (plus tard : déclenche event "piqûres" si pas équipé)
+            ],
+
+            38: [  # freshwater_pool (mare)
+                {"id": "water", "min": 2, "max": 6, "p": 1.0}
+            ],
+
+            # --- Bois / arbres ---
+            21: [  # stump (souche)
+                {"id": "wood",      "min": 1, "max": 2, "p": 1.0},
+                {"id": "hard_wood", "min": 1, "max": 1, "p": 0.12}
+            ],
+
+            22: [  # log (tronc)
+                {"id": "wood",      "min": 2, "max": 5, "p": 1.0},
+                {"id": "hard_wood", "min": 1, "max": 2, "p": 0.20}
+            ],
+
+            19: [  # driftwood (bois flotté)
+                {"id": "wood",  "min": 1, "max": 3, "p": 1.0},
+                {"id": "fiber", "min": 1, "max": 2, "p": 0.25}
+            ],
+
+            12: [  # tree_dead
+                {"id": "wood",  "min": 1, "max": 2, "p": 1.0},
+                {"id": "flint", "min": 1, "max": 1, "p": 0.05}
+            ],
+
+            14: [  # palm
+                {"id": "wood",  "min": 1, "max": 3, "p": 1.0},
+                {"id": "fiber", "min": 1, "max": 3, "p": 0.45},
+                {"id": "seed",  "min": 1, "max": 2, "p": 0.20}
+            ],
+
+            15: [  # cactus
+                {"id": "water", "min": 1, "max": 2, "p": 0.40},
+                {"id": "fiber", "min": 1, "max": 2, "p": 0.30}
+                # (plus tard : petit risque de dégâts si récolte sans outil)
+            ],
+
+            # --- Roches / minerais ---
+            23: [  # boulder (gros rocher)
+                {"id": "stone", "min": 2, "max": 6, "p": 1.0},
+                {"id": "flint", "min": 1, "max": 2, "p": 0.20}
+            ],
+
+            32: [  # clay_pit (argile)
+                {"id": "clay",  "min": 2, "max": 6, "p": 1.0},
+                {"id": "stone", "min": 1, "max": 2, "p": 0.25}
+            ],
+
+            29: [  # ore_copper
+                {"id": "copper_ore", "min": 1, "max": 3, "p": 1.0},
+                {"id": "stone",      "min": 1, "max": 2, "p": 0.35}
+            ],
+
+            30: [  # ore_iron
+                {"id": "iron_ore", "min": 1, "max": 3, "p": 1.0},
+                {"id": "stone",    "min": 1, "max": 2, "p": 0.35}
+            ],
+
+            31: [  # ore_gold (rare)
+                {"id": "gold_ore", "min": 1, "max": 2, "p": 1.0},
+                {"id": "stone",    "min": 1, "max": 2, "p": 0.50}
+            ],
+
+            # --- Loot “squelette / chasse” ---
+            35: [  # bone_pile
+                {"id": "leather", "min": 1, "max": 2, "p": 0.35},
+                {"id": "flint",   "min": 1, "max": 1, "p": 0.10},
+                {"id": "stone",   "min": 1, "max": 2, "p": 0.30}
+            ]
         }
         try :
             conf = tables[key]

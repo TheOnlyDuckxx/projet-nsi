@@ -37,7 +37,18 @@ def get_prop_id(name: str) -> int:
         "flower2": 25,
         "flower3": 26,
         "entrepot": 24,
+        # A faire
         "blueberry_bush":28,
+        "ore_copper": 29,     # veine de cuivre
+        "ore_iron": 30,       # veine de fer
+        "ore_gold": 31,       # veine d'or (rare)
+        "clay_pit": 32,       # dépôt d'argile
+        "vine": 33,           # liane (fibres)
+        "mushroom": 34,       # champignon (nourriture + risque)
+        "bone_pile": 35,      # tas d'os (cuir / outils)
+        "nest": 36,           # nid (graines + parfois nourriture)
+        "beehive": 37,        # ruche (nourriture rare, risque piqûre plus tard)
+        "freshwater_pool": 38 # mare (eau)
     }
     return _MAP.get(name, _MAP["tree_2"])
 
@@ -534,42 +545,125 @@ class WorldGenerator:
 
         for y in range(1, H-1):
             for x in range(1, W-1):
-                if levels[y][x] <= 0:
+                if overlay[y][x] != 0:
                     continue
+
                 b = biome[y][x]
-                near_water = (self._distance_to_water(x, y, levels) <= 2)
                 cm = cluster_mask(x, y)
-                
+                near_water = (self._distance_to_water(x, y, levels) <= 2)
+
                 near_fresh = (self._distance_to_freshwater(x, y, fresh_type) <= 2)
-                if near_fresh and rng.random() < 0.06 * density_mul:
+                on_fresh = (fresh_type[y][x] > 0)
+
+                # -------------------------------
+                # 0) Eau douce : rien dessus (sauf roseaux en bord)
+                # -------------------------------
+                if on_fresh:
+                    continue
+
+                # -------------------------------
+                # 1) Props fortement contraints (bord eau douce / sol spécifique)
+                # -------------------------------
+
+                # Roseaux : bord d'eau douce (lac/rivière)
+                if near_fresh and rng.random() < 0.06 * density_mul * (0.6 + 0.8*cm):
                     overlay[y][x] = get_prop_id("reeds")
                     continue
 
-                if fresh_type[y][x] > 0:   # rivière/lac
+                # Mare d'eau douce (rare) : plutôt grassland/forest/rainforest/taiga
+                if b in ("grassland", "forest", "rainforest", "taiga") and rng.random() < 0.0025 * density_mul * (0.6 + cm):
+                    # évite près de l'océan (sinon mare sur plage)
+                    if not near_water:
+                        overlay[y][x] = get_prop_id("freshwater_pool")
+                        continue
+
+                # Argile : proche eau (mais pas sur plage), surtout forest/grassland/rainforest
+                if b in ("grassland", "forest", "rainforest") and (near_water or near_fresh):
+                    if rng.random() < 0.01 * density_mul * (0.5 + cm):
+                        overlay[y][x] = get_prop_id("clay_pit")
+                        continue
+
+                # -------------------------------
+                # 2) Minerais (rares, et surtout en roche/désert, un peu en taïga)
+                # -------------------------------
+                # cuivre : desert/rock/beach (un peu), évite trop près eau douce
+                if b in ("rock", "desert", "beach") and (not near_fresh):
+                    if rng.random() < 0.004 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("ore_copper")
+                        continue
+
+                # fer : rock/taiga/desert (plus rare)
+                if b in ("rock", "taiga", "desert") and (not near_fresh):
+                    if rng.random() < 0.003 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("ore_iron")
+                        continue
+
+                # or : très rare, plutôt rock (et un peu desert)
+                if b in ("rock", "desert") and (not near_fresh):
+                    if rng.random() < 0.0007 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("ore_gold")
+                        continue
+
+                # -------------------------------
+                # 3) Décors/loot spé (faible densité)
+                # -------------------------------
+                # tas d'os : desert/rock/taiga
+                if b in ("desert", "rock", "taiga") and rng.random() < 0.002 * density_mul * (0.4 + cm):
+                    overlay[y][x] = get_prop_id("bone_pile")
                     continue
 
+                # nid : grassland/forest/rainforest, pas trop près de l'océan
+                if b in ("grassland", "forest", "rainforest") and (not near_water):
+                    if rng.random() < 0.003 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("nest")
+                        continue
 
-                # base: petites chances de fleurs/buissons partout hors désert
+                # ruche : forest/rainforest (rare)
+                if b in ("forest", "rainforest") and rng.random() < 0.0015 * density_mul * (0.4 + cm):
+                    overlay[y][x] = get_prop_id("beehive")
+                    continue
+
+                # champignons : forest/taiga/rainforest, plutôt humide (near_water ou near_fresh)
+                if b in ("forest", "taiga", "rainforest") and (near_water or near_fresh):
+                    if rng.random() < 0.005 * density_mul * (0.4 + cm):
+                        overlay[y][x] = get_prop_id("mushroom")
+                        continue
+
+                # lianes : rainforest principalement
+                if b == "rainforest" and rng.random() < 0.015 * density_mul * (0.5 + cm):
+                    overlay[y][x] = get_prop_id("vine")
+                    continue
+
+                # -------------------------------
+                # 4) Base : fleurs/buissons (comme toi, mais après les rares)
+                # -------------------------------
                 if b not in ("desert", "rock") and rng.random() < 0.02 * density_mul * (0.5 + cm):
-                    if random.randint(0,2)==0:
+                    r = rng.randint(0, 2)
+                    if r == 0:
                         overlay[y][x] = get_prop_id("flower")
-                    elif random.randint(0,2)==1:
+                    elif r == 1:
                         overlay[y][x] = get_prop_id("flower2")
-                    elif random.randint(0,2)==2:
+                    else:
                         overlay[y][x] = get_prop_id("flower3")
                     continue
+
                 if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
-                    if random.randint(0,3) == 0:
-                        overlay[y][x] = get_prop_id("berry_bush")
-                    else:
+                    if rng.random() < 0.25:
+                        if rng.random() < 0.5:
+                            overlay[y][x] = get_prop_id("berry_bush")
+                        else :
+                            overlay[y][x] = get_prop_id("blueberry_bush")
+                    else :
                         overlay[y][x] = get_prop_id("bush")
                     continue
 
-                # forêts/taïga/grassland : arbres & souches/troncs
+                # -------------------------------
+                # 5) Forêts/taïga/grassland : arbres & souches/troncs
+                # -------------------------------
                 if b in ("forest", "rainforest", "taiga", "grassland"):
-                    # arbres
                     p_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08}.get(b,0.0)
                     p_tree *= density_mul * (0.6 + 0.8*cm)
+
                     if rng.random() < p_tree:
                         if b == "taiga":
                             name = "tree_dead" if rng.random() < 0.6 else "tree_2"
@@ -579,12 +673,14 @@ class WorldGenerator:
                             name = "tree_2"
                         overlay[y][x] = get_prop_id(name)
                         continue
-                    # souches / troncs au sol (clairsemé)
+
                     if rng.random() < 0.015 * density_mul * (0.4 + cm):
                         overlay[y][x] = get_prop_id("stump" if rng.random() < 0.5 else "log")
                         continue
 
-                # plage : palmiers (si climat chaud), rochers légers, bois flotté, roseaux près de l’eau
+                # -------------------------------
+                # 6) Plage : palmiers, bois flotté, roseaux près mer, rochers
+                # -------------------------------
                 if b == "beach":
                     if is_hot and rng.random() < 0.06 * density_mul * (0.4 + cm):
                         overlay[y][x] = get_prop_id("palm")
@@ -599,7 +695,9 @@ class WorldGenerator:
                         overlay[y][x] = get_prop_id("rock")
                         continue
 
-                # désert : cactus, blocs, quelques rochers
+                # -------------------------------
+                # 7) Désert : cactus, boulders, rochers
+                # -------------------------------
                 if b == "desert":
                     if rng.random() < 0.06 * density_mul * (0.4 + cm):
                         overlay[y][x] = get_prop_id("cactus")
@@ -611,7 +709,9 @@ class WorldGenerator:
                         overlay[y][x] = get_prop_id("rock")
                         continue
 
-                # zones rocheuses/taiga : rochers/boulders
+                # -------------------------------
+                # 8) Zones rocheuses / taïga : rochers/boulders
+                # -------------------------------
                 if b in ("rock", "taiga") and rng.random() < 0.03 * density_mul * (0.3 + cm):
                     overlay[y][x] = get_prop_id("rock" if rng.random() < 0.7 else "boulder")
                     continue

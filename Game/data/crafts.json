@@ -1,76 +1,262 @@
-{ 
-  "Entrepot": {
-    "name": "Entrepot",
-    "description": "Un petit entrepôt pour stocker les ressources recueillies par le clan.",
+{
+  "Feu_de_camp": {
+    "name": "Feu de camp",
+    "description": "Petit feu basique pour se réchauffer et cuisiner rapidement.",
     "image": "feu_de_camp",
-    "sprite": "prop_entrepot",
+    "sprite": "prop_fire_small",
     "cost": {
-      "wood": 0,
-      "stone": 0
+      "wood": 6,
+      "stone": 2,
+      "flint": 1
+    },
+    "interaction": {
+      "type": "campfire",
+      "message": "Feu de camp : repos et cuisson légère."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 101
+    }
+  },
+
+  "Entrepot_primitif": {
+    "name": "Entrepot primitif",
+    "description": "Stockage simple pour éviter de perdre des ressources au sol.",
+    "image": "entrepot_primitif",
+    "sprite": "prop_warehouse_small",
+    "cost": {
+      "wood": 18,
+      "stone": 6,
+      "fiber": 6
     },
     "interaction": {
       "type": "warehouse",
-      "message": "Entrepôt : transfert des ressources."
+      "message": "Entrepot : transfert et stockage des ressources."
     },
     "output": {
       "type": "prop",
-      "pid": 24   
+      "pid": 102
     }
   },
-  "Feu": {
-    "name": "Feu",
-    "description": "Un foyer simple pour réchauffer et rassurer la tribu.",
-    "image": "feu_de_camp",
-    "sprite": "prop_rock",
+
+  "Taniere": {
+    "name": "Taniere",
+    "description": "Abri plus solide qu'un simple refuge. Améliore la survie et la reproduction.",
+    "image": "taniere",
+    "sprite": "prop_den",
     "cost": {
-      "wood": 0,
-      "stone": 0
+      "wood": 14,
+      "stone": 10,
+      "leather": 4
+    },
+    "interaction": {
+      "type": "shelter",
+      "message": "Taniere : repos protégé, meilleure récupération."
     },
     "output": {
       "type": "prop",
-      "pid": 13   
+      "pid": 103
     }
   },
-  "Abri": {
-    "name": "Abri",
-    "description": "Un abri basique pour protéger quelques membres du groupe.",
-    "image": "abri",
-    "sprite": "prop_rock",
+
+  "Defense_primitive": {
+    "name": "Defense primitive",
+    "description": "Pieux et barricades simples pour ralentir les menaces proches.",
+    "image": "defense_primitive",
+    "sprite": "prop_spikes",
+    "cost": {
+      "wood": 20,
+      "stone": 6,
+      "rope": 3
+    },
+    "interaction": {
+      "type": "defense",
+      "message": "Defense : zone dangereuse pour les intrus."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 104
+    }
+  },
+
+  "Generateur_hydrologique": {
+    "name": "Generateur hydrologique",
+    "description": "Roue à eau primitive. Produit une énergie rudimentaire si placée près d'un cours d'eau.",
+    "image": "generateur_hydrologique",
+    "sprite": "prop_waterwheel",
+    "cost": {
+      "wood": 30,
+      "stone": 12,
+      "rope": 6,
+      "clay": 8
+    },
+    "interaction": {
+      "type": "generator_hydro",
+      "message": "Generateur : production d'energie près de l'eau."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 105
+    }
+  },
+
+  "Paratonnerre": {
+    "name": "Paratonnerre",
+    "description": "Structure qui réduit les risques liés aux orages et incendies sur le camp.",
+    "image": "paratonnerre",
+    "sprite": "prop_lightning_rod",
     "cost": {
       "wood": 10,
-      "stone": 5
+      "stone": 18,
+      "copper_ore": 4
     },
-    "output": {
-      "type": "prop", 
-      "pid": 13
-    }
-  },
-  "Outils": {
-    "name": "Outil",
-    "description": "Des outils rudimentaires pour améliorer la collecte.",
-    "image": "outil",
-    "sprite": "prop_rock",
-    "cost": {
-      "wood": 2,
-      "stone": 1
+    "interaction": {
+      "type": "weather_protect",
+      "message": "Paratonnerre : protection contre les orages."
     },
     "output": {
       "type": "prop",
-      "pid": 13
+      "pid": 106
     }
   },
-  "Piège": {
-    "name": "Piège",
-    "description": "Un piège simple pour capturer du gibier sans surveillance.",
+
+  "Jardin": {
+    "name": "Jardin",
+    "description": "Petite zone cultivée. Produit un peu de nourriture régulièrement.",
+    "image": "jardin",
+    "sprite": "prop_garden",
+    "cost": {
+      "wood": 8,
+      "stone": 4,
+      "water": 6,
+      "seed": 3
+    },
+    "interaction": {
+      "type": "farm_small",
+      "message": "Jardin : production de nourriture dans le temps."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 107
+    }
+  },
+
+  "Piege": {
+    "name": "Piege",
+    "description": "Piège simple pour capturer du petit gibier sans surveillance.",
     "image": "piege",
-    "sprite": "prop_rock",
+    "sprite": "prop_trap",
     "cost": {
-      "wood": 3,
-      "stone": 1
+      "wood": 5,
+      "stone": 2,
+      "rope": 2
+    },
+    "interaction": {
+      "type": "trap",
+      "message": "Piège : chance de récupérer nourriture + peaux."
     },
     "output": {
       "type": "prop",
-      "pid": 13
+      "pid": 108
+    }
+  },
+
+  "Statue_de_canard": {
+    "name": "Statue de canard",
+    "description": "Totem décoratif. Augmente légèrement le moral/joie du clan (et c'est un canard).",
+    "image": "statue_canard",
+    "sprite": "prop_duck_statue",
+    "cost": {
+      "stone": 16,
+      "clay": 6
+    },
+    "interaction": {
+      "type": "totem",
+      "message": "Totem : bonus de cohésion / joie."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 109
+    }
+  },
+
+  "Feu_de_joie": {
+    "name": "Feu de joie",
+    "description": "Grand feu rituel. Boost temporaire de moral et rassemblement du clan.",
+    "image": "feu_de_joie",
+    "sprite": "prop_fire_big",
+    "cost": {
+      "wood": 22,
+      "stone": 6,
+      "flint": 2
+    },
+    "interaction": {
+      "type": "bonfire",
+      "message": "Feu de joie : rassemblement et bonus moral."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 110
+    }
+  },
+
+  "Four_a_bois": {
+    "name": "Four a bois",
+    "description": "Permet de cuire plus efficacement (et potentiellement de traiter l'argile).",
+    "image": "four_a_bois",
+    "sprite": "prop_kiln",
+    "cost": {
+      "stone": 20,
+      "clay": 12,
+      "wood": 10
+    },
+    "interaction": {
+      "type": "oven",
+      "message": "Four : cuisson avancée / transformation de ressources."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 111
+    }
+  },
+
+  "Reserve_de_nourriture": {
+    "name": "Reserve de nourriture",
+    "description": "Stockage dédié à la nourriture : réduit les pertes et aide en cas de pénurie.",
+    "image": "reserve_nourriture",
+    "sprite": "prop_food_storage",
+    "cost": {
+      "wood": 16,
+      "fiber": 10,
+      "stone": 4
+    },
+    "interaction": {
+      "type": "food_storage",
+      "message": "Reserve : stockage nourriture, pertes réduites."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 112
+    }
+  },
+
+  "Puit_d_eau": {
+    "name": "Puit d'eau",
+    "description": "Source d'eau stable. Réduit les risques liés à la soif et aux maladies.",
+    "image": "puit_eau",
+    "sprite": "prop_well",
+    "cost": {
+      "stone": 24,
+      "wood": 8,
+      "rope": 4
+    },
+    "interaction": {
+      "type": "water_source",
+      "message": "Puit : production d'eau régulière."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 113
     }
   }
 }
