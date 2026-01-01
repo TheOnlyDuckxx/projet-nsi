@@ -70,11 +70,22 @@ class Phase1:
         self.selected_craft = None
         self.construction_sites: dict[tuple[int, int], dict] = {}
         self.warehouse: dict[str, int] = {}
+        self.unlocked_crafts: set[str] = set()
+        self._init_craft_unlocks()
         self.info_windows: list[DraggableWindow] = []
         self.construction_assign_radius = 12.0
         self.inspect_cursor_path = resource_path("Game/assets/vfx/9.png")
         self.default_cursor_path = resource_path("Game/assets/vfx/1.png")
         self.inspect_mode_active = False
+
+        # Gestion bonheur / décès
+        self.happiness = 10.0
+        self.happiness_min = -100.0
+        self.happiness_max = 100.0
+        self.species_death_count = 0
+        self.death_event_ready = False
+        self.death_response_mode: str | None = None
+        self.food_reserve_capacity = 100
 
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
@@ -107,6 +118,7 @@ class Phase1:
         self.selected_entities = []
         self.selected_craft = None
         self.info_windows = []
+        self.unlocked_crafts = set()
 
         # UI / interactions
         self.save_message = ""
@@ -127,6 +139,14 @@ class Phase1:
         self.right_hud = LeftHUD(self)
         self.bottom_hud = None
         self._set_cursor(self.default_cursor_path)
+        self._init_craft_unlocks()
+        self.happiness = 10.0
+        self.happiness_min = -100.0
+        self.happiness_max = 100.0
+        self.species_death_count = 0
+        self.death_event_ready = False
+        self.death_response_mode = None
+        self.food_reserve_capacity = 100
 
     def _attach_phase_to_entities(self):
         for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
@@ -144,6 +164,14 @@ class Phase1:
         self.info_windows = []
         # Réinitialise le curseur
         self._set_cursor(self.default_cursor_path)
+
+    def _init_craft_unlocks(self):
+        """Initialise l'ensemble des crafts accessibles par défaut."""
+        self.unlocked_crafts = set()
+        for cid, craft_def in self.craft_system.crafts.items():
+            locked = craft_def.get("locked") or craft_def.get("requires_unlock")
+            if not locked:
+                self.unlocked_crafts.add(cid)
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -237,6 +265,114 @@ class Phase1:
                 apply_to_species=False,
                 apply_to_individus=True,
             )
+
+    # ---------- Bonheur / Décès ----------
+    def _clamp_happiness(self, value: float) -> float:
+        return max(self.happiness_min, min(self.happiness_max, float(value)))
+
+    def change_happiness(self, delta: float, reason: str | None = None):
+        before = self.happiness
+        self.happiness = self._clamp_happiness(self.happiness + float(delta))
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False):
+                continue
+            if getattr(ent, "jauges", None) is not None:
+                ent.jauges["bonheur"] = self.happiness
+        if reason:
+            add_notification(f"{reason} ({before:.0f} → {self.happiness:.0f})")
+
+    def set_death_policy(self, mode: str | None):
+        self.death_response_mode = mode
+        if mode:
+            add_notification(f"Gestion des corps choisie : {mode}.")
+
+    def _food_stock_ratio(self) -> float:
+        capacity = max(1.0, float(self.food_reserve_capacity))
+        stock = float(self.warehouse.get("food", 0)) + float(self.warehouse.get("meat", 0))
+        return stock / capacity
+
+    def _apply_death_morale_effects(self):
+        mode = self.death_response_mode
+        if not mode:
+            return
+        if mode == "abandonner":
+            self.change_happiness(-3, "Une mort non prise en charge pèse sur le groupe.")
+            return
+        if mode == "manger":
+            ratio = self._food_stock_ratio()
+            if ratio < 0.25:
+                delta = 2
+            elif ratio < 0.5:
+                delta = 1
+            elif abs(ratio - 0.5) < 0.01:
+                delta = 0
+            elif ratio < 0.75:
+                delta = -1
+            else:
+                delta = -2
+            self.change_happiness(delta, "Réaction cannibale face au manque ou à l'abondance.")
+            return
+        if mode == "enterrer":
+            self.change_happiness(-2, "Le deuil pèse sur le clan.")
+
+    def _count_living_species_members(self) -> int:
+        count = 0
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False):
+                continue
+            if getattr(ent, "espece", None) != self.espece:
+                continue
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if ent.jauges.get("sante", 0) <= 0:
+                continue
+            count += 1
+        return count
+
+    def _handle_entity_death(self, ent):
+        if getattr(ent, "_dead_processed", False):
+            return
+        ent._dead_processed = True
+
+        if hasattr(ent, "espece"):
+            try:
+                ent.espece.remove_individu(ent)
+            except Exception:
+                pass
+
+        if ent in self.entities:
+            self.entities.remove(ent)
+
+        if self.joueur is ent:
+            self.joueur = self.entities[0] if self.entities else None
+
+        add_notification(f"{getattr(ent, 'nom', 'Un individu')} est mort.")
+
+        if getattr(ent, "espece", None) == self.espece:
+            self.species_death_count += 1
+            survivors = self._count_living_species_members()
+            self.death_event_ready = self.species_death_count == 1 and survivors > 0
+            self.event_manager.runtime_flags["species_survivors"] = survivors
+            self.event_manager.runtime_flags["species_death_count"] = self.species_death_count
+
+            if self.death_response_mode and self.species_death_count >= 2:
+                self._apply_death_morale_effects()
+
+    def is_craft_unlocked(self, craft_id: str | None) -> bool:
+        if not craft_id:
+            return False
+        return craft_id in self.unlocked_crafts
+
+    def unlock_craft(self, craft_id: str | None):
+        if not craft_id:
+            return
+        if craft_id not in self.unlocked_crafts:
+            self.unlocked_crafts.add(craft_id)
+            craft_def = self.craft_system.crafts.get(craft_id, {})
+            label = craft_def.get("name", craft_id)
+            add_notification(f"Craft débloqué : {label}")
+            if self.bottom_hud:
+                self.bottom_hud.refresh_craft_buttons()
 
     # ---------- FAUNE PASSIVE ----------
     def _scale_stats_dict(self, source: dict, factor: float = 0.6, skip_keys: set[str] | None = None) -> dict:
@@ -539,6 +675,11 @@ class Phase1:
                     # 1) Mode "placement de craft"
                     if self.selected_craft is not None:
                         tile = None
+                        if not self.is_craft_unlocked(self.selected_craft):
+                            add_notification("Ce plan n'est pas débloqué.")
+                            self.selected_craft = None
+                            self._reset_drag_selection()
+                            return
                         hit = self.view.pick_at(mx, my)
                         if hit:
                             kind, payload = hit
@@ -687,7 +828,8 @@ class Phase1:
         self.view.fog = self.fog
 
 
-        for e in self.entities:
+        dead_entities: list = []
+        for e in list(self.entities):
             if getattr(e, "is_egg", False):
                 continue
             self._ensure_move_runtime(e)
@@ -701,6 +843,11 @@ class Phase1:
             # → progression de la récolte (barre, timer, loot…)
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
+            if e.jauges.get("sante", 0) <= 0:
+                dead_entities.append(e)
+
+        for ent in dead_entities:
+            self._handle_entity_death(ent)
 
         self._update_construction_sites()
 
@@ -745,6 +892,24 @@ class Phase1:
             button_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
             button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
             screen.blit(button_text, button_text_rect)
+
+    def _draw_happiness_banner(self, screen: pygame.Surface):
+        icon = "🙂"
+        value = int(self.happiness)
+        color = (90, 200, 120) if value >= 0 else (220, 100, 90)
+        bg = pygame.Surface((210, 42), pygame.SRCALPHA)
+        bg.fill((20, 28, 36, 200))
+        rect = bg.get_rect()
+        rect.x = 20
+        rect.y = 16
+
+        pygame.draw.rect(bg, (80, 120, 150), bg.get_rect(), 2, border_radius=10)
+
+        font = pygame.font.SysFont("consolas", 22, bold=True)
+        text = font.render(f"{icon} Bonheur : {value}", True, color)
+        text_rect = text.get_rect(center=bg.get_rect().center)
+        bg.blit(text, text_rect)
+        screen.blit(bg, rect.topleft)
 
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
@@ -804,6 +969,8 @@ class Phase1:
         # HUD droite : toujours visible (et affiche le menu si ouvert)
         if not self.paused and self.right_hud:
             self.right_hud.draw(screen)
+
+        self._draw_happiness_banner(screen)
 
         if self.save_message:
             add_notification(self.save_message)

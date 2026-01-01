@@ -258,5 +258,25 @@
       "type": "prop",
       "pid": 113
     }
+  },
+
+  "Cimetiere": {
+    "name": "Cimetière",
+    "description": "Un lieu de repos simple pour apaiser les survivants.",
+    "image": "prop_rock",
+    "sprite": "prop_rock",
+    "cost": {
+      "stone": 12,
+      "wood": 6
+    },
+    "interaction": {
+      "type": "memorial",
+      "message": "Un endroit pour se recueillir."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 114
+    },
+    "locked": true
   }
 }

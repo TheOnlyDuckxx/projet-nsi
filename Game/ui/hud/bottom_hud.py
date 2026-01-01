@@ -3,7 +3,6 @@ from typing import List
 import pygame
 
 from Game.core.utils import Button, ButtonStyle
-from Game.gameplay.craft import load_crafts
 from Game.world.day_night import ClockRenderer
 from .notification import add_notification
 from Game.ui.hud.draggable_window import DraggableWindow
@@ -27,7 +26,7 @@ class BottomHUD:
         self.assets = phase.assets
         self.screen = phase.screen
         self.species = species
-        self.crafts = load_crafts("Game/data/crafts.json")
+        self.crafts = phase.craft_system.crafts
         # Système jour/nuit
         self.day_night = day_night_cycle
         self.clock_renderer = ClockRenderer(radius=18)
@@ -63,30 +62,14 @@ class BottomHUD:
         craft_style = ButtonStyle(
             hover_zoom=1.0,
         )
+        self.craft_style = craft_style
 
         self.craft_buttons: List[tuple[str, Button]] = []
         self.craft_scroll = 0
         self._craft_view_height = 0
         self._craft_max_scroll = 0
 
-        for craft_id, craft_def in self.crafts.items():
-            image_name = craft_def.get("image", "feu_de_camp")
-            try:
-                surf = self.assets.get_image(image_name)
-            except Exception:
-                surf = self.assets.get_image("feu_de_camp")
-
-            btn = Button(
-                text="",
-                pos=(0, 0),
-                size=(70, 70),
-                anchor="center",
-                style=craft_style,
-                on_click=self._make_craft_cb(craft_id),
-                on_right_click=self._make_craft_info_cb(craft_id),
-                icon=surf,
-            )
-            self.craft_buttons.append((craft_id, btn))
+        self.refresh_craft_buttons()
 
         # Rects de layout (calculés à chaque frame)
         self.panel_rect = pygame.Rect(0, 0, 100, 100)
@@ -98,9 +81,41 @@ class BottomHUD:
         self._context_menu_drag_offset = (0, 0)
 
     # ---------- Callbacks ----------
+    def refresh_craft_buttons(self):
+        """Reconstruit la liste des crafts visibles en fonction des déblocages."""
+        craft_buttons: List[tuple[str, Button]] = []
+        for craft_id, craft_def in self.crafts.items():
+            if hasattr(self.phase, "is_craft_unlocked") and not self.phase.is_craft_unlocked(craft_id):
+                continue
+            image_name = craft_def.get("image", "feu_de_camp")
+            try:
+                surf = self.assets.get_image(image_name)
+            except Exception:
+                try:
+                    surf = self.assets.get_image("feu_de_camp")
+                except Exception:
+                    surf = None
+
+            btn = Button(
+                text="",
+                pos=(0, 0),
+                size=(70, 70),
+                anchor="center",
+                style=self.craft_style,
+                on_click=self._make_craft_cb(craft_id),
+                on_right_click=self._make_craft_info_cb(craft_id),
+                icon=surf,
+            )
+            craft_buttons.append((craft_id, btn))
+
+        self.craft_buttons = craft_buttons
+        self._layout_craft_buttons()
 
     def _make_craft_cb(self, craft_id: str):
         def _cb(_btn):
+            if hasattr(self.phase, "is_craft_unlocked") and not self.phase.is_craft_unlocked(craft_id):
+                add_notification("Ce craft n'est pas encore débloqué.")
+                return
             self.phase.selected_craft = craft_id
             craft_def = self.crafts.get(craft_id, {})
             label = craft_def.get("name", craft_id)
