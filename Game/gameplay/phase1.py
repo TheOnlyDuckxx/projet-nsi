@@ -7,6 +7,7 @@ from typing import Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
+from Game.species.fauna import RabbitFactory, RabbitStats
 from Game.species.species import Espece
 from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.save.save import SaveManager

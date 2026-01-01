@@ -342,6 +342,28 @@ class SaveManager:
                     pass
             # phase1.view.clamp_camera() si tu as ça
 
+            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
+            if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
+                try:
+                    phase1._init_fauna_species()
+                except Exception:
+                    pass
+            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
+                try:
+                    phase1._generate_fauna_spawn_zones()
+                except Exception:
+                    pass
+            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
+            if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
+                try:
+                    phase1._init_fauna_species()
+                except Exception:
+                    pass
+            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
+                try:
+                    phase1._generate_fauna_spawn_zones()
+                except Exception:
+                    pass
             # ----------------- Brouillard de guerre -----------------
             fog_data = data.get("fog")
             if fog_data is not None:
