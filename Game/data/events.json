@@ -44,6 +44,83 @@
           ]
         }
       ]
+    },
+    {
+      "id": "La mort",
+      "title": "Un compagnon inerte",
+      "short_text": "Un membre de votre espèce a cessé de respirer.",
+      "long_text": "Il ne bouge plus. Il ne répond plus. Les regards se croisent. La peur s’installe.  Quelque chose doit être fait.  Car si rien n’est fait… la peur restera.",
+      "unique": true,
+      "already_met": false,
+      "condition": {
+        "type": "phase_attr_true",
+        "attr": "death_event_ready"
+      },
+      "effects_immediate": [
+        {
+          "type": "modify_happiness",
+          "amount": -5,
+          "reason": "La perte d'un compagnon secoue le moral."
+        }
+      ],
+      "choices": [
+        {
+          "id": "abandonner",
+          "label": "Abandonner le corps",
+          "description": "La nature reprend ce qu’elle a pris.",
+          "effects_immediate": [
+            {
+              "type": "set_death_policy",
+              "mode": "abandonner"
+            }
+          ]
+        },
+        {
+          "id": "manger",
+          "label": "Le manger",
+          "description": "La chair ne doit pas être perdue.",
+          "effects_immediate": [
+            {
+              "type": "add_mutation",
+              "id": "Cannibale"
+            },
+            {
+              "type": "add_resource",
+              "id": "meat",
+              "amount": 5
+            },
+            {
+              "type": "modify_happiness",
+              "amount": -2,
+              "reason": "Le clan s'interroge sur ce choix."
+            },
+            {
+              "type": "set_death_policy",
+              "mode": "manger"
+            }
+          ]
+        },
+        {
+          "id": "enterrer",
+          "label": "L’enterrer",
+          "description": "Le corps doit reposer.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": 3,
+              "reason": "Un hommage apaise le groupe."
+            },
+            {
+              "type": "unlock_craft",
+              "craft_id": "Cimetiere"
+            },
+            {
+              "type": "set_death_policy",
+              "mode": "enterrer"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

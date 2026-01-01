@@ -186,7 +186,7 @@ class Individu:
             "faim": 20,
             "soif": 50,
             "energie": self.physique["endurance"],
-            "bonheur": 50,
+            "bonheur": 10,
             "sante": 100,
         }
 

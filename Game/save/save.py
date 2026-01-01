@@ -4,7 +4,7 @@ from typing import Any, Dict
 from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")
-SAVE_VERSION = "1.2"
+SAVE_VERSION = "1.3"
 SAVE_HEADER = b"EVOBYTE"  # petite signature maison
 
 
@@ -184,6 +184,12 @@ class SaveManager:
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
             "warehouse": getattr(phase1, "warehouse", None),
             "fauna_spawn_zones": getattr(phase1, "fauna_spawn_zones", []),
+            "happiness": getattr(phase1, "happiness", None),
+            "death_response_mode": getattr(phase1, "death_response_mode", None),
+            "death_event_ready": getattr(phase1, "death_event_ready", False),
+            "species_death_count": getattr(phase1, "species_death_count", 0),
+            "unlocked_crafts": list(getattr(phase1, "unlocked_crafts", []) or []),
+            "food_reserve_capacity": getattr(phase1, "food_reserve_capacity", None),
         }
 
 
@@ -401,6 +407,18 @@ class SaveManager:
                 dn.time_speed = float(dn_data.get("time_speed", getattr(dn, "time_speed", 1.0)))
                 dn.paused = bool(dn_data.get("paused", False))
                 dn.jour = int(dn_data.get("jour", 0))
+
+            # ----------------- Bonheur / décès / crafts -----------------
+            phase1.happiness = data.get("happiness", getattr(phase1, "happiness", 10.0))
+            phase1.death_response_mode = data.get("death_response_mode")
+            phase1.death_event_ready = data.get("death_event_ready", False)
+            phase1.species_death_count = data.get("species_death_count", 0)
+            phase1.food_reserve_capacity = data.get("food_reserve_capacity", getattr(phase1, "food_reserve_capacity", 100))
+            unlocked = data.get("unlocked_crafts")
+            if unlocked is not None:
+                phase1.unlocked_crafts = set(unlocked)
+                if phase1.bottom_hud:
+                    phase1.bottom_hud.refresh_craft_buttons()
 
 
             phase1.save_message = "✓ Partie chargée !"

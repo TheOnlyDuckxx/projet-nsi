@@ -247,6 +247,9 @@ class EventManager:
             min_xp = float(cond.get("min", 0.0))
             espece = getattr(phase, "espece", None)
             return bool(espece and getattr(espece, "xp", 0) >= min_xp)
+        if ctype == "phase_attr_true":
+            attr = cond.get("attr")
+            return bool(attr and getattr(phase, attr, False))
 
         return False
 
@@ -275,6 +278,32 @@ class EventManager:
                     eff["fn"](phase)
                 except Exception as e:
                     print(f"[Events] Effet callback échoué: {e}")
+            elif etype == "modify_happiness":
+                amount = eff.get("amount", 0)
+                if amount and hasattr(phase, "change_happiness"):
+                    reason = eff.get("reason")
+                    phase.change_happiness(amount, reason)
+            elif etype == "add_mutation":
+                mut_id = eff.get("id")
+                espece = getattr(phase, "espece", None)
+                if mut_id and espece and getattr(espece, "mutations", None):
+                    try:
+                        espece.mutations.appliquer(mut_id)
+                    except Exception as e:
+                        print(f"[Events] Impossible d'ajouter la mutation {mut_id}: {e}")
+            elif etype == "add_resource":
+                res_id = eff.get("id")
+                qty = int(eff.get("amount", 0))
+                if res_id and qty and getattr(phase, "warehouse", None) is not None:
+                    phase.warehouse[res_id] = phase.warehouse.get(res_id, 0) + qty
+            elif etype == "unlock_craft":
+                craft_id = eff.get("craft_id")
+                if craft_id and hasattr(phase, "unlock_craft"):
+                    phase.unlock_craft(craft_id)
+            elif etype == "set_death_policy":
+                mode = eff.get("mode")
+                if hasattr(phase, "set_death_policy"):
+                    phase.set_death_policy(mode)
             else:
                 # Effet inconnu : pour extension future
                 print(f"[Events] Effet inconnu ignoré: {eff}")
@@ -318,6 +347,8 @@ class EventManager:
         self.instances[definition.id] = inst
         jour, h, m = self._get_game_time(phase)
         self.last_time_hits[definition.id] = (jour, int(h), int(m))
+        if definition.id == "La mort" and hasattr(phase, "death_event_ready"):
+            phase.death_event_ready = False
 
         # Effets immédiats de la définition
         if definition.python_effects:

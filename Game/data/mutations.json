@@ -283,6 +283,25 @@
         "phase": 3,
         "base":false
     },
+    "Cannibale":{
+        "nom": "Cannibale",
+        "description": "L'espèce accepte de se nourrir de ses morts pour survivre.",
+        "effets": {
+            "mental": {
+                "agressivite": 5,
+                "courage": 3
+            },
+            "social": {
+                "cohesion": -5
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "cout": 20,
+        "categorie": "social",
+        "phase": 1,
+        "base": false
+    },
     "Machoire puissante":{
         "nom": "Mâchoire puissante",
         "description": "Augmentation de la force de la mâchoire pour une meilleure capacité de morsure.",

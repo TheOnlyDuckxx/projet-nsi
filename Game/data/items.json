@@ -103,6 +103,14 @@
     "type": "food"
   },
 
+  "meat": {
+    "name": "Viande",
+    "description": "Morceaux de chair récupérés sur un corps.",
+    "sprite": "food",
+    "poids": 0.6,
+    "type": "food"
+  },
+
   "copper_ore": {
     "name": "Minerais de cuivre",
     "description": "Minerai malléable, première métallurgie.",
