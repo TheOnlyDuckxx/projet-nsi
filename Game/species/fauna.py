@@ -1,119 +1,122 @@
-
 from __future__ import annotations
 
 import math
 import random
-import pygame
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, Sequence
+
+import pygame
 
 from Game.species.species import Espece, Individu
 
 
 @dataclass(frozen=True)
-class RabbitStats:
-    """Statistiques par défaut pour un lapin (modifiables facilement)."""
+class PassiveFaunaDefinition:
+    """
+    Décrit une espèce passive et inoffensive.
+    Peut être instanciée avec d'autres valeurs pour créer de nouvelles espèces.
+    """
 
-    physique: dict = None
-    sens: dict = None
-    mental: dict = None
-    environnement: dict = None
-    social: dict = None
-    genetique: dict = None
-    move_speed: float = 3.1
-    vision_range: float = 10.0
-    flee_distance: float = 6.0
+    species_name: str = "Faune passive"
+    entity_name: str = "Créature"
+    physique: dict | None = None
+    sens: dict | None = None
+    mental: dict | None = None
+    environnement: dict | None = None
+    social: dict | None = None
+    genetique: dict | None = None
+    move_speed: float = 3.0
+    vision_range: float = 8.0
+    flee_distance: float = 5.0
+    sprite_keys: Sequence[str] = ("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2")
 
     def __post_init__(self):
-        # Les dicts par défaut doivent être créés ici pour éviter les références partagées.
+        def _dict(val, fallback):
+            return val if val is not None else fallback
+
         object.__setattr__(
             self,
             "physique",
-            self.physique
-            or {
-                "taille": 2,
-                "force": 2,
-                "endurance": 4,
-                "vitesse": 5,
-                "vitesse de nage": 1,
-                "stockage_energetique": 8,
-                "temperature_corporelle": 38.0,
-                "esperance_vie": 3,
-                "weight_limit": 6,
-            },
+            _dict(
+                self.physique,
+                {
+                    "taille": 2,
+                    "force": 2,
+                    "endurance": 4,
+                    "vitesse": 4,
+                    "vitesse de nage": 1,
+                    "stockage_energetique": 6,
+                    "temperature_corporelle": 38.0,
+                    "esperance_vie": 3,
+                    "weight_limit": 6,
+                },
+            ),
         )
         object.__setattr__(
             self,
             "sens",
-            self.sens
-            or {
-                "vision": 6,
-                "ouie": 6,
-                "odorat": 5,
-                "echolocalisation": 0,
-                "vision_nocturne": 2,
-                "toucher": 2,
-            },
+            _dict(
+                self.sens,
+                {"vision": 6, "ouie": 6, "odorat": 5, "echolocalisation": 0, "vision_nocturne": 2, "toucher": 2},
+            ),
         )
         object.__setattr__(
             self,
             "mental",
-            self.mental
-            or {
-                "intelligence": 2,
-                "dexterite": 4,
-                "agressivite": 0,
-                "courage": 2,
-                "sociabilite": 4,
-                "independance": 4,
-                "empathie": 3,
-                "creativite": 2,
-                "intimidation": 0,
-            },
+            _dict(
+                self.mental,
+                {
+                    "intelligence": 2,
+                    "dexterite": 4,
+                    "agressivite": 0,
+                    "courage": 2,
+                    "sociabilite": 4,
+                    "independance": 4,
+                    "empathie": 3,
+                    "creativite": 2,
+                    "intimidation": 0,
+                },
+            ),
         )
         object.__setattr__(
             self,
             "environnement",
-            self.environnement
-            or {
-                "resistance_froid": 3,
-                "resistance_chaleur": 3,
-                "resistance_secheresse": 2,
-                "resistance_toxines": 2,
-                "discretion": 7,
-                "adaptabilite": 5,
-                "resistance_aux_maladies": 3,
-            },
+            _dict(
+                self.environnement,
+                {
+                    "resistance_froid": 3,
+                    "resistance_chaleur": 3,
+                    "resistance_secheresse": 2,
+                    "resistance_toxines": 2,
+                    "discretion": 7,
+                    "adaptabilite": 5,
+                    "resistance_aux_maladies": 3,
+                },
+            ),
         )
         object.__setattr__(
             self,
             "social",
-            self.social
-            or {
-                "communication": 3,
-                "charisme": 2,
-                "cohesion": 4,
-                "fidelite": 3,
-            },
+            _dict(self.social, {"communication": 3, "charisme": 2, "cohesion": 4, "fidelite": 3}),
         )
-        object.__setattr__(self, "genetique", self.genetique or {"taux_reproduction": 0.4, "mutation_rate": 0.02})
+        object.__setattr__(self, "genetique", _dict(self.genetique, {"taux_reproduction": 0.4, "mutation_rate": 0.02}))
 
 
-class RabbitRenderer:
-    """Rendu simple avec une petite animation d'idle."""
+class PassiveFaunaRenderer:
+    """Rendu simple multi-frames (idle) avec zoom."""
 
-    def __init__(self, assets):
+    def __init__(self, assets, sprite_keys: Sequence[str]):
         self.assets = assets
-        self.frames = [self.assets.get_image(key) for key in self._frame_keys() if key in self.assets.images]
-        if not self.frames:
-            # Au cas où les assets n'auraient pas été chargés.
-            placeholder = pygame.Surface((20, 16), pygame.SRCALPHA)
-            placeholder.fill((220, 220, 220, 255))
-            self.frames = [placeholder]
-        self.frame_ms = 240  # durée d'une frame d'animation
-
-    def _frame_keys(self) -> tuple[str, ...]:
-        return ("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2")
+        self.keys = tuple(sprite_keys) if sprite_keys else ()
+        frames = [self.assets.get_image(k) for k in self.keys if k in getattr(self.assets, "images", {})]
+        if not frames and self.keys:
+            frames = [self.assets.get_image(self.keys[0])]
+        if not frames:
+            surf = pygame.Surface((20, 16), pygame.SRCALPHA)
+            surf.fill((220, 220, 220, 255))
+            frames = [surf]
+        self.frames = frames
+        self.frame_ms = 240
 
     def _current_frame(self) -> pygame.Surface:
         if len(self.frames) == 1:
@@ -124,11 +127,7 @@ class RabbitRenderer:
     def get_draw_surface_and_rect(self, view, world, tx: float, ty: float) -> Tuple[pygame.Surface, pygame.Rect]:
         base = self._current_frame()
         zoom = getattr(view, "zoom", 1.0) or 1.0
-        if abs(zoom - 1.0) > 1e-6:
-            w, h = base.get_size()
-            sprite = pygame.transform.smoothscale(base, (int(w * zoom), int(h * zoom)))
-        else:
-            sprite = base
+        sprite = pygame.transform.smoothscale(base, (int(base.get_width() * zoom), int(base.get_height() * zoom)))
 
         dx, dy, wall_h = view._proj_consts()
         z = 0
@@ -151,19 +150,18 @@ class RabbitRenderer:
         screen.blit(sprite, rect.topleft)
 
 
-class RabbitBehavior:
-    """IA minimaliste : fuit le joueur s'il est proche, sinon flâne un peu."""
+class PassiveFaunaBehavior:
+    """IA passive : flâne et fuit le joueur si proche."""
 
-    def __init__(self, lapin, phase, vision_range: float, flee_distance: float):
-        self.lapin = lapin
+    def __init__(self, creature, phase, vision_range: float, flee_distance: float):
+        self.creature = creature
         self.phase = phase
         self.vision_range = vision_range
         self.flee_distance = flee_distance
         self._wander_timer = 0.0
 
     def try_eating(self):
-        # Les lapins grignotent régulièrement : on remet simplement la jauge.
-        self.lapin.jauges["faim"] = min(100, self.lapin.jauges.get("faim", 100) + 20)
+        self.creature.jauges["faim"] = min(100, self.creature.jauges.get("faim", 100) + 20)
 
     def _players(self):
         if not self.phase:
@@ -173,9 +171,9 @@ class RabbitBehavior:
     def _move_to(self, target: Tuple[int, int]):
         if not self.phase:
             return
-        self.phase._ensure_move_runtime(self.lapin)
+        self.phase._ensure_move_runtime(self.creature)
         self.phase._apply_entity_order(
-            self.lapin,
+            self.creature,
             target=target,
             etat="se_deplace",
             objectif=None,
@@ -185,14 +183,14 @@ class RabbitBehavior:
 
     def _flee_from(self, pos: Tuple[float, float]):
         px, py = pos
-        dx = self.lapin.x - px
-        dy = self.lapin.y - py
-        dist = math.hypot(dx, dy)
-        if dist < 1e-3:
-            dist = 1.0
-            dx = 1.0
+        dx = self.creature.x - px
+        dy = self.creature.y - py
+        dist = math.hypot(dx, dy) or 1.0
         nx, ny = dx / dist, dy / dist
-        target = (int(round(self.lapin.x + nx * self.flee_distance)), int(round(self.lapin.y + ny * self.flee_distance)))
+        target = (
+            int(round(self.creature.x + nx * self.flee_distance)),
+            int(round(self.creature.y + ny * self.flee_distance)),
+        )
         safe_tile = None
         if self.phase:
             safe_tile = self.phase._find_nearest_walkable(target, forbidden={})
@@ -203,8 +201,8 @@ class RabbitBehavior:
         if not self.phase:
             return
         jitter = (random.uniform(-1.2, 1.2), random.uniform(-1.2, 1.2))
-        tx = int(round(self.lapin.x + jitter[0]))
-        ty = int(round(self.lapin.y + jitter[1]))
+        tx = int(round(self.creature.x + jitter[0]))
+        ty = int(round(self.creature.y + jitter[1]))
         tile = self.phase._find_nearest_walkable((tx, ty), forbidden={})
         if tile:
             self._move_to(tile)
@@ -213,8 +211,8 @@ class RabbitBehavior:
         self._wander_timer += dt
         r2 = self.vision_range * self.vision_range
         for p in self._players():
-            dx = self.lapin.x - p.x
-            dy = self.lapin.y - p.y
+            dx = self.creature.x - p.x
+            dy = self.creature.y - p.y
             if dx * dx + dy * dy <= r2:
                 self._flee_from((p.x, p.y))
                 self._wander_timer = 0.0
@@ -225,39 +223,47 @@ class RabbitBehavior:
             self._wander()
 
 
-class Rabbit(Individu):
-    """Individu spécialisé pour la faune : comportement de fuite + rendu dédié."""
+class PassiveFauna(Individu):
+    """Individu générique de faune passive."""
 
-    def __init__(self, espece: Espece, x: float, y: float, assets, phase, stats: RabbitStats):
+    def __init__(self, espece: Espece, x: float, y: float, assets, phase, definition: PassiveFaunaDefinition):
         super().__init__(espece, x, y, assets)
-        self.nom = "Lapin"
+        self.nom = definition.entity_name
         self.is_fauna = True
-        self.move_speed = stats.move_speed
-        self.renderer = RabbitRenderer(assets)
-        self.comportement = RabbitBehavior(self, phase, vision_range=stats.vision_range, flee_distance=stats.flee_distance)
+        self.move_speed = definition.move_speed
+        self.renderer = PassiveFaunaRenderer(assets, definition.sprite_keys)
+        self.comportement = PassiveFaunaBehavior(
+            self,
+            phase,
+            vision_range=definition.vision_range,
+            flee_distance=definition.flee_distance,
+        )
 
 
-class RabbitFactory:
-    """Fabrique de lapins afin de centraliser stats et création."""
+class PassiveFaunaFactory:
+    """
+    Fabrique paramétrable :
+    - Passe une définition pour générer l'espèce (stats/nom),
+    - puis crée des individus avec IA passive et rendu dédié.
+    """
 
-    def __init__(self, phase, species: Espece, stats: RabbitStats | None = None):
+    def __init__(self, phase, assets, definition: PassiveFaunaDefinition):
         self.phase = phase
-        self.species = species
-        self.stats = stats or RabbitStats()
+        self.assets = assets
+        self.definition = definition
 
-    def create_rabbit(self, x: float, y: float, assets):
-        lapin = Rabbit(self.species, x, y, assets, phase=self.phase, stats=self.stats)
-        lapin.ia["autonomie"] = True
-        lapin.phase = self.phase
-        return lapin
+    def create_species(self) -> Espece:
+        espece = Espece(self.definition.species_name)
+        espece.base_physique.update(self.definition.physique)
+        espece.base_sens.update(self.definition.sens)
+        espece.base_mental.update(self.definition.mental)
+        espece.base_environnement.update(self.definition.environnement)
+        espece.base_social.update(self.definition.social)
+        espece.genetique.update(self.definition.genetique)
+        return espece
 
-    @staticmethod
-    def apply_stats_to_species(species: Espece, stats: RabbitStats | None = None):
-        base = stats or RabbitStats()
-        species.base_physique.update(base.physique)
-        species.base_sens.update(base.sens)
-        species.base_mental.update(base.mental)
-        species.base_environnement.update(base.environnement)
-        species.base_social.update(base.social)
-        species.genetique.update(base.genetique)
-        return species
+    def create_creature(self, species: Espece, x: float, y: float) -> PassiveFauna:
+        creature = PassiveFauna(species, x, y, self.assets, phase=self.phase, definition=self.definition)
+        creature.ia["autonomie"] = True
+        creature.phase = self.phase
+        return creature

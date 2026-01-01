@@ -9,6 +9,7 @@ from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.fauna import RabbitFactory, RabbitStats
 from Game.species.species import Espece
+from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud.bottom_hud import BottomHUD
@@ -255,28 +256,25 @@ class Phase1:
                 scaled[key] = value
         return scaled
 
+    def _rabbit_definition(self) -> PassiveFaunaDefinition:
+        return PassiveFaunaDefinition(
+            species_name="Lapin",
+            entity_name="Lapin",
+            move_speed=3.1,
+            vision_range=10.0,
+            flee_distance=6.0,
+            sprite_keys=("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2"),
+        )
+
     def _init_fauna_species(self):
         if self.fauna_species:
             return self.fauna_species
 
-        template = self.espece if self.espece else Espece("Espece")
-        fauna = Espece("Faune locale")
+        factory = PassiveFaunaFactory(self, self.assets, self._rabbit_definition())
+        self.fauna_species = factory.create_species()
+        return self.fauna_species
 
-        fauna.base_physique = self._scale_stats_dict(getattr(template, "base_physique", fauna.base_physique), 0.55, {"temperature_corporelle"})
-        fauna.base_sens = self._scale_stats_dict(getattr(template, "base_sens", fauna.base_sens), 0.55)
-        fauna.base_mental = self._scale_stats_dict(getattr(template, "base_mental", fauna.base_mental), 0.4)
-        fauna.base_environnement = self._scale_stats_dict(getattr(template, "base_environnement", fauna.base_environnement), 0.55)
-        fauna.base_social = self._scale_stats_dict(getattr(template, "base_social", fauna.base_social), 0.5)
-        fauna.genetique = self._scale_stats_dict(getattr(template, "genetique", fauna.genetique), 0.8)
-
-        fauna.base_mental["agressivite"] = 1
-        fauna.base_mental["intimidation"] = max(0, int(fauna.base_mental.get("intimidation", 1) * 0.5))
-        fauna.base_mental["courage"] = max(1, int(fauna.base_mental.get("courage", 1)))
-
-        self.fauna_species = fauna
-        return fauna
-
-    def _generate_fauna_spawn_zones(self, count: int = 6, radius: int = 8, force: bool = False):
+    def _generate_fauna_spawn_zones(self, count: int = 10, radius: int = 8, force: bool = False):
         if not self.world or (self.fauna_spawn_zones and not force):
             return
 
@@ -335,6 +333,7 @@ class Phase1:
         species = self._init_fauna_species()
         if not species:
             return
+        factory = PassiveFaunaFactory(self, self.assets, self._rabbit_definition())
         base_seed = getattr(self.params, "seed", 0) or 0
         try:
             seed_int = int(base_seed)
@@ -342,7 +341,7 @@ class Phase1:
             seed_int = 0
         cx, cy = int(center[0]), int(center[1])
         rng = random.Random(seed_int ^ (cx * 73856093) ^ (cy * 19349663))
-        count = rng.randint(2, 4)
+        count = rng.randint(3, 5)
         forbidden = self._occupied_tiles()
 
         for _ in range(count):
@@ -353,11 +352,7 @@ class Phase1:
             if not tile:
                 continue
             forbidden.add(tile)
-            ent = species.create_individu(x=float(tile[0]), y=float(tile[1]), assets=self.assets)
-            ent.move_speed = 2.4
-            ent.is_fauna = True
-            ent.ia["autonomie"] = True
-            ent.phase = self
+            ent = factory.create_creature(species, float(tile[0]), float(tile[1]))
             self._ensure_move_runtime(ent)
             self.entities.append(ent)
 
