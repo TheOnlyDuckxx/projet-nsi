@@ -4,7 +4,7 @@ from typing import Any, Dict
 from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")
-SAVE_VERSION = "1.1"
+SAVE_VERSION = "1.2"
 SAVE_HEADER = b"EVOBYTE"  # petite signature maison
 
 
@@ -15,6 +15,56 @@ class SaveError(Exception):
 class SaveManager:
     def __init__(self, path: str = DEFAULT_SAVE_PATH):
         self.path = path
+
+    def _serialize_species(self, espece):
+        if espece is None:
+            return None
+        return {
+            "nom": getattr(espece, "nom", None),
+            "base_physique": getattr(espece, "base_physique", None),
+            "base_sens": getattr(espece, "base_sens", None),
+            "base_mental": getattr(espece, "base_mental", None),
+            "base_environnement": getattr(espece, "base_environnement", None),
+            "base_social": getattr(espece, "base_social", None),
+            "genetique": getattr(espece, "genetique", None),
+            "arbre_phases3": getattr(espece, "arbre_phases3", None),
+            "species_level": getattr(espece, "species_level", 1),
+            "xp": getattr(espece, "xp", 0),
+            "xp_to_next": getattr(espece, "xp_to_next", 100),
+            "reproduction": getattr(getattr(espece, "reproduction_system", None), "to_dict", lambda: {})(),
+        }
+
+    def _restore_species_from_data(self, espece_data, phase1=None, assets=None):
+        if espece_data is None:
+            return None
+        from Game.species.species import Espece
+
+        espece = Espece(espece_data.get("nom") or "Espece")
+        if hasattr(espece, "reproduction_system") and phase1 is not None:
+            try:
+                espece.reproduction_system.bind_phase(phase1)
+            except Exception:
+                pass
+
+        for attr_name in [
+            "base_physique", "base_sens", "base_mental",
+            "base_environnement", "base_social",
+            "genetique", "arbre_phases3"
+        ]:
+            val = espece_data.get(attr_name)
+            if val is not None:
+                setattr(espece, attr_name, val)
+
+        espece.species_level = espece_data.get("species_level", 1)
+        espece.xp = espece_data.get("xp", 0)
+        espece.xp_to_next = espece_data.get("xp_to_next", 100)
+        try:
+            repro_state = espece_data.get("reproduction")
+            if repro_state is not None and hasattr(espece, "reproduction_system"):
+                espece.reproduction_system.load_state(repro_state, assets=assets)
+        except Exception as e:
+            print(f"[Save] Échec chargement reproduction: {e}")
+        return espece
 
     def save_exists(self) -> bool:
         return os.path.exists(self.path)
@@ -29,24 +79,22 @@ class SaveManager:
         """
         joueur = getattr(phase1, "joueur", None)
 
-        # ---------- ESPÈCE (stats globales + XP) ----------
-        espece_data = None
-        if joueur is not None and hasattr(joueur, "espece"):
-            espece = joueur.espece
-            espece_data = {
-                "nom": getattr(espece, "nom", None),
-                "base_physique": getattr(espece, "base_physique", None),
-                "base_sens": getattr(espece, "base_sens", None),
-                "base_mental": getattr(espece, "base_mental", None),
-                "base_environnement": getattr(espece, "base_environnement", None),
-                "base_social": getattr(espece, "base_social", None),
-                "genetique": getattr(espece, "genetique", None),
-                "arbre_phases3": getattr(espece, "arbre_phases3", None),
-                "species_level": getattr(espece, "species_level", 1),
-                "xp": getattr(espece, "xp", 0),
-                "xp_to_next": getattr(espece, "xp_to_next", 100),
-                "reproduction": getattr(getattr(espece, "reproduction_system", None), "to_dict", lambda: {})(),
-            }
+        espece_data = self._serialize_species(getattr(phase1, "espece", None))
+        species_registry: Dict[str, Any] = {}
+        species_keys: Dict[int, str] = {}
+        fauna_key = None
+
+        def register_species(key: str, espece_obj):
+            if espece_obj is None:
+                return
+            species_keys[id(espece_obj)] = key
+            if key not in species_registry:
+                species_registry[key] = self._serialize_species(espece_obj)
+
+        register_species("player", getattr(phase1, "espece", None))
+        if getattr(phase1, "fauna_species", None):
+            fauna_key = "fauna"
+            register_species(fauna_key, phase1.fauna_species)
 
         # ---------- INDIVIDUS ----------
         individus_data = []
@@ -82,6 +130,17 @@ class SaveManager:
                 inv = getattr(ent, "inventaire", None)
             ind_data["inventaire"] = inv
 
+            species_key = species_keys.get(id(getattr(ent, "espece", None)))
+            if species_key is None and hasattr(ent, "espece"):
+                fallback = f"species_{len(species_registry) + 1}"
+                register_species(fallback, ent.espece)
+                species_key = species_keys.get(id(ent.espece))
+
+            if species_key:
+                ind_data["species_key"] = species_key
+            if getattr(ent, "is_fauna", False):
+                ind_data["is_fauna"] = True
+
             individus_data.append(ind_data)
 
         day_night = getattr(phase1, "day_night", None)
@@ -115,6 +174,8 @@ class SaveManager:
             "world": phase1.world,
             "params": phase1.params,
             "espece": espece_data,
+            "species_registry": species_registry or None,
+            "fauna_species_key": fauna_key,
             "individus": individus_data,
             "camera": (phase1.view.cam_x, phase1.view.cam_y),
             "zoom": phase1.view.zoom,
@@ -122,6 +183,7 @@ class SaveManager:
             "day_night": day_night_data,   # <-- NEW
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
             "warehouse": getattr(phase1, "warehouse", None),
+            "fauna_spawn_zones": getattr(phase1, "fauna_spawn_zones", []),
         }
 
 
@@ -178,83 +240,83 @@ class SaveManager:
                 phase1.fog = FogOfWar(phase1.world.width, phase1.world.height)
                 phase1.view.fog = phase1.fog
             # ----------------- Espèce + individus -----------------
-            from Game.species.species import Espece
-
-            espece_data = data.get("espece")
+            species_registry_data = data.get("species_registry") or {}
+            fauna_species_key = data.get("fauna_species_key")
             individus_data = data.get("individus", [])
 
             phase1.entities = []
             phase1.joueur = None
             phase1.espece = None
+            phase1.fauna_species = None
+
+            species_map: Dict[str, Any] = {}
+            espece_data = data.get("espece") or species_registry_data.get("player")
 
             if espece_data is not None:
-                # Reconstruire l'espèce
-                nom_espece = espece_data.get("nom") or "Espece"
-                espece = Espece(nom_espece)
-                if hasattr(espece, "reproduction_system"):
-                    espece.reproduction_system.bind_phase(phase1)
-
-                # Restaure les stats globales si présentes
-                for attr_name in [
-                    "base_physique", "base_sens", "base_mental",
-                    "base_environnement", "base_social",
-                    "genetique", "arbre_phases3"
-                ]:
-                    val = espece_data.get(attr_name)
-                    if val is not None:
-                        setattr(espece, attr_name, val)
-
-                espece.species_level = espece_data.get("species_level", 1)
-                espece.xp = espece_data.get("xp", 0)
-                espece.xp_to_next = espece_data.get("xp_to_next", 100)
-                try:
-                    repro_state = espece_data.get("reproduction")
-                    if repro_state is not None:
-                        espece.reproduction_system.load_state(repro_state, assets=phase1.assets)
-                except Exception as e:
-                    print(f"[Save] Échec chargement reproduction: {e}")
-
+                espece = self._restore_species_from_data(espece_data, phase1=phase1, assets=phase1.assets)
                 phase1.espece = espece
+                if espece:
+                    species_map["player"] = espece
 
-                # ---------- Reconstruction des individus ----------
-                for ind_data in individus_data:
-                    pos = ind_data.get("pos", (0.0, 0.0))
-                    x, y = float(pos[0]), float(pos[1])
+            for key, sdata in species_registry_data.items():
+                if key == "player" and species_map.get("player"):
+                    continue
+                restored = self._restore_species_from_data(sdata, phase1=phase1, assets=phase1.assets)
+                if restored:
+                    species_map[key] = restored
 
-                    ent = espece.create_individu(x=x, y=y, assets=phase1.assets)
+            if fauna_species_key and fauna_species_key in species_map:
+                phase1.fauna_species = species_map[fauna_species_key]
+            elif "fauna" in species_map:
+                phase1.fauna_species = species_map["fauna"]
 
-                    # Stats individuelles
-                    for attr_name in [
-                        "physique", "sens", "mental", "social",
-                        "environnement", "combat", "genetique"
-                    ]:
-                        val = ind_data.get(attr_name)
-                        if val is not None:
-                            setattr(ent, attr_name, val)
+            # ---------- Reconstruction des individus ----------
+            for ind_data in individus_data:
+                pos = ind_data.get("pos", (0.0, 0.0))
+                x, y = float(pos[0]), float(pos[1])
 
-                    # Jauges & IA
-                    if ind_data.get("jauges") is not None:
-                        ent.jauges = ind_data["jauges"]
-                    if ind_data.get("ia") is not None:
-                        ent.ia = ind_data["ia"]
+                species_key = ind_data.get("species_key") or ("fauna" if ind_data.get("is_fauna") else "player")
+                espece_for_ent = species_map.get(species_key) or phase1.espece
+                if espece_for_ent is None:
+                    continue
 
-                    # Inventaire
-                    if ind_data.get("inventaire") is not None:
-                        ent.carrying = ind_data["inventaire"]
+                ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
 
-                    # Effets spéciaux
-                    if ind_data.get("effets_speciaux") is not None:
-                        ent.effets_speciaux = ind_data["effets_speciaux"]
+                # Stats individuelles
+                for attr_name in [
+                    "physique", "sens", "mental", "social",
+                    "environnement", "combat", "genetique"
+                ]:
+                    val = ind_data.get(attr_name)
+                    if val is not None:
+                        setattr(ent, attr_name, val)
 
-                    # Joueur ?
-                    if ind_data.get("is_player"):
-                        phase1.joueur = ent
+                # Jauges & IA
+                if ind_data.get("jauges") is not None:
+                    ent.jauges = ind_data["jauges"]
+                if ind_data.get("ia") is not None:
+                    ent.ia = ind_data["ia"]
 
-                    phase1.entities.append(ent)
+                # Inventaire
+                if ind_data.get("inventaire") is not None:
+                    ent.carrying = ind_data["inventaire"]
 
-                # Si aucun individu n'est marqué joueur, on prend le premier
-                if phase1.joueur is None and phase1.entities:
-                    phase1.joueur = phase1.entities[0]
+                # Effets spéciaux
+                if ind_data.get("effets_speciaux") is not None:
+                    ent.effets_speciaux = ind_data["effets_speciaux"]
+
+                if ind_data.get("is_fauna"):
+                    ent.is_fauna = True
+
+                # Joueur ?
+                if ind_data.get("is_player"):
+                    phase1.joueur = ent
+
+                phase1.entities.append(ent)
+
+            # Si aucun individu n'est marqué joueur, on prend le premier
+            if phase1.joueur is None and phase1.entities:
+                phase1.joueur = phase1.entities[0]
 
             # ----------------- Caméra + zoom -----------------
             camx, camy = data.get("camera", (0, 0))
@@ -266,6 +328,18 @@ class SaveManager:
             attach_fn = getattr(phase1, "_attach_phase_to_entities", None)
             if callable(attach_fn):
                 attach_fn()
+
+            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
+            if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
+                try:
+                    phase1._init_fauna_species()
+                except Exception:
+                    pass
+            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
+                try:
+                    phase1._generate_fauna_spawn_zones()
+                except Exception:
+                    pass
             # phase1.view.clamp_camera() si tu as ça
 
             # ----------------- Brouillard de guerre -----------------
