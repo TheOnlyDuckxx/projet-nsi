@@ -10,6 +10,8 @@ from Game.world.tiles import get_ground_sprite_name
 
 def get_prop_sprite_name(pid: int) -> Optional[str]:
     mapping = {
+        8: "prop_tree_3",
+        9: "prop_tree_1",
         10: "prop_tree_2",
         12: "prop_tree_dead",
         13: "prop_rock",

@@ -738,11 +738,35 @@ class WorldGenerator:
 
                     if rng.random() < p_tree:
                         if b == "taiga":
-                            name = "tree_dead" if rng.random() < 0.6 else "tree_2"
+                            if rng.random() < 0.6 :
+                                name = "tree_dead" 
+                            else : 
+                                p_temp = rng.random()
+                                if p_temp < 0.33:
+                                    name = "tree_1"
+                                elif p_temp < 0.66:
+                                    name = "tree_2"
+                                else:
+                                    name = "tree_3"
                         elif b == "rainforest":
-                            name = "tree_2" if rng.random() < 0.7 else "stump"
+                            if rng.random() < 0.7 :
+                                p_temp = rng.random()
+                                if p_temp < 0.33:
+                                    name = "tree_1"
+                                elif p_temp < 0.66:
+                                    name = "tree_2"
+                                else:
+                                    name = "tree_3"
+                            else: 
+                                name= "stump"
                         else:
-                            name = "tree_2"
+                            p_temp = rng.random()
+                            if p_temp < 0.33:
+                                name = "tree_1"
+                            elif p_temp < 0.66:
+                                name = "tree_2"
+                            else:
+                                name = "tree_3"
                         overlay[y][x] = get_prop_id(name)
                         continue
 
