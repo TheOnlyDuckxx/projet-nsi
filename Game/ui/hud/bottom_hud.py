@@ -69,8 +69,6 @@ class BottomHUD:
         self._craft_view_height = 0
         self._craft_max_scroll = 0
 
-        self.refresh_craft_buttons()
-
         # Rects de layout (calculés à chaque frame)
         self.panel_rect = pygame.Rect(0, 0, 100, 100)
         self.left_rect = pygame.Rect(0, 0, 50, 50)
@@ -79,6 +77,8 @@ class BottomHUD:
         self._context_menu_just_opened = False
         self._context_menu_dragging = False
         self._context_menu_drag_offset = (0, 0)
+
+        self.refresh_craft_buttons()
 
     # ---------- Callbacks ----------
     def refresh_craft_buttons(self):
