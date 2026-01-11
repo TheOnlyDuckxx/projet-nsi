@@ -222,6 +222,25 @@ class PassiveFaunaBehavior:
             self._wander_timer = 0.0
             self._wander()
 
+    def cancel_work(self, reason: str | None = None):
+        if getattr(self.creature, "work", None):
+            self.creature.work = None
+
+        etat = self.creature.ia.get("etat")
+        if etat in (
+            "recolte",
+            "se_deplace_vers_prop",
+            "construction",
+            "se_deplace_vers_construction",
+            "interaction",
+            "demonte",
+        ):
+            self.creature.ia["etat"] = "idle"
+
+        self.creature.ia["objectif"] = None
+        self.creature.ia["order_action"] = None
+        self.creature.ia["target_craft_id"] = None
+
 
 class PassiveFauna(Individu):
     """Individu générique de faune passive."""
