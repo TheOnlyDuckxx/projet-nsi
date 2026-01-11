@@ -281,12 +281,26 @@ class SaveManager:
                 pos = ind_data.get("pos", (0.0, 0.0))
                 x, y = float(pos[0]), float(pos[1])
 
-                species_key = ind_data.get("species_key") or ("fauna" if ind_data.get("is_fauna") else "player")
+                is_fauna = bool(ind_data.get("is_fauna"))
+                species_key = ind_data.get("species_key") or ("fauna" if is_fauna else "player")
                 espece_for_ent = species_map.get(species_key) or phase1.espece
                 if espece_for_ent is None:
                     continue
 
-                ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
+                if is_fauna and hasattr(phase1, "_rabbit_definition"):
+                    from Game.species.fauna import PassiveFaunaFactory
+
+                    definition = phase1._rabbit_definition()
+                    factory = PassiveFaunaFactory(phase1, phase1.assets, definition)
+                    fauna_species = species_map.get(species_key) or phase1.fauna_species
+                    if fauna_species is None:
+                        fauna_species = factory.create_species()
+                        phase1.fauna_species = fauna_species
+                        if species_key:
+                            species_map[species_key] = fauna_species
+                    ent = factory.create_creature(fauna_species, x, y)
+                else:
+                    ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
 
                 # Stats individuelles
                 for attr_name in [
@@ -311,7 +325,7 @@ class SaveManager:
                 if ind_data.get("effets_speciaux") is not None:
                     ent.effets_speciaux = ind_data["effets_speciaux"]
 
-                if ind_data.get("is_fauna"):
+                if is_fauna:
                     ent.is_fauna = True
 
                 # Joueur ?

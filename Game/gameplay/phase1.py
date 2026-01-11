@@ -449,48 +449,77 @@ class Phase1:
         if not players:
             return
 
+        now_ms = pygame.time.get_ticks()
         for zone in self.fauna_spawn_zones:
             if zone.get("spawned"):
                 continue
             zx, zy = zone.get("pos", (None, None))
             if zx is None or zy is None:
                 continue
+            self._ensure_fauna_zone_state(zone)
             radius = float(zone.get("radius", 8))
             r2 = radius * radius
+            player_in_zone = False
             for p in players:
                 dx = (p.x - zx)
                 dy = (p.y - zy)
                 if dx * dx + dy * dy <= r2:
-                    self._spawn_fauna_group((zx, zy))
-                    zone["spawned"] = True
+                    player_in_zone = True
                     break
+            if not player_in_zone:
+                continue
+            if not zone.get("activated"):
+                zone["activated"] = True
+                zone["remaining"] = int(zone.get("spawn_count", 0))
+                zone["next_spawn_at"] = now_ms
+            if zone.get("remaining", 0) <= 0:
+                zone["spawned"] = True
+                continue
+            if now_ms < int(zone.get("next_spawn_at", 0)):
+                continue
+            forbidden = self._occupied_tiles()
+            self._spawn_fauna_from_zone(zone, (zx, zy), forbidden)
+            zone["remaining"] = int(zone.get("remaining", 0)) - 1
+            zone["spawn_index"] = int(zone.get("spawn_index", 0)) + 1
+            delay_rng = random.Random(int(zone.get("seed", 0)) + zone["spawn_index"] * 97)
+            zone["next_spawn_at"] = now_ms + delay_rng.randint(450, 900)
+            if zone.get("remaining", 0) <= 0:
+                zone["spawned"] = True
 
-    def _spawn_fauna_group(self, center: tuple[int, int]):
+    def _ensure_fauna_zone_state(self, zone: dict):
+        if zone.get("spawn_count") is None or zone.get("seed") is None:
+            base_seed = getattr(self.params, "seed", 0) or 0
+            try:
+                seed_int = int(base_seed)
+            except Exception:
+                seed_int = 0
+            zx, zy = zone.get("pos", (0, 0))
+            rng = random.Random(seed_int ^ (int(zx) * 73856093) ^ (int(zy) * 19349663))
+            zone["spawn_count"] = rng.randint(3, 5)
+            zone["seed"] = rng.getrandbits(32)
+        zone.setdefault("remaining", 0)
+        zone.setdefault("next_spawn_at", 0)
+        zone.setdefault("spawn_index", 0)
+        zone.setdefault("activated", False)
+
+    def _spawn_fauna_from_zone(self, zone: dict, center: tuple[int, int], forbidden: set):
         species = self._init_fauna_species()
         if not species:
             return
         factory = PassiveFaunaFactory(self, self.assets, self._rabbit_definition())
-        base_seed = getattr(self.params, "seed", 0) or 0
-        try:
-            seed_int = int(base_seed)
-        except Exception:
-            seed_int = 0
         cx, cy = int(center[0]), int(center[1])
-        rng = random.Random(seed_int ^ (cx * 73856093) ^ (cy * 19349663))
-        count = rng.randint(3, 5)
-        forbidden = self._occupied_tiles()
-
-        for _ in range(count):
-            ox = rng.uniform(-1.5, 1.5)
-            oy = rng.uniform(-1.5, 1.5)
-            target_tile = (int(round(cx + ox)), int(round(cy + oy)))
-            tile = self._find_nearest_walkable(target_tile, forbidden=forbidden)
-            if not tile:
-                continue
-            forbidden.add(tile)
-            ent = factory.create_creature(species, float(tile[0]), float(tile[1]))
-            self._ensure_move_runtime(ent)
-            self.entities.append(ent)
+        spawn_index = int(zone.get("spawn_index", 0))
+        rng = random.Random(int(zone.get("seed", 0)) + spawn_index * 113)
+        ox = rng.uniform(-1.5, 1.5)
+        oy = rng.uniform(-1.5, 1.5)
+        target_tile = (int(round(cx + ox)), int(round(cy + oy)))
+        tile = self._find_nearest_walkable(target_tile, forbidden=forbidden)
+        if not tile:
+            return
+        forbidden.add(tile)
+        ent = factory.create_creature(species, float(tile[0]), float(tile[1]))
+        self._ensure_move_runtime(ent)
+        self.entities.append(ent)
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
@@ -996,7 +1025,7 @@ class Phase1:
         return rect
 
     def _set_selected_entities(self, entities: list) -> None:
-        valid = [e for e in entities if e in self.entities]
+        valid = [e for e in entities if e in self.entities and not getattr(e, "is_fauna", False)]
         self.selected_entities = valid
         if valid:
             self.selected = ("entity", valid[0])
@@ -1055,8 +1084,10 @@ class Phase1:
 
     def _get_order_entities(self) -> list:
         if self.selected_entities:
-            return [e for e in self.selected_entities if e in self.entities]
+            return [e for e in self.selected_entities if e in self.entities and not getattr(e, "is_fauna", False)]
         if self.selected and self.selected[0] == "entity" and self.selected[1] in self.entities:
+            if getattr(self.selected[1], "is_fauna", False):
+                return []
             return [self.selected[1]]
         return []
 
@@ -1139,7 +1170,11 @@ class Phase1:
         if hit:
             kind, payload = hit
             if kind == "entity":
-                self._set_selected_entities([payload])
+                if getattr(payload, "is_fauna", False):
+                    self.selected = None
+                    self._set_selected_entities([])
+                else:
+                    self._set_selected_entities([payload])
             elif kind == "prop":
                 self.selected = ("prop", payload)
                 self._set_selected_entities([])
@@ -1482,7 +1517,7 @@ class Phase1:
         return True
 
     def _issue_order_to_entities(self, entities: list, hit, harvest_mode: bool = False, click_pos: tuple[int, int] | None = None):
-        entities = [e for e in entities if e in self.entities]
+        entities = [e for e in entities if e in self.entities and not getattr(e, "is_fauna", False)]
         if not entities:
             return
 
@@ -1611,6 +1646,8 @@ class Phase1:
         for ent in self.entities:
             if assigned >= max_workers:
                 break
+            if getattr(ent, "is_fauna", False):
+                continue
             if ent.ia.get("etat") != "idle" or getattr(ent, "work", None):
                 continue
             if not self._is_construction_site(*tile):
