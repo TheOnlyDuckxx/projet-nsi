@@ -120,22 +120,22 @@ class WorldParams:
         else:
             atmosphere_density = float(raw)
         return WorldParams(
-        seed=d.get("seed", None),
-        Taille=int(d.get("Taille", 256)),
-        Climat=str(d.get("Climat", "Tempéré")),
-        Niveau_des_océans=int(d.get("Niveau des océans", d.get("Niveau_des_océans", 50))),
-        Ressources=str(d.get("Ressources", "Moyenne")),
-        age=int(d.get("age", 2000)),
-        world_name=str(d.get("world_name", "Nouveau Monde")),
-        atmosphere_density=atmosphere_density,
-        biodiversity=str(d.get("biodiversity", "Moyenne")),
-        tectonic_activity=str(d.get("tectonic_activity", "Stable")),
-        weather=str(d.get("weather", "Variable")),
-        gravity=str(d.get("gravity", "Moyenne")),
-        cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
-        mystic_influence=str(d.get("mystic_influence", "Nulle")),
-        dimensional_stability=str(d.get("dimensional_stability", "Stable")),
-    )
+            seed=d.get("seed", None),
+            Taille=int(d.get("Taille", 256)),
+            Climat=str(d.get("Climat", "Tempéré")),
+            Niveau_des_océans=int(d.get("Niveau des océans", d.get("Niveau_des_océans", 50))),
+            Ressources=str(d.get("Ressources", "Moyenne")),
+            age=int(d.get("age", 2000)),
+            world_name=str(d.get("world_name", "Nouveau Monde")),
+            atmosphere_density=atmosphere_density,
+            biodiversity=str(d.get("biodiversity", "Moyenne")),
+            tectonic_activity=str(d.get("tectonic_activity", "Stable")),
+            weather=str(d.get("weather", "Variable")),
+            gravity=str(d.get("gravity", "Moyenne")),
+            cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
+            mystic_influence=str(d.get("mystic_influence", "Nulle")),
+            dimensional_stability=str(d.get("dimensional_stability", "Stable")),
+        )
 
 
     def to_dict(self) -> Dict[str, Any]:
@@ -256,7 +256,7 @@ def load_world_params_from_menu_dict(menu_dict: Dict[str, Any]) -> WorldParams:
     """
     Construit un WorldParams à partir du JSON du menu (format 'Custom' que tu as donné).
     """
-    raw_seed = d.get("seed", None)
+    raw_seed = menu_dict.get("seed", None)
     if raw_seed in (None, "", "Aléatoire", "Aleatoire", "Random", "random"):
         seed = None
     else:
@@ -464,6 +464,7 @@ def _fbm(x: float, y: float, seed: int, octaves: int = 5) -> float:
 BIOME_OCEAN = 1
 BIOME_COAST = 2
 BIOME_LAKE = 3
+BIOME_RIVER = 4
 
 BIOME_PLAINS = 10
 BIOME_FOREST = 11
@@ -486,6 +487,7 @@ BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_OCEAN: "ocean",
     BIOME_COAST: "coast",
     BIOME_LAKE: "lake",
+    BIOME_RIVER: "river",
     BIOME_PLAINS: "plains",
     BIOME_FOREST: "forest",
     BIOME_RAINFOREST: "rainforest",
@@ -742,7 +744,7 @@ class ChunkedWorld:
 
     def get_is_water(self, x: int, y: int) -> bool:
         bid = self.get_biome_id(x, y)
-        return bid in (BIOME_OCEAN, BIOME_COAST, BIOME_LAKE)
+        return bid in (BIOME_OCEAN, BIOME_COAST, BIOME_LAKE, BIOME_RIVER)
 
     # ------------------- chunk management -------------------
 
@@ -874,13 +876,28 @@ class ChunkedWorld:
                 # plus haut => plus sec
                 m01 = _clamp01(m01 - 0.38 * max(0.0, h01 - sea_here))
 
-                # --- eau / côte ---
-                is_ocean = h01 < sea_here
-                coast = (not is_ocean) and (h01 < sea_here + 0.035)
+                # --- eau douce (pas d'océans/mer) ---
+                lake_level = sea_here - 0.06 + 0.05 * water_bias
+                lake_level = max(0.30, min(0.70, lake_level))
+                lake_noise = _fbm(wx * 0.0022, wy * 0.0022, base + 6060, octaves=3)
+                lake_cut = 0.58 - 0.10 * water_bias
+                is_lake = (lake_noise > lake_cut) and (h01 < lake_level)
+
+                river_noise = abs(_fbm(wx * 0.008, wy * 0.008, base + 7070, octaves=3))
+                river_th = 0.03 + 0.012 * max(0.0, water_bias)
+                is_river = (river_noise < river_th) and (h01 < 0.78)
+
+                is_water = is_lake or is_river
+                coast = (not is_water) and (
+                    (lake_noise > lake_cut - 0.06 and h01 < lake_level + 0.03)
+                    or (river_noise < river_th * 1.8 and h01 < 0.80)
+                )
 
                 # --- biome (inchangé dans l’idée) ---
-                if is_ocean:
-                    bid = BIOME_OCEAN
+                if is_lake:
+                    bid = BIOME_LAKE
+                elif is_river:
+                    bid = BIOME_RIVER
                 elif coast:
                     bid = BIOME_COAST
                 else:
@@ -899,9 +916,12 @@ class ChunkedWorld:
                             bid = BIOME_RAINFOREST if t01 > 0.55 else BIOME_FOREST
 
                 # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
-                if bid == BIOME_OCEAN:
+                if bid == BIOME_LAKE:
                     level = 0
-                    gname = "ocean"
+                    gname = "lake"
+                elif bid == BIOME_RIVER:
+                    level = 0
+                    gname = "river"
                 elif bid == BIOME_COAST:
                     level = 1
                     gname = "beach"
@@ -938,7 +958,7 @@ class ChunkedWorld:
 
                 # --- props (IMPORTANT : seed par TUILE, pas par chunk) ---
                 prop = 0
-                if bid not in (BIOME_OCEAN,) and not coast:
+                if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not coast:
                     base_p = 0.02 * biodiv_mul
                     if bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
                         base_p *= 2.2
@@ -1019,7 +1039,7 @@ class ChunkedWorld:
 
             # 1 seul appel biome (au lieu de get_is_water + get_biome_id)
             bid = self.get_biome_id(x, y)
-            if bid in (BIOME_OCEAN, BIOME_LAKE):
+            if bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
                 continue
 
             # éviter props / obstacles
@@ -1064,14 +1084,14 @@ class ChunkedWorld:
                     x = _wrap_lon_x(mid_x + dx, self.width)
                     y = _clamp_lat_y(mid_y + dy, self.height)
                     bid = self.get_biome_id(x, y)
-                    if bid not in (BIOME_OCEAN, BIOME_LAKE) and not self.get_overlay(x, y):
+                    if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not self.get_overlay(x, y):
                         return (x, y)
             for dy in range(-r + 1, r):
                 for dx in (-r, r):
                     x = _wrap_lon_x(mid_x + dx, self.width)
                     y = _clamp_lat_y(mid_y + dy, self.height)
                     bid = self.get_biome_id(x, y)
-                    if bid not in (BIOME_OCEAN, BIOME_LAKE) and not self.get_overlay(x, y):
+                    if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not self.get_overlay(x, y):
                         return (x, y)
 
             if r % 16 == 0:
