@@ -421,15 +421,26 @@ class Phase1:
             seed_int = random.getrandbits(32)
         rng = random.Random(seed_int + 4242)
 
+        try:
+            center_x, center_y = self.world.spawn
+        except Exception:
+            center_x = getattr(self.world, "width", 1) // 2
+            center_y = getattr(self.world, "height", 1) // 2
+
+        x_span = min(max(96, getattr(self.world, "width", 1) // 12), 640)
+        y_span = min(max(96, getattr(self.world, "height", 1) // 10), 480)
+
         zones: list[dict] = []
         attempts = 0
-        max_attempts = count * 120
+        max_attempts = count * 50
         forbidden = self._occupied_tiles()
 
         while len(zones) < count and attempts < max_attempts:
             attempts += 1
-            i = rng.randrange(0, getattr(self.world, "width", 1))
-            j = rng.randrange(0, getattr(self.world, "height", 1))
+            i = int(center_x + rng.randrange(-x_span, x_span + 1))
+            j = int(center_y + rng.randrange(-y_span, y_span + 1))
+            if i < 0 or j < 0 or i >= getattr(self.world, "width", 1) or j >= getattr(self.world, "height", 1):
+                continue
             if not self._is_walkable(i, j):
                 continue
             if (i, j) in forbidden:
@@ -605,6 +616,7 @@ class Phase1:
         except Exception:
             traceback.print_exc()
             raise
+        self.world = world
         self.view.set_world(self.world)
         if self.fog is None:
     # chunk_size à synchroniser avec ton world_gen (64 chez toi)
