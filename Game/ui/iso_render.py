@@ -140,9 +140,8 @@ class IsoMapView:
     # ---------- State ----------
     def set_world(self, world) -> None:
         self.world = world
-        self.max_levels = max(max(row) for row in world.levels) if world.levels else 6
+        self.max_levels = int(getattr(world, "tiles_levels", 6) or 6)
 
-        # centre la caméra SUR le spawn, puis on recentre au blit (screen_w/2, screen_h/2)
         sx, sy = self.world_to_screen(world.spawn[0], world.spawn[1], 0)
         self.cam_x, self.cam_y = sx, sy
 
@@ -337,8 +336,12 @@ class IsoMapView:
                 if not (0 <= i < W and 0 <= j < H):
                     continue
 
-                visible = (self.fog.visible[j][i] if hasattr(self, "fog") and self.fog else True)
-                explored = (self.fog.explored[j][i] if hasattr(self, "fog") and self.fog else True)
+                if hasattr(self, "fog") and self.fog:
+                    visible = self.fog.is_visible(i, j)
+                    explored = self.fog.is_explored(i, j)
+                else:
+                    visible = True
+                    explored = True
 
                 if not explored:
                     continue  # jamais vu → noir total

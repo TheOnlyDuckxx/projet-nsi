@@ -1,28 +1,48 @@
-# WORLD_GEN.PY
-# Génère le monde procéduralement tout en utilisant les paramètres fournit
+# world_gen.py
+# Monde entier procédural : génération par chunks.
+#
+# Objectifs :
+# - Monde très grand, mais chargé au fur et à mesure (chunk cache).
+# - Biomes variés, déterministes avec seed.
+# - Les paramètres du monde influencent la génération (eau, climat, ressources, biodiversité, tectonique, etc.).
+#
+# Compat :
+# - world.width / world.height
+# - world.ground_id[y][x], world.levels[y][x], world.overlay[y][x]
+# - world.biome[y][x] (nom), world.heightmap[y][x], world.moisture[y][x]
+# - world.spawn  -> (x, y)
+#
+# Notes :
+# - Wrap horizontal (longitude): x est modulo width (comme une planète).
+# - Clamp vertical (latitude): y est borné [0..height-1].
+# - overlay est modifiable : world.overlay[y][x] = ... (int prop_id, dict, None, etc.)
+#   => seules les modifications sont stockées (overrides), pas une grille énorme.
 
-
-# --------------- IMPORTATION DES MODULES ---------------
 from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
+import time
 import random
-import struct
+from array import array
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from Game.world.tiles import get_tile_id
 
 ProgressCb = Optional[Callable[[float, str], None]]
 
 
+# --------------------------------------------------------------------------------------
+# Props helpers (IDs)
+# --------------------------------------------------------------------------------------
+
 def get_prop_id(name: str) -> int:
     _MAP = {
-        "tree_3":8,
-        "tree_1":9,
+        "tree_3": 8,
+        "tree_1": 9,
         "tree_2": 10,
         "tree_dead": 12,
         "rock": 13,
@@ -30,88 +50,107 @@ def get_prop_id(name: str) -> int:
         "cactus": 15,
         "bush": 16,
         "berry_bush": 17,
-        "reeds": 18,       # roseaux
-        "driftwood": 19,   # bois flotté
+        "reeds": 18,
+        "driftwood": 19,
         "flower": 20,
-        "stump": 21,       # souche
-        "log": 22,         # tronc au sol
-        "boulder": 23,     # gros rocher
+        "stump": 21,
+        "log": 22,
+        "boulder": 23,
         "flower2": 25,
         "flower3": 26,
         "entrepot": 102,
-        # A faire
-        "blueberry_bush":28,
-        "ore_copper": 29,     # veine de cuivre
-        "ore_iron": 30,       # veine de fer
-        "ore_gold": 31,       # veine d'or (rare)
-        "clay_pit": 32,       # dépôt d'argile
-        "vine": 33,           # liane (fibres)
+        "blueberry_bush": 28,
+        "ore_copper": 29,
+        "ore_iron": 30,
+        "ore_gold": 31,
+        "clay_pit": 32,
+        "vine": 33,
         "mushroom1": 34,
         "mushroom2": 35,
-        "mushroom3": 36,       # champignon (nourriture + risque)
-        "bone_pile": 37,      # tas d'os (cuir / outils)
-        "nest": 38,           # nid (graines + parfois nourriture)
-        "beehive": 39,        # ruche (nourriture rare, risque piqûre plus tard)
-        "freshwater_pool": 40 # mare (eau)
+        "mushroom3": 36,
+        "bone_pile": 37,
+        "nest": 38,
+        "beehive": 39,
+        "freshwater_pool": 40,
     }
     return _MAP.get(name, _MAP["tree_2"])
 
+ATMOSPHERE_MAP = {
+    "Basse": 0.7,
+    "Faible": 0.7,
+    "Normale": 1.0,
+    "Moyenne": 1.0,
+    "Haute": 1.3,
+    "Épaisse": 1.3,
+}
 
-# --------- Données & paramètres ---------
+# --------------------------------------------------------------------------------------
+# World parameters
+# --------------------------------------------------------------------------------------
+
 @dataclass
 class WorldParams:
     seed: Optional[int]
-    Taille: int                 # ancien planet_width
-    Climat: str                 # ancien temperature
-    Niveau_des_océans: int      # ancien water_pct
-    Ressources: str             # ancien resource_density (valeur symbolique)
+
+    # Historique / compat : vous aviez ces clés dans vos presets.
+    # On les garde pour ne pas casser les loaders.
+    Taille: int  # peut être : 256/384/512/... (symbolique) OU une taille en km (ex: 28000)
+    Climat: str
+    Niveau_des_océans: int  # 0..100
+    Ressources: str
     age: int
-    atmosphere_density: float = 1.0
+
+    # Nouveau / menu
     world_name: str = "Nouveau Monde"
+    atmosphere_density: float = 1.0
+
+    biodiversity: str = "Moyenne"
+    tectonic_activity: str = "Stable"
+    weather: str = "Variable"
+    gravity: str = "Moyenne"
+    cosmic_radiation: str = "Faible"
+    mystic_influence: str = "Nulle"
+    dimensional_stability: str = "Stable"
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "WorldParams":
+        raw = d.get("atmosphere_density", 1.0)
+        if isinstance(raw, str):
+            atmosphere_density = ATMOSPHERE_MAP.get(raw, 1.0)
+        else:
+            atmosphere_density = float(raw)
         return WorldParams(
-            seed=d.get("seed", None),
-            Taille=int(d.get("Taille", 256)),
-            Climat=str(d.get("Climat", "Tempéré")),
-            Niveau_des_océans=int(d.get("Niveau des océans", 50)),
-            Ressources=str(d.get("Ressources", "Normale")),
-            age=int(d.get("age", 2000)),
-            atmosphere_density=float(d.get("atmosphere_density", 1.0)),
-            world_name=str(d.get("world_name", "Nouveau Monde")),
-        )
+        seed=d.get("seed", None),
+        Taille=int(d.get("Taille", 256)),
+        Climat=str(d.get("Climat", "Tempéré")),
+        Niveau_des_océans=int(d.get("Niveau des océans", d.get("Niveau_des_océans", 50))),
+        Ressources=str(d.get("Ressources", "Moyenne")),
+        age=int(d.get("age", 2000)),
+        world_name=str(d.get("world_name", "Nouveau Monde")),
+        atmosphere_density=atmosphere_density,
+        biodiversity=str(d.get("biodiversity", "Moyenne")),
+        tectonic_activity=str(d.get("tectonic_activity", "Stable")),
+        weather=str(d.get("weather", "Variable")),
+        gravity=str(d.get("gravity", "Moyenne")),
+        cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
+        mystic_influence=str(d.get("mystic_influence", "Nulle")),
+        dimensional_stability=str(d.get("dimensional_stability", "Stable")),
+    )
+
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
-@dataclass
-class WorldData:
-    width: int
-    height: int
-    sea_level: float
-    heightmap: List[List[float]]       # 0..1 (après normalisation et mer retirée)
-    levels:   List[List[int]]          # étages / cubes (0..N)
-    ground_id: List[List[int]]         # id tuile sol (herbe, sable…)
-    moisture: List[List[float]]        # 0..1
-    biome:    List[List[str]]          # nom de biome par case
-    overlay:  List[List[Optional[int]]]# props (arbres, rochers…)
-    spawn:    Tuple[int, int]          # (x, y)
- 
-
-
-# --------- Presets ---------
 def load_world_params_from_preset(
     preset_name: str,
     path: str = "Game/data/world_presets.json",
-    overrides: Optional[Dict[str, Any]] = None
+    overrides: Optional[Dict[str, Any]] = None,
 ) -> WorldParams:
     """
-    Charge un preset de monde en acceptant :
-      - l'ancien format (Taille, Climat, 'Niveau des océans', Ressources, etc.)
-      - le nouveau format du menu (world_size, water_coverage, temperature,
-        resource_density, atmosphere_density = 'Faible/Normale/Épaisse', etc.)
+    Charge un preset en acceptant :
+      - ancien format : Taille, Climat, 'Niveau des océans', Ressources...
+      - format menu : world_size, temperature, water_coverage, resource_density, etc.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(f"Preset file not found: {path}")
@@ -123,1010 +162,1067 @@ def load_world_params_from_preset(
     if preset is None:
         raise KeyError(f"Preset '{preset_name}' not found in {path}")
 
-    # Copie modifiable
     d: Dict[str, Any] = dict(preset)
-
-    # Merge éventuels overrides
     if overrides:
         d.update(overrides)
 
-    # ---------- Taille ----------
+    # --- World name
+    if "world_name" not in d:
+        d["world_name"] = d.get("world_name", preset_name)
+
+    # --- Taille
+    # Si world_size est un label, on le transforme en symbolique (256/384/512/768).
     if "Taille" not in d:
         raw_size = d.get("world_size", "Moyenne")
-        taille_km: int
-
         if isinstance(raw_size, (int, float)):
-            taille_km = int(raw_size)
-        elif isinstance(raw_size, str):
-            s = raw_size.lower()
-            if "petite" in s:
-                taille_km = 22000
-            elif "moyen" in s:
-                taille_km = 28000
-            elif "grand" in s:
-                taille_km = 34000
-            elif "gigan" in s:
-                taille_km = 38000
-            else:
-                taille_km = 28000
+            d["Taille"] = int(raw_size)
         else:
-            taille_km = 28000
+            s = str(raw_size).lower()
+            if "petit" in s:
+                d["Taille"] = 256
+            elif "moyen" in s:
+                d["Taille"] = 384
+            elif "grand" in s:
+                d["Taille"] = 512
+            elif "gigan" in s:
+                d["Taille"] = 768
+            else:
+                d["Taille"] = 384
 
-        d["Taille"] = taille_km
-
-    # ---------- Climat ----------
+    # --- Climat
     if "Climat" not in d:
         raw_temp = d.get("temperature", "Tempéré")
-        climat: str
-
-        if isinstance(raw_temp, str):
-            t = raw_temp.lower()
-            if "glaciaire" in t:
-                climat = "Glaciaire"
-            elif "froid" in t:
-                climat = "Froid"
-            elif "temp" in t:
-                climat = "Tempéré"
-            elif "chaud" in t:
-                climat = "Tropical"
-            elif "ardent" in t:
-                climat = "Aride"
-            else:
-                climat = "Tempéré"
+        t = str(raw_temp).lower()
+        if "glacia" in t:
+            d["Climat"] = "Glaciaire"
+        elif "froid" in t:
+            d["Climat"] = "Froid"
+        elif "arid" in t:
+            d["Climat"] = "Aride"
+        elif "trop" in t or "chaud" in t:
+            d["Climat"] = "Tropical"
         else:
-            climat = "Tempéré"
+            d["Climat"] = "Tempéré"
 
-        d["Climat"] = climat
-
-    # ---------- Niveau des océans ----------
-    if "Niveau des océans" not in d:
+    # --- Niveau des océans
+    if "Niveau des océans" not in d and "Niveau_des_océans" not in d:
         raw_cov = d.get("water_coverage", "Tempéré")
-        niveau: int
-
         if isinstance(raw_cov, (int, float)):
-            niveau = int(raw_cov)
-        elif isinstance(raw_cov, str):
-            c = raw_cov.lower()
-            if "aride" in c:
-                niveau = 25
-            elif "temp" in c:
-                niveau = 50
-            elif "océan" in c or "ocean" in c:
-                niveau = 75
-            else:
-                niveau = 50
+            d["Niveau_des_océans"] = int(raw_cov)
         else:
-            niveau = 50
+            c = str(raw_cov).lower()
+            if "aride" in c or "sec" in c:
+                d["Niveau_des_océans"] = 25
+            elif "océan" in c or "ocean" in c or "beaucoup" in c:
+                d["Niveau_des_océans"] = 75
+            else:
+                d["Niveau_des_océans"] = 50
 
-        d["Niveau des océans"] = niveau
-
-    # ---------- Ressources ----------
+    # --- Ressources
     if "Ressources" not in d:
-        raw_res = d.get("resource_density", "Moyenne")
-        res: str
+        d["Ressources"] = str(d.get("resource_density", "Moyenne"))
 
-        if isinstance(raw_res, str):
-            r = raw_res.lower()
-            if "pauvre" in r:
-                res = "Faible"
-            elif "moy" in r:
-                res = "Normale"
-            elif "riche" in r:
-                res = "Riche"
-            elif "instable" in r:
-                # pour l'instant on assimile à Riche (densité forte)
-                res = "Riche"
-            else:
-                res = "Normale"
-        else:
-            res = "Normale"
-
-        d["Ressources"] = res
-
-    # ---------- Atmosphère (float) ----------
-    raw_atmo = d.get("atmosphere_density", 1.0)
-    atmo_val: float
-
-    if isinstance(raw_atmo, (int, float)):
-        atmo_val = float(raw_atmo)
-    elif isinstance(raw_atmo, str):
-        s = raw_atmo.lower()
-        if "faible" in s:
-            atmo_val = 0.7
-        elif "norm" in s:
-            atmo_val = 1.0
-        elif "épais" in s or "epais" in s:
-            atmo_val = 1.3
-        else:
-            try:
-                atmo_val = float(raw_atmo.replace(",", "."))
-            except Exception:
-                atmo_val = 1.0
-    else:
-        atmo_val = 1.0
-
-    d["atmosphere_density"] = atmo_val
-
-    # ---------- Age par défaut ----------
+    # --- age
     if "age" not in d:
-        d["age"] = 2000
+        d["age"] = int(d.get("age", 2000))
 
-    # Le reste (seed, world_name, etc.) est déjà géré par WorldParams.from_dict
+    # --- atmosphere_density (menu -> float)
+    if "atmosphere_density" not in d:
+        raw = d.get("atmosphere_density", "Normale")
+        if isinstance(raw, (int, float)):
+            d["atmosphere_density"] = float(raw)
+        else:
+            s = str(raw).lower()
+            if "faible" in s or "thin" in s:
+                d["atmosphere_density"] = 0.8
+            elif "épais" in s or "dense" in s or "thick" in s:
+                d["atmosphere_density"] = 1.2
+            else:
+                d["atmosphere_density"] = 1.0
+
+    # autres champs menu (si absents)
+    d.setdefault("biodiversity", d.get("biodiversity", "Moyenne"))
+    d.setdefault("tectonic_activity", d.get("tectonic_activity", "Stable"))
+    d.setdefault("weather", d.get("weather", "Variable"))
+    d.setdefault("gravity", d.get("gravity", "Moyenne"))
+    d.setdefault("cosmic_radiation", d.get("cosmic_radiation", "Faible"))
+    d.setdefault("mystic_influence", d.get("mystic_influence", "Nulle"))
+    d.setdefault("dimensional_stability", d.get("dimensional_stability", "Stable"))
+
     return WorldParams.from_dict(d)
 
 
-def km_to_blocks(km: int) -> int:
-        km = max(20000, min(40000, km))
-        t = (km - 20000) / 20000
-        return int(256 + (256 * (t ** 1.3)))
-
-# --------- Seed finale (seed + signature params) ---------
-def _normalize_params_for_seed(params: WorldParams) -> str:
-    """Crée une signature stable des paramètres du monde (pour la graine)."""
-    res_map = {"Faible": 0.5, "Normale": 1.0, "Riche": 1.5}
-    ressources_val = res_map.get(str(params.Ressources).capitalize(), 1.0)
-    taille_blocs = km_to_blocks(params.Taille)
-
-    # Ordre stable + arrondis raisonnables
-    return "|".join([
-        f"taille_km={params.Taille}",
-        f"taille_blocs={taille_blocs}",
-        f"age={params.age}",
-        f"climat={params.Climat}",
-        f"eau={params.Niveau_des_océans}",
-        f"atmo={round(params.atmosphere_density, 4)}",
-        f"ressources={round(ressources_val, 4)}",
-        f"nom={params.world_name}",
-    ])
-
-def make_final_seed(user_seed: Optional[int], params: WorldParams) -> int:
-    base = user_seed if user_seed is not None else 0
-    sig  = _normalize_params_for_seed(params)
-    data = f"{base}::{sig}".encode("utf-8")
-    h = hashlib.blake2b(data, digest_size=8).digest()  # 64-bit
-    return struct.unpack("<Q", h)[0]
-
-
-# --------- Petits helpers math/noise ---------
-def clamp01(x: float) -> float:
-    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
-
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
-
-def smoothstep(t: float) -> float:
-    t = clamp01(t)
-    return t * t * (3 - 2 * t)
-
-def value_noise2d(ix: int, iy: int, seed: int) -> float:
-    """Value-noise déterministe ultra-rapide (hash -> float [-1,1]).
-    Remplace l'ancienne version qui instançait random.Random à chaque appel (très coûteux).
+def load_world_params_from_menu_dict(menu_dict: Dict[str, Any]) -> WorldParams:
     """
-    n = (ix * 73856093) ^ (iy * 19349663) ^ (seed * 83492791)
-    n &= 0xFFFFFFFF
-    n ^= (n >> 13)
-    n = (n * 1274126177) & 0xFFFFFFFF
-    n ^= (n >> 16)
-    return (n / 0xFFFFFFFF) * 2.0 - 1.0
+    Construit un WorldParams à partir du JSON du menu (format 'Custom' que tu as donné).
+    """
+    raw_seed = d.get("seed", None)
+    if raw_seed in (None, "", "Aléatoire", "Aleatoire", "Random", "random"):
+        seed = None
+    else:
+        try:
+            seed = int(raw_seed)
+        except Exception:
+            seed = None
 
-def fbm2d(x: float, y: float, octaves: int, seed: int) -> float:
-    amp, freq = 1.0, 1.0
-    val, norm = 0.0, 0.0
-    for i in range(octaves):
-        xi, yi = math.floor(x * freq), math.floor(y * freq)
-        xf, yf = (x * freq) - xi, (y * freq) - yi
+    size_label = str(menu_dict.get("world_size", "Moyenne"))
+    s = size_label.lower()
+    if "petit" in s:
+        taille = 256
+    elif "grand" in s:
+        taille = 512
+    elif "gigan" in s:
+        taille = 768
+    else:
+        taille = 384
 
-        n00 = value_noise2d(xi,     yi,     seed + i)
-        n10 = value_noise2d(xi + 1, yi,     seed + i)
-        n01 = value_noise2d(xi,     yi + 1, seed + i)
-        n11 = value_noise2d(xi + 1, yi + 1, seed + i)
+    # water_coverage, temperature etc restent en label mais on les mappe sur votre ancien format
+    water_label = str(menu_dict.get("water_coverage", "Tempéré")).lower()
+    if "aride" in water_label:
+        oceans = 25
+    elif "océan" in water_label or "ocean" in water_label:
+        oceans = 75
+    else:
+        oceans = 50
 
-        ux, uy = smoothstep(xf), smoothstep(yf)
-        nx0 = lerp(n00, n10, ux)
-        nx1 = lerp(n01, n11, ux)
-        nxy = lerp(nx0, nx1, uy)
+    temp_label = str(menu_dict.get("temperature", "Tempéré")).lower()
+    if "glacia" in temp_label:
+        climat = "Glaciaire"
+    elif "froid" in temp_label:
+        climat = "Froid"
+    elif "arid" in temp_label:
+        climat = "Aride"
+    elif "chaud" in temp_label or "trop" in temp_label:
+        climat = "Tropical"
+    else:
+        climat = "Tempéré"
 
-        val += nxy * amp
+    raw = menu_dict.get("atmosphere_density", "Normale")
+    if isinstance(raw, str):
+        atmo = ATMOSPHERE_MAP.get(raw, 1.0)
+    else:
+        atmo = float(raw)
+
+
+    return WorldParams(
+        seed=seed,
+        Taille=taille,
+        Climat=climat,
+        Niveau_des_océans=oceans,
+        Ressources=str(menu_dict.get("resource_density", "Moyenne")),
+        age=int(menu_dict.get("age", 2000)),
+        world_name=str(menu_dict.get("world_name", "Nouveau Monde")),
+        atmosphere_density=float(atmo),
+        biodiversity=str(menu_dict.get("biodiversity", "Moyenne")),
+        tectonic_activity=str(menu_dict.get("tectonic_activity", "Stable")),
+        weather=str(menu_dict.get("weather", "Variable")),
+        gravity=str(menu_dict.get("gravity", "Moyenne")),
+        cosmic_radiation=str(menu_dict.get("cosmic_radiation", "Faible")),
+        mystic_influence=str(menu_dict.get("mystic_influence", "Nulle")),
+        dimensional_stability=str(menu_dict.get("dimensional_stability", "Stable")),
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Deterministic seed helpers
+# --------------------------------------------------------------------------------------
+
+def _seed_int(v: Any) -> int:
+    if v is None:
+        return random.getrandbits(63)
+
+    if isinstance(v, str):
+        s = v.strip()
+        if s in ("", "Aléatoire", "Aleatoire", "Random", "random"):
+            return random.getrandbits(63)
+        try:
+            return int(s) & 0x7FFF_FFFF_FFFF_FFFF
+        except Exception:
+            return random.getrandbits(63)
+
+    try:
+        return int(v) & 0x7FFF_FFFF_FFFF_FFFF
+    except Exception:
+        return random.getrandbits(63)
+
+
+
+def make_final_seed(base_seed: int, params: WorldParams) -> int:
+    """
+    Seed final = hash(base_seed + paramètres).
+    Important : on n'interprète pas Taille comme km ici, on garde la valeur brute.
+    """
+    raw_atmo = getattr(params, "atmosphere_density", 1.0)
+    if isinstance(raw_atmo, str):
+        atmo_val = ATMOSPHERE_MAP.get(raw_atmo, 1.0)
+    else:
+        try:
+            atmo_val = float(raw_atmo)
+        except Exception:
+            atmo_val = 1.0
+
+    sig = (
+        f"{int(base_seed)}|{params.world_name}|{params.Taille}|{params.Climat}|"
+        f"{int(params.Niveau_des_océans)}|{params.Ressources}|{int(params.age)}|"
+        f"{atmo_val:.3f}|{getattr(params,'biodiversity','Moyenne')}|"
+        f"{getattr(params,'tectonic_activity','Stable')}|{getattr(params,'weather','Variable')}|{getattr(params,'gravity','Moyenne')}|"
+        f"{getattr(params,'cosmic_radiation','Faible')}|{getattr(params,'mystic_influence','Nulle')}|{getattr(params,'dimensional_stability','Stable')}"
+    ).encode("utf-8")
+    h = hashlib.blake2b(sig, digest_size=8).digest()
+    return int.from_bytes(h, "little", signed=False)
+
+
+def _hash_u32(x: int) -> int:
+    x &= 0xFFFF_FFFF
+    x ^= (x >> 16)
+    x = (x * 0x7FEB_352D) & 0xFFFF_FFFF
+    x ^= (x >> 15)
+    x = (x * 0x846C_A68B) & 0xFFFF_FFFF
+    x ^= (x >> 16)
+    return x
+
+
+def _rand01_from_u32(u: int) -> float:
+    return (u & 0xFFFF_FFFF) / 0x1_0000_0000
+
+
+def _clamp01(v: float) -> float:
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+def _wrap_lon_x(x: int, width: int) -> int:
+    if width <= 0:
+        return 0
+    return x % width
+
+
+def _clamp_lat_y(y: int, height: int) -> int:
+    if y < 0:
+        return 0
+    if y >= height:
+        return height - 1
+    return y
+
+
+# --------------------------------------------------------------------------------------
+# Simple value noise / fbm (deterministic)
+# --------------------------------------------------------------------------------------
+
+def _val_noise_2d(x: float, y: float, seed: int) -> float:
+    """
+    value noise déterministe ~[-1,1]
+    """
+    xi = int(x)
+    yi = int(y)
+    xf = x - xi
+    yf = y - yi
+
+    def h(ix: int, iy: int) -> float:
+        u = _hash_u32(seed ^ _hash_u32(ix * 0x9E37) ^ _hash_u32(iy * 0x85EB))
+        return _rand01_from_u32(u) * 2.0 - 1.0
+
+    def smooth(t: float) -> float:
+        return t * t * (3.0 - 2.0 * t)
+
+    u = smooth(xf)
+    v = smooth(yf)
+
+    n00 = h(xi, yi)
+    n10 = h(xi + 1, yi)
+    n01 = h(xi, yi + 1)
+    n11 = h(xi + 1, yi + 1)
+
+    nx0 = n00 + (n10 - n00) * u
+    nx1 = n01 + (n11 - n01) * u
+    return nx0 + (nx1 - nx0) * v
+
+
+def _fbm(x: float, y: float, seed: int, octaves: int = 5) -> float:
+    """
+    fractal brownian motion ~[-1,1]
+    """
+    val = 0.0
+    amp = 1.0
+    freq = 1.0
+    norm = 0.0
+    for _ in range(max(1, int(octaves))):
+        val += amp * _val_noise_2d(x * freq, y * freq, seed)
         norm += amp
         amp *= 0.5
         freq *= 2.0
-    return val / max(norm, 1e-9)
+    return val / (norm if norm > 1e-9 else 1.0)
 
 
-# --------- Distance maps (optimisation) ---------
-from collections import deque
-from array import array
+# --------------------------------------------------------------------------------------
+# Biomes (IDs + names)
+# --------------------------------------------------------------------------------------
 
-def distance_to_mask_4(mask: List[List[int]]) -> List[array]:
-    """Distance de Manhattan (4-voisins) jusqu'à la cellule la plus proche où mask==1.
-    - O(W*H)
-    - Renvoie une matrice dist en array('H') (mémoire réduite).
+BIOME_OCEAN = 1
+BIOME_COAST = 2
+BIOME_LAKE = 3
+
+BIOME_PLAINS = 10
+BIOME_FOREST = 11
+BIOME_RAINFOREST = 12
+BIOME_SAVANNA = 13
+BIOME_DESERT = 14
+BIOME_TAIGA = 15
+BIOME_TUNDRA = 16
+BIOME_SNOW = 17
+
+# Extras (plus de variété, sans forcer des nouveaux tiles)
+BIOME_SWAMP = 18
+BIOME_MANGROVE = 19
+BIOME_ROCKY = 20
+BIOME_ALPINE = 21
+BIOME_VOLCANIC = 22
+BIOME_MYSTIC = 23
+
+BIOME_ID_TO_NAME: Dict[int, str] = {
+    BIOME_OCEAN: "ocean",
+    BIOME_COAST: "coast",
+    BIOME_LAKE: "lake",
+    BIOME_PLAINS: "plains",
+    BIOME_FOREST: "forest",
+    BIOME_RAINFOREST: "rainforest",
+    BIOME_SAVANNA: "savanna",
+    BIOME_DESERT: "desert",
+    BIOME_TAIGA: "taiga",
+    BIOME_TUNDRA: "tundra",
+    BIOME_SNOW: "snow",
+    BIOME_SWAMP: "swamp",
+    BIOME_MANGROVE: "mangrove",
+    BIOME_ROCKY: "rocky",
+    BIOME_ALPINE: "alpine",
+    BIOME_VOLCANIC: "volcanic",
+    BIOME_MYSTIC: "mystic",
+}
+
+
+# --------------------------------------------------------------------------------------
+# Grid proxies (compat world.xxx[y][x])
+# --------------------------------------------------------------------------------------
+
+class _RowProxy:
+    def __init__(self, grid: "_GridProxy", y: int):
+        self._g = grid
+        self._y = int(y)
+
+    def __len__(self) -> int:
+        return self._g.width
+
+    def __getitem__(self, x: int):
+        return self._g._getter(int(x), self._y)
+
+    def __setitem__(self, x: int, v):
+        if self._g._setter is None:
+            raise TypeError("This grid is read-only")
+        self._g._setter(int(x), self._y, v)
+
+
+class _GridProxy:
+    def __init__(self, width: int, height: int, getter, setter=None):
+        self.width = int(width)
+        self.height = int(height)
+        self._getter = getter
+        self._setter = setter
+
+    def __len__(self) -> int:
+        return self.height
+
+    def __getitem__(self, y: int) -> _RowProxy:
+        return _RowProxy(self, int(y))
+
+
+# --------------------------------------------------------------------------------------
+# Chunked world
+# --------------------------------------------------------------------------------------
+
+class _Chunk:
     """
-    H = len(mask)
-    W = len(mask[0]) if H else 0
-    INF = 65535
-    dist: List[array] = [array('H', [INF]) * W for _ in range(H)]
-    q = deque()
+    Chunk data compact, taille chunk_size x chunk_size.
+    """
+    __slots__ = (
+        "cx", "cy", "cs",
+        "height_u8", "temp_u8", "moist_u8",
+        "levels_u8", "ground_u16", "overlay_obj", "biome_u8",
+    )
 
-    for y in range(H):
-        row_m = mask[y]
-        row_d = dist[y]
-        for x in range(W):
-            if row_m[x]:
-                row_d[x] = 0
-                q.append((x, y))
+    def __init__(self, cx: int, cy: int, chunk_size: int):
+        self.cx = int(cx)
+        self.cy = int(cy)
+        self.cs = int(chunk_size)
+        n = self.cs * self.cs
+        self.height_u8 = array("B", [0]) * n
+        self.temp_u8 = array("B", [0]) * n
+        self.moist_u8 = array("B", [0]) * n
+        self.levels_u8 = array("B", [0]) * n
+        self.ground_u16 = array("H", [0]) * n
+        # overlay peut contenir int prop_id (base) mais aussi 0
+        self.overlay_obj = array("H", [0]) * n
+        self.biome_u8 = array("B", [0]) * n
 
-    # BFS multi-source
-    while q:
-        x, y = q.popleft()
-        dnext = dist[y][x] + 1
-        # voisins 4
-        ny = y - 1
-        if ny >= 0 and dist[ny][x] > dnext:
-            dist[ny][x] = dnext
-            q.append((x, ny))
-        ny = y + 1
-        if ny < H and dist[ny][x] > dnext:
-            dist[ny][x] = dnext
-            q.append((x, ny))
-        nx = x - 1
-        if nx >= 0 and dist[y][nx] > dnext:
-            dist[y][nx] = dnext
-            q.append((nx, y))
-        nx = x + 1
-        if nx < W and dist[y][nx] > dnext:
-            dist[y][nx] = dnext
-            q.append((nx, y))
-
-    return dist
+    def idx(self, lx: int, ly: int) -> int:
+        return int(ly) * self.cs + int(lx)
 
 
-# --------- Générateur principal (île) ---------
-class WorldGenerator:
-    def __init__(self,
-                 tiles_levels: int = 6,
-                 island_margin_frac: float = 0.12,   # marge océan par rapport au plus petit côté (8% par défaut)
-                 coast_band_tiles: int = 8,         # largeur de la bande où on "déforme" la côte
-                 beach_width_tiles: int = 2,         # épaisseur de la plage (levels==1)
-                 coast_noise_amp: float = 0.45):     # amplitude de la rugosité côtière
-        self.tiles_levels = tiles_levels
-        self.island_margin_frac = max(0.0, min(0.4, island_margin_frac))
-        self.coast_band_tiles = max(2, int(coast_band_tiles))
-        self.beach_width_tiles = max(1, int(beach_width_tiles))
-        self.coast_noise_amp = float(coast_noise_amp)
+class ChunkedWorld:
+    """
+    Monde énorme mais généré en chunks à la demande.
+
+    - Cache LRU des chunks (cache_chunks).
+    - overlay modifiable via overrides.
+    """
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        seed: int,
+        params: WorldParams,
+        tiles_levels: int = 6,
+        chunk_size: int = 64,
+        cache_chunks: int = 256,
+        progress: ProgressCb = None,   # <-- nouveau
+    ):
+
+        self.width = int(width)
+        self.height = int(height)
+        if not isinstance(seed, int):
+            raise TypeError(f"ChunkedWorld seed must be int, got {seed!r}")
+        self.seed = seed
+
+        self.params = params
+        self.tiles_levels = int(tiles_levels)
+        self.chunk_size = int(chunk_size)
+        self.cache_chunks = int(cache_chunks)
+
+        self.sea_level = self._sea_level_from_params(params)
+
+        # LRU cache chunks
+        self._chunks: "OrderedDict[Tuple[int,int], _Chunk]" = OrderedDict()
+
+        # overlay overrides: ne stocke que les modifications
+        self._NO = object()
+        self._overlay_overrides: Dict[Tuple[int, int], Any] = {}
+
+        # Proxies pour compat (world.ground_id[y][x], etc.)
+        self.heightmap = _GridProxy(self.width, self.height, self.get_height01)
+        self.moisture = _GridProxy(self.width, self.height, self.get_moisture01)
+        self.levels = _GridProxy(self.width, self.height, self.get_level)
+        self.ground_id = _GridProxy(self.width, self.height, self.get_ground_id)
+        self.biome = _GridProxy(self.width, self.height, self.get_biome_name)
+        self.overlay = _GridProxy(self.width, self.height, self.get_overlay, self.set_overlay)
+        self.max_levels = tiles_levels
+
+        # Spawn (déterminé rapidement)
+        self.spawn = self._find_spawn(progress=progress)
 
 
-    def generate_island(self, params: WorldParams, rng_seed: Optional[int]=None,
-                        progress: ProgressCb=None) -> WorldData:
-        def report(p, label):
-            if progress:
-                progress(max(0.0, min(1.0, p)), label)
-        if params.seed in (None, "Aléatoire", "random", ""):
-            params.seed = random.randint(0, 10**9)
-        final_seed = rng_seed if rng_seed is not None else make_final_seed(params.seed, params)
-        rng = random.Random(final_seed)
+    # ------------------- tile ids safe -------------------
 
-        W= H = km_to_blocks(params.Taille)
+    def _safe_tile_id(self, name: str) -> int:
+        try:
+            return int(get_tile_id(name))
+        except Exception:
+            try:
+                return int(get_tile_id("grass"))
+            except Exception:
+                return 0
 
-        # Petites pondérations de temps par phase (à la louche)
-        w_height  = 0.30
-        w_island  = 0.10
-        w_sea     = 0.05
-        w_moist   = 0.15
-        w_biome   = 0.20
-        w_props   = 0.08
-        w_spawn   = 0.02
-        
+    # ------------------- parameters -> knobs -------------------
 
-        acc = 0.0
-        report(acc, "Initialisation…")
+    def _sea_level_from_params(self, params: WorldParams) -> float:
+        v = float(getattr(params, "Niveau_des_océans", 50))
+        v = max(0.0, min(100.0, v))
+        # 0% -> mer basse (0.42), 100% -> mer haute (0.58)
+        return 0.42 + (v / 100.0) * 0.16
 
-        # [1] Heightmap brute
-        base_scale = 0.012 if max(W, H) >= 300 else 0.02
-        height_raw = [[0.0]*W for _ in range(H)]
-        for y in range(H):
-            for x in range(W):
-                n = fbm2d(x*base_scale, y*base_scale, octaves=4, seed=final_seed)
-                height_raw[y][x] = (n + 1.0) * 0.5
-            report(acc + w_height * ((y+1)/H), "Génération du terrain…")
-        acc += w_height
+    def _knobs(self):
+        p = self.params
+        # temp bias
+        temp_label = str(getattr(p, "Climat", "Tempéré"))
+        temp_bias = {
+            "Glaciaire": -0.38,
+            "Froid": -0.22,
+            "Tempéré": 0.0,
+            "Chaud": 0.20,
+            "Aride": 0.28,
+            "Tropical": 0.18,
+        }.get(temp_label, 0.0)
 
-        # [2] Île ronde avec rivage irrégulier (pas d'îlots, pas de terre aux bords)
-        cx, cy = (W - 1) * 0.5, (H - 1) * 0.5
-        min_dim = min(W, H)
+        water_v = float(getattr(p, "Niveau_des_océans", 50))
+        water_bias = (water_v - 50.0) / 100.0  # -0.5..+0.5
 
-        # marge océan -> garantit un anneau d'eau avant les bords
-        margin = max(3, int(self.island_margin_frac * min_dim))
-        R0 = (min_dim * 0.5) - margin                 # rayon "cible" du disque
-        coast_band = self.coast_band_tiles            # largeur de la bande où on bruit le rivage
-        beach_w = self.beach_width_tiles              # plage (levels==1)
+        biodiv = str(getattr(p, "biodiversity", "Moyenne"))
+        biodiv_mul = {"Faible": 0.65, "Moyenne": 1.0, "Élevée": 1.25, "Haute": 1.25}.get(biodiv, 1.0)
 
-        # bruit utilisé seulement pour la bande côtière (fréquence adaptée à la taille)
-        coast_scale = 0.06 * (256.0 / max(128.0, min_dim))  # + petit monde => bruit + large
-        coast_seed = final_seed + 901
+        tect = str(getattr(p, "tectonic_activity", "Stable"))
+        rugged = {"Stable": 0.9, "Modérée": 1.0, "Instable": 1.25, "Violente": 1.45}.get(tect, 1.0)
 
-        land_h = [[0.0]*W for _ in range(H)]     # hauteur de la terre (0..1)
-        levels  = [[0]*W for _ in range(H)]      # 0: eau, 1: plage, >=2: intérieur
+        res_label = str(getattr(p, "Ressources", "Moyenne"))
+        res_mul = {"Faible": 0.75, "Moyenne": 1.0, "Normale": 1.0, "Élevée": 1.2, "Haute": 1.2, "Riche": 1.35}.get(res_label, 1.0)
 
-        for y in range(H):
-            for x in range(W):
-                dx, dy = x - cx, y - cy
-                d = math.hypot(dx, dy)
-                rd = d - R0  # négatif = à l'intérieur du cercle, positif = à l'extérieur
+        atmo = float(getattr(p, "atmosphere_density", 1.0))
+        atmo = max(0.6, min(1.6, atmo))
 
-                if rd > coast_band:
-                    # Au delà de la bande -> eau forcée (océan)
-                    levels[y][x] = 0
-                    land_h[y][x] = 0.0
-                    continue
-                if rd < -coast_band:
-                    # Profond à l'intérieur du disque -> terre forcée
-                    # hauteur douce qui croît vers le centre + un soupçon de bruit
-                    core = clamp01(1.0 - (d / max(R0 - coast_band, 1.0))**1.15)
-                    n = fbm2d(x*0.02, y*0.02, octaves=3, seed=final_seed+77)  # micro relief
-                    h = clamp01(core + 0.12 * n)
-                    land_h[y][x] = h
-                    # plage si proche du rivage
-                    if abs(rd) <= beach_w:
-                        levels[y][x] = 1
-                    else:
-                        inner_levels = max(0, self.tiles_levels - 2)  # réserve 0 et 1
-                        levels[y][x] = 2 + int(round(h * inner_levels))
-                    continue
+        weather = str(getattr(p, "weather", "Variable"))
+        # plus variable = plus d'écarts d'humidité
+        weather_var = {"Calme": 0.85, "Stable": 0.9, "Variable": 1.0, "Extrême": 1.25}.get(weather, 1.0)
 
-                n01 = (fbm2d(x*coast_scale, y*coast_scale, octaves=3, seed=coast_seed) + 1.0) * 0.5  # 0..1
-                # amplitude de retrait de côte en tuiles:
-                shrink = self.coast_noise_amp * float(coast_band) * n01
-                R_eff = R0 - shrink
+        grav = str(getattr(p, "gravity", "Moyenne"))
+        grav_relief = {"Faible": 1.12, "Basse": 1.12, "Moyenne": 1.0, "Forte": 0.92, "Élevée": 0.92}.get(grav, 1.0)
 
-                if d > R_eff:
-                    # Océan (à l'extérieur du rayon rétréci)
-                    levels[y][x] = 0
-                    land_h[y][x] = 0.0
-                else:
-                    # Terre (à l'intérieur)
-                    # plage si on est dans l'anneau terminal
-                    if (R_eff - beach_w) <= d <= R_eff:
-                        levels[y][x] = 1  # plage
-                        land_h[y][x] = 0.12  # petite hauteur symbolique
-                    else:
-                        # hauteur douce (monte vers le centre) + micro relief
-                        core = clamp01(1.0 - (d / max(R0 - coast_band, 1.0))**1.15)
-                        n2 = fbm2d(x*0.02, y*0.02, octaves=3, seed=final_seed+77)
-                        h = clamp01(core + 0.12 * n2)
-                        land_h[y][x] = h
-                        inner_levels = max(0, self.tiles_levels - 2)  # réserve 0 et 1
-                        levels[y][x] = 2 + int(round(h * inner_levels))
+        rad = str(getattr(p, "cosmic_radiation", "Faible"))
+        rad_mul = {"Nulle": 1.05, "Faible": 1.0, "Moyenne": 0.92, "Forte": 0.82}.get(rad, 1.0)
 
-            report(acc + w_island * ((y+1)/H), "Génération île ronde…")
-        acc += w_island
+        myst = str(getattr(p, "mystic_influence", "Nulle"))
+        myst_mul = {"Nulle": 0.0, "Faible": 0.35, "Moyenne": 0.65, "Forte": 1.0}.get(myst, 0.0)
 
-        # (option sécurité) supprimer tout petit morceau de terre isolé:
-        self._keep_largest_landmass(levels)
-        report(acc + 0.01, "Nettoyage des fragments…")
-
-        # [3] Niveau des océans (stat) — on le CALCULE mais on ne l'utilise plus pour noyer la terre
-        # (servira pour lacs/rivières plus tard)
-        sea_level = float(params.Niveau_des_océans) / 100.0
-        report(acc + w_sea, "Niveau des océans (stat)…")
-        acc += w_sea
-
-        # [4] Quantification en étages
-        for y in range(H):
-            for x in range(W):
-                if levels[y][x] == 0:
-                    # on laisse l'océan tel quel
-                    continue
-                if levels[y][x] == 1:
-                    # on garde la plage décidée en [2]
-                    continue
-                # intérieur: étagement 2..N en fonction de land_h
-                inner_levels = max(0, self.tiles_levels - 2)
-                levels[y][x] = 2 + int(round(clamp01(land_h[y][x]) * inner_levels))
-        
-        # [4.5] Rivières & lacs internes (eau douce)
-        fresh_type = [[0]*W for _ in range(H)]  # 0=aucun, 1=rivière, 2=lac
-
-        # sources en altitude
-        sources = self._pick_river_sources(levels, land_h, rng)
-        for sx, sy in sources:
-            self._carve_river_path(sx, sy, cx, cy, levels, land_h, fresh_type, rng)
-
-
-        # [5] Humidité
-        moist = [[0.0]*W for _ in range(H)]
-        mscale = 0.03
-        for y in range(H):
-            for x in range(W):
-                m = fbm2d(x*mscale, y*mscale, octaves=3, seed=final_seed+1337)
-                moist[y][x] = (m + 1.0) * 0.5
-            report(acc + w_moist * ((y+1)/H), "Ajout de vie…")
-        acc += w_moist
-
-        # [6] Biomes + ground_id
-        temp_map = {
-            "Glaciaire": "cold",
-            "Froid": "cold",
-            "Tempéré": "temperate",
-            "Tropical": "hot",
-            "Aride": "hot"
+        return {
+            "temp_bias": temp_bias,
+            "water_bias": water_bias,
+            "biodiv_mul": biodiv_mul * rad_mul,
+            "rugged": rugged * grav_relief * (0.85 + 0.25 * atmo),
+            "res_mul": res_mul,
+            "atmo": atmo,
+            "weather_var": weather_var,
+            "myst_mul": myst_mul,
         }
-        temp_label = temp_map.get(params.Climat.capitalize(), "temperate")
-        temp_bias = {"cold": -0.25, "temperate": 0.0, "hot": +0.25}[temp_label]
-        temp_global = clamp01(0.5 + temp_bias)
-        biome = [["ocean"]*W for _ in range(H)]
-        ground_id = [[get_tile_id("ocean")]*W for _ in range(H)]
-        for y in range(H):
-            for x in range(W):
-                if fresh_type[y][x] == 1:
-                    biome[y][x] = "river"; ground_id[y][x] = get_tile_id("river")
-                elif fresh_type[y][x] == 2:
-                    biome[y][x] = "lake";  ground_id[y][x] = get_tile_id("lake")
-                elif levels[y][x] <= 0:
-                    biome[y][x] = "ocean"; ground_id[y][x] = get_tile_id("ocean")
-                elif levels[y][x] == 1:
-                    biome[y][x] = "beach"; ground_id[y][x] = get_tile_id("beach")
-                else:
-                    b = self._choose_biome(land_h[y][x], moist[y][x], temp_global)
-                    biome[y][x] = b
-                    ground_id[y][x] = get_tile_id(self._biome_to_ground(b))
 
+    # ------------------- overlay (writable) -------------------
 
-            report(acc + w_biome * ((y+1)/H), "Attribution des biomes…")
-        acc += w_biome
+    def get_overlay(self, x: int, y: int):
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        v = self._overlay_overrides.get((x, y), self._NO)
+        if v is not self._NO:
+            return v  # peut être None, int, dict...
+        ch, lx, ly = self._get_chunk(x, y)
+        pid = int(ch.overlay_obj[ch.idx(lx, ly)])
+        return None if pid == 0 else pid
 
+    def set_overlay(self, x: int, y: int, value):
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        self._overlay_overrides[(x, y)] = value
+        return value
 
-        # -------------------------------
-        # Optimisation : pré-calcul des distances (Manhattan) une seule fois
-        # (évite des scans en carré coûteux par tuile)
-        # -------------------------------
-        report(acc + 0.01, "Pré-calcul distances…")
-        land_mask = [[1 if levels[y][x] > 0 else 0 for x in range(W)] for y in range(H)]
-        ocean_mask = [[1 if levels[y][x] == 0 else 0 for x in range(W)] for y in range(H)]
-        fresh_mask = [[1 if fresh_type[y][x] > 0 else 0 for x in range(W)] for y in range(H)]
+    # ------------------- getters (read-only) -------------------
 
-        dist_to_land = distance_to_mask_4(land_mask)
-        dist_to_ocean = distance_to_mask_4(ocean_mask)
-        dist_to_fresh = distance_to_mask_4(fresh_mask)
+    def get_height01(self, x: int, y: int) -> float:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return ch.height_u8[ch.idx(lx, ly)] / 255.0
 
-        for y in range(H):
-            for x in range(W):
-                if biome[y][x] == "ocean":
-                    d = dist_to_land[y][x]
-                    if d < 2:   ground_id[y][x] = get_tile_id("water_shallow")
-                    elif d < 5: ground_id[y][x] = get_tile_id("water")
-                    else:       ground_id[y][x] = get_tile_id("water_deep")
+    def get_moisture01(self, x: int, y: int) -> float:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return ch.moist_u8[ch.idx(lx, ly)] / 255.0
 
+    def get_temp01(self, x: int, y: int) -> float:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return ch.temp_u8[ch.idx(lx, ly)] / 255.0
 
-        # [7] Props (variété + règles par biome + bord d’eau)
-        overlay = [[None]*W for _ in range(H)]
-        res_map = {"Faible": 0.5, "Normale": 1.0, "Riche": 1.5}
-        density_mul = res_map.get(params.Ressources.capitalize(), 1.0) * 1.4
+    def get_level(self, x: int, y: int) -> int:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return int(ch.levels_u8[ch.idx(lx, ly)])
 
-        # étiquette chaud/froid
-        temp_map = {"Glaciaire": "cold","Froid":"cold","Tempéré":"temperate","Tropical":"hot","Aride":"hot"}
-        temp_label = temp_map.get(params.Climat.capitalize(), "temperate")
-        is_hot = (temp_label == "hot")
+    def get_ground_id(self, x: int, y: int) -> int:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return int(ch.ground_u16[ch.idx(lx, ly)])
 
-        rng_cluster_seed = final_seed + 424242
-        cluster_scale = 0.07  # plus petit -> taches plus grandes
+    def get_biome_id(self, x: int, y: int) -> int:
+        ch, lx, ly = self._get_chunk_xy(x, y)
+        return int(ch.biome_u8[ch.idx(lx, ly)])
 
-        def cluster_mask(x, y):
-            c = fbm2d(x*cluster_scale, y*cluster_scale, octaves=2, seed=rng_cluster_seed)
-            return (c + 1.0) * 0.5  # 0..1
+    def get_biome_name(self, x: int, y: int) -> str:
+        return BIOME_ID_TO_NAME.get(self.get_biome_id(x, y), "unknown")
 
-        for y in range(1, H-1):
-            for x in range(1, W-1):
-                if levels[y][x] <= 0:
-                    continue
+    def get_is_water(self, x: int, y: int) -> bool:
+        bid = self.get_biome_id(x, y)
+        return bid in (BIOME_OCEAN, BIOME_COAST, BIOME_LAKE)
 
-                b = biome[y][x]
-                cm = cluster_mask(x, y)
-                near_water = (dist_to_ocean[y][x] <= 2)
+    # ------------------- chunk management -------------------
 
-                near_fresh = (dist_to_fresh[y][x] <= 2)
-                on_fresh = (fresh_type[y][x] > 0)
+    def _get_chunk_xy(self, x: int, y: int):
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        return self._get_chunk(x, y)
 
-                # -------------------------------
-                # 0) Eau douce : rien dessus (sauf roseaux en bord)
-                # -------------------------------
-                if on_fresh:
-                    continue
+    def _get_chunk(self, x: int, y: int):
+        cs = self.chunk_size
+        cx = x // cs
+        cy = y // cs
+        key = (cx, cy)
 
-                # -------------------------------
-                # 1) Props fortement contraints (bord eau douce / sol spécifique)
-                # -------------------------------
-
-                # Roseaux : bord d'eau douce (lac/rivière)
-                if near_fresh and rng.random() < 0.06 * density_mul * (0.6 + 0.8*cm):
-                    overlay[y][x] = get_prop_id("reeds")
-                    continue
-
-                # Mare d'eau douce (rare) : plutôt grassland/forest/rainforest/taiga
-                if b in ("grassland", "forest", "rainforest", "taiga") and rng.random() < 0.0025 * density_mul * (0.6 + cm):
-                    # évite près de l'océan (sinon mare sur plage)
-                    if not near_water:
-                        overlay[y][x] = get_prop_id("freshwater_pool")
-                        continue
-
-                # Argile : proche eau (mais pas sur plage), surtout forest/grassland/rainforest
-                if b in ("grassland", "forest", "rainforest") and (near_water or near_fresh):
-                    if rng.random() < 0.01 * density_mul * (0.5 + cm):
-                        overlay[y][x] = get_prop_id("clay_pit")
-                        continue
-
-                # -------------------------------
-                # 2) Minerais (rares, et surtout en roche/désert, un peu en taïga)
-                # -------------------------------
-                # cuivre : desert/rock/beach (un peu), évite trop près eau douce
-                if b in ("rock", "desert", "beach") and (not near_fresh):
-                    if rng.random() < 0.004 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("ore_copper")
-                        continue
-
-                # fer : rock/taiga/desert (plus rare)
-                if b in ("rock", "taiga", "desert") and (not near_fresh):
-                    if rng.random() < 0.003 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("ore_iron")
-                        continue
-
-                # or : très rare, plutôt rock (et un peu desert)
-                if b in ("rock", "desert") and (not near_fresh):
-                    if rng.random() < 0.0007 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("ore_gold")
-                        continue
-
-                # -------------------------------
-                # 3) Décors/loot spé (faible densité)
-                # -------------------------------
-                # tas d'os : desert/rock/taiga
-                if b in ("desert", "rock", "taiga") and rng.random() < 0.002 * density_mul * (0.4 + cm):
-                    overlay[y][x] = get_prop_id("bone_pile")
-                    continue
-
-                # nid : grassland/forest/rainforest, pas trop près de l'océan
-                if b in ("grassland", "forest", "rainforest") and (not near_water):
-                    if rng.random() < 0.003 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("nest")
-                        continue
-
-                # ruche : forest/rainforest (rare)
-                if b in ("forest", "rainforest") and rng.random() < 0.0015 * density_mul * (0.4 + cm):
-                    overlay[y][x] = get_prop_id("beehive")
-                    continue
-
-                # champignons : forest/taiga/rainforest, plutôt humide (near_water ou near_fresh)
-                if b in ("forest", "taiga", "rainforest") and (near_water or near_fresh):
-                    if rng.random() < 0.005 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("mushroom")
-                        continue
-
-                # lianes : rainforest principalement
-                if b == "rainforest" and rng.random() < 0.015 * density_mul * (0.5 + cm):
-                    overlay[y][x] = get_prop_id("vine")
-                    continue
-
-                # -------------------------------
-                # 4) Base : fleurs/buissons (comme toi, mais après les rares)
-                # -------------------------------
-                if b not in ("desert", "rock") and rng.random() < 0.02 * density_mul * (0.5 + cm):
-                    r = rng.randint(0, 2)
-                    if r == 0:
-                        overlay[y][x] = get_prop_id("flower")
-                    elif r == 1:
-                        overlay[y][x] = get_prop_id("flower2")
-                    else:
-                        overlay[y][x] = get_prop_id("flower3")
-                    continue
-
-                if b not in ("desert",) and rng.random() < 0.025 * density_mul * (0.4 + cm):
-                    if rng.random() < 0.25:
-                        if rng.random() < 0.5:
-                            overlay[y][x] = get_prop_id("berry_bush")
-                        else :
-                            overlay[y][x] = get_prop_id("blueberry_bush")
-                    else :
-                        overlay[y][x] = get_prop_id("bush")
-                    continue
-
-                # -------------------------------
-                # 5) Forêts/taïga/grassland : arbres & souches/troncs
-                # -------------------------------
-                if b in ("forest", "rainforest", "taiga", "grassland"):
-                    p_tree = {"forest":0.22,"rainforest":0.28,"taiga":0.18,"grassland":0.08}.get(b,0.0)
-                    p_tree *= density_mul * (0.6 + 0.8*cm)
-
-                    if rng.random() < p_tree:
-                        if b == "taiga":
-                            if rng.random() < 0.6 :
-                                name = "tree_dead" 
-                            else : 
-                                p_temp = rng.random()
-                                if p_temp < 0.33:
-                                    name = "tree_1"
-                                elif p_temp < 0.66:
-                                    name = "tree_2"
-                                else:
-                                    name = "tree_3"
-                        elif b == "rainforest":
-                            if rng.random() < 0.7 :
-                                p_temp = rng.random()
-                                if p_temp < 0.33:
-                                    name = "tree_1"
-                                elif p_temp < 0.66:
-                                    name = "tree_2"
-                                else:
-                                    name = "tree_3"
-                            else: 
-                                name= "stump"
-                        else:
-                            p_temp = rng.random()
-                            if p_temp < 0.33:
-                                name = "tree_1"
-                            elif p_temp < 0.66:
-                                name = "tree_2"
-                            else:
-                                name = "tree_3"
-                        overlay[y][x] = get_prop_id(name)
-                        continue
-
-                    if rng.random() < 0.015 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("stump" if rng.random() < 0.5 else "log")
-                        continue
-
-                # -------------------------------
-                # 6) Plage : palmiers, bois flotté, roseaux près mer, rochers
-                # -------------------------------
-                if b == "beach":
-                    if is_hot and rng.random() < 0.06 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("palm")
-                        continue
-                    if near_water and rng.random() < 0.04 * density_mul:
-                        overlay[y][x] = get_prop_id("driftwood")
-                        continue
-                    if near_water and rng.random() < 0.05 * density_mul:
-                        overlay[y][x] = get_prop_id("reeds")
-                        continue
-                    if rng.random() < 0.02 * density_mul:
-                        overlay[y][x] = get_prop_id("rock")
-                        continue
-
-                # -------------------------------
-                # 7) Désert : cactus, boulders, rochers
-                # -------------------------------
-                if b == "desert":
-                    if rng.random() < 0.06 * density_mul * (0.4 + cm):
-                        overlay[y][x] = get_prop_id("cactus")
-                        continue
-                    if rng.random() < 0.02 * density_mul:
-                        overlay[y][x] = get_prop_id("boulder")
-                        continue
-                    if rng.random() < 0.015 * density_mul:
-                        overlay[y][x] = get_prop_id("rock")
-                        continue
-
-                # -------------------------------
-                # 8) Zones rocheuses / taïga : rochers/boulders
-                # -------------------------------
-                if b in ("rock", "taiga") and rng.random() < 0.03 * density_mul * (0.3 + cm):
-                    overlay[y][x] = get_prop_id("rock" if rng.random() < 0.7 else "boulder")
-                    continue
-
-            report(acc + w_props * ((y+1)/H), "Placement des éléments…")
-
-        # éviter la pollution visuelle en bord de côte
-        self._sparsify_coast(overlay, levels)
-        acc += w_props
-
-
-
-        # [8] Spawn
-        report(acc + w_spawn*0.5, "Recherche d’un bon spawn…")
-        spawn = self._find_spawn(levels, biome, overlay)
-        acc += w_spawn
-        report(1.0, "Terminé !")
-
-        return WorldData(
-            width=W, height=H, sea_level=sea_level, heightmap=land_h,
-            levels=levels, ground_id=ground_id, moisture=moist,
-            biome=biome, overlay=overlay, spawn=spawn
-        )
-
-
-    # --------- Helpers privés ---------
-    def _sea_level_from_percent(self, heightmap: List[List[float]], water_pct: int) -> float:
-        flat = sorted(v for row in heightmap for v in row)
-        if not flat:
-            return 0.0
-        k = int(len(flat) * (water_pct / 100.0))
-        if k < 0: k = 0
-        if k >= len(flat): k = len(flat) - 1
-        return flat[k]
-
-    def _quantize(self, h01: float, levels: int) -> int:
-        # h in [0..1] → 0..levels (entier)
-        q = int(round(h01 * levels))
-        if q < 0: q = 0
-        if q > levels: q = levels
-        return q
-
-    def _choose_biome(self, land_h: float, moist: float, temp_global: float) -> str:
-        # land_h > 0 assuré
-        # règles simples pour MVP
-        if land_h < 0.08:
-            return "beach"
-        # matrice humidité/temp
-        if moist < 0.28:
-            return "desert" if temp_global > 0.6 else "steppe"
-        elif moist < 0.6:
-            return "grassland" if temp_global >= 0.4 else "taiga"
+        ch = self._chunks.get(key)
+        if ch is not None:
+            self._chunks.move_to_end(key)
         else:
-            return "rainforest" if temp_global > 0.6 else "forest"
+            ch = self._generate_chunk(cx, cy)
+            self._chunks[key] = ch
+            self._chunks.move_to_end(key)
+            if len(self._chunks) > self.cache_chunks:
+                self._chunks.popitem(last=False)
 
-    def _biome_to_ground(self, b: str) -> str:
-        if b in ("forest", "rainforest", "grassland", "steppe", "taiga"):
-            return "grass"
-        if b in ("desert",):
-            return "desert"
-        if b in ("rock",):
-            return "rock"
-        if b == "beach":
-            return "beach"
-        return "grass"
+        lx = x - cx * cs
+        ly = y - cy * cs
+        return ch, lx, ly
 
-    def _sparsify_coast(self, overlay: List[List[Optional[int]]], levels: List[List[int]]):
-        H = len(levels)
-        W = len(levels[0]) if H > 0 else 0
-        for y in range(1, H-1):
-            for x in range(1, W-1):
-                if overlay[y][x] is None:
-                    continue
-                # si près d’une case d’eau (niveau 0), chance de retirer
-                if (levels[y-1][x] == 0 or levels[y+1][x] == 0 or
-                    levels[y][x-1] == 0 or levels[y][x+1] == 0):
-                    if random.random() < 0.6:
-                        overlay[y][x] = None
+    # ------------------- chunk generation -------------------
 
-    def _find_spawn(self, levels: List[List[int]], biome: List[List[str]], overlay: List[List[Optional[int]]]) -> Tuple[int, int]:
-        H = len(levels)
-        W = len(levels[0]) if H > 0 else 0
-        best = None
-        best_score = -1e9
-        for y in range(2, H-2):
-            for x in range(2, W-2):
-                if levels[y][x] <= 0:  # pas dans l’eau
-                    continue
-                if overlay[y][x] is not None:  # éviter spawn sur un prop
-                    continue
-                # plat = variation faible autour
-                flatness = 0.0
-                for dy in (-1, 0, 1):
-                    for dx in (-1, 0, 1):
-                        if dx == 0 and dy == 0: 
-                            continue
-                        flatness -= abs(levels[y][x] - levels[y+dy][x+dx])
-                # pénalise proximité de l’eau immédiate
-                water_near = 0
-                for dy, dx in ((-1,0),(1,0),(0,-1),(0,1)):
-                    if levels[y+dy][x+dx] == 0: water_near += 1
-                score = flatness - 2.5*water_near
-                # bonus biomes “faciles”
-                if biome[y][x] in ("grassland","forest","beach"):
-                    score += 2.0
-                if score > best_score:
-                    best_score = score
-                    best = (x, y)
-        return best if best else (W//2, H//2)
-    
-    def _weighted_choice(self, items, rng):
-        total = sum(w for _, w in items)
-        r = rng.random() * total
-        for name, w in items:
-            if r < w:
-                return name
-            r -= w
-        return items[-1][0]
-    
-    def _distance_to_land(self, x, y, levels):
-        H, W = len(levels), len(levels[0])
-        for r in range(1, 8):
-            for dy in range(-r, r+1):
-                for dx in range(-r, r+1):
-                    nx, ny = x+dx, y+dy
-                    if 0 <= nx < W and 0 <= ny < H:
-                        if levels[ny][nx] > 0:
-                            return r
-        return 999
-    
-    def _distance_to_water(self, x, y, levels):
-        H, W = len(levels), len(levels[0])
-        for r in range(1, 6):
-            for dy in range(-r, r+1):
-                for dx in range(-r, r+1):
-                    nx, ny = x+dx, y+dy
-                    if 0 <= nx < W and 0 <= ny < H:
-                        if levels[ny][nx] == 0:  # eau
-                            return r
-        return 999
-    
+    def _generate_chunk(self, cx: int, cy: int) -> _Chunk:
+        cs = self.chunk_size
+        ch = _Chunk(cx, cy, cs)
 
-    def _keep_largest_landmass(self, levels: List[List[int]]) -> None:
-        H = len(levels)
-        W = len(levels[0]) if H else 0
-        seen = [[False]*W for _ in range(H)]
-        comps = []
-        from collections import deque
+        # -------- paramètres -> multiplicateurs (comme avant) --------
+        temp_label = str(getattr(self.params, "Climat", "Tempéré"))
+        temp_bias = {"Glaciaire": -0.35, "Froid": -0.20, "Tempéré": 0.0, "Chaud": 0.20, "Aride": 0.25, "Tropical": 0.18}.get(temp_label, 0.0)
 
-        def bfs(sx, sy):
-            q = deque([(sx, sy)])
-            seen[sy][sx] = True
-            cells = [(sx, sy)]
-            while q:
-                x, y = q.popleft()
-                for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
-                    nx, ny = x+dx, y+dy
-                    if 0 <= nx < W and 0 <= ny < H and not seen[ny][nx]:
-                        if levels[ny][nx] > 0:
-                            seen[ny][nx] = True
-                            q.append((nx, ny))
-                            cells.append((nx, ny))
-            return cells
+        water_v = float(getattr(self.params, "Niveau_des_océans", 50))
+        water_bias = (water_v - 50.0) / 100.0  # -0.5..+0.5
 
-        for y in range(H):
-            for x in range(W):
-                if levels[y][x] > 0 and not seen[y][x]:
-                    comps.append(bfs(x, y))
+        biodiv = str(getattr(self.params, "biodiversity", "Moyenne"))
+        biodiv_mul = {"Faible": 0.65, "Moyenne": 1.0, "Élevée": 1.25, "Haute": 1.25}.get(biodiv, 1.0)
 
-        if not comps:
-            return
-        main = max(comps, key=len)
-        main_set = set(main)
-        for y in range(H):
-            for x in range(W):
-                if levels[y][x] > 0 and (x, y) not in main_set:
-                    levels[y][x] = 0  # redevient océan
+        tect = str(getattr(self.params, "tectonic_activity", "Stable"))
+        rugged = {"Stable": 0.9, "Modérée": 1.0, "Instable": 1.2, "Violente": 1.35}.get(tect, 1.0)
 
-    def _neighbors8(self, x, y, W, H):
-        for dy in (-1,0,1):
-            for dx in (-1,0,1):
-                if dx==0 and dy==0: continue
-                nx, ny = x+dx, y+dy
-                if 0 <= nx < W and 0 <= ny < H:
-                    yield nx, ny
+        res_label = str(getattr(self.params, "Ressources", "Moyenne"))
+        res_mul = {"Faible": 0.75, "Moyenne": 1.0, "Normale": 1.0, "Élevée": 1.2, "Haute": 1.2}.get(res_label, 1.0)
 
-    def _carve_disc(self, cx, cy, r, levels, land_h, fresh_type):
-        H, W = len(levels), len(levels[0])
-        rr = r*r
-        for y in range(max(0, cy-r), min(H, cy+r+1)):
-            for x in range(max(0, cx-r), min(W, cx+r+1)):
-                if (x-cx)*(x-cx) + (y-cy)*(y-cy) <= rr:
-                    fresh_type[y][x] = 2
+        base = int(self.seed)
 
+        # -------- helpers bruit (continus) --------
+        def ridged(x: float, y: float, seed: int, octaves: int = 4) -> float:
+            # _fbm -> [-1,1], ridged -> [0,1]
+            n = _fbm(x, y, seed, octaves=octaves)
+            r = 1.0 - abs(n)
+            return _clamp01(r)
 
-    def _carve_river_path(self, sx, sy, cx, cy, levels, land_h, fresh_type, rng):
-        H, W = len(levels), len(levels[0])
-        x, y = sx, sy
-        visited = set()
-        steps = 0
-        max_steps = (W + H) * 4
+        def domain_warp(gx: float, gy: float, amp: float, scale: float, seed: int) -> tuple[float, float]:
+            wx = gx + amp * _fbm(gx * scale, gy * scale, seed + 1, octaves=3)
+            wy = gy + amp * _fbm((gx + 1337.0) * scale, (gy - 7331.0) * scale, seed + 2, octaves=3)
+            return wx, wy
 
-        # Bruit spatial fixe pour ce cours d’eau (donc méandres cohérents)
-        noise_seed = rng.randint(0, 10**9)
-        noise_scale = 0.08      # taille des méandres
-        wander_amp = 0.04       # force du "zigzag"
-        radial_amp = 0.0006     # biais vers la mer (plus faible qu’avant)
-        prev_dx, prev_dy = 0, 0
+        # échelles (IMPORTANT : ne plus dépendre de cx/cy)
+        cont_scale   = 0.0011 * rugged
+        detail_scale = 0.0100 * rugged
 
-        while steps < max_steps:
-            steps += 1
-            visited.add((x, y))
+        warp_amp   = 140.0 * rugged     # en tuiles
+        warp_scale = 0.0009             # fréquence du warp
 
-            # marque la rivière
-            fresh_type[y][x] = 1  # 1 = rivière
+        peak_scale = 0.0045 * rugged    # fréquence montagnes
+        micro_scale = 0.025             # micro-relief
 
-            # atteint la mer ? (voisin eau salée 4-connexe)
-            for nx, ny in ((x+1, y), (x-1, y), (x, y+1), (x, y-1)):
-                if 0 <= nx < W and 0 <= ny < H and levels[ny][nx] == 0 and fresh_type[ny][nx] == 0:
-                    return  # on a rejoint l’océan
+        # petite variation de côte (continue) pour casser les rivages trop lisses
+        coast_var_scale = 0.0035
+        coast_var_amp   = 0.020  # +/- 0.02 sur le niveau mer
 
-            # Choix du prochain pas
-            dc = math.hypot(x - cx, y - cy)
-            candidates = []
+        # boucle chunk
+        for ly in range(cs):
+            gy = cy * cs + ly
+            if gy >= self.height:
+                break
 
-            for nx, ny in self._neighbors8(x, y, W, H):
-                if (nx, ny) in visited:
-                    continue
-                # on évite de marcher dans l’océan directement
-                if levels[ny][nx] == 0:
-                    continue
+            lat = (gy / max(1, self.height - 1)) * 2.0 - 1.0  # -1..+1
+            lat_abs = abs(lat)
 
-                base_h = land_h[ny][nx]
-
-                # petit biais vers l’extérieur (mer)
-                new_d = math.hypot(nx - cx, ny - cy)
-                radial_term = - radial_amp * (new_d - dc)
-
-                # bruit spatial déterministe → méandres
-                n = fbm2d(nx * noise_scale, ny * noise_scale, octaves=2, seed=noise_seed)
-                wander = wander_amp * n   # dans [-wander_amp, +wander_amp]
-
-                # légère inertie pour ne pas faire des zigzags brutaux
-                if prev_dx or prev_dy:
-                    dx, dy = nx - x, ny - y
-                    dot = dx * prev_dx + dy * prev_dy
-                    norm = math.hypot(dx, dy) * math.hypot(prev_dx, prev_dy) or 1.0
-                    align = dot / norm   # -1 (demi-tour) → +1 (tout droit)
-                    turn_penalty = 0.01 * (1.0 - align)
-                else:
-                    turn_penalty = 0.0
-
-                cost = base_h + radial_term + wander + turn_penalty
-                candidates.append((cost, nx, ny))
-
-            if not candidates:
-                break  # coincé
-
-            # On prend au hasard parmi les 2–3 meilleurs candidats
-            candidates.sort(key=lambda c: c[0])
-            top_k = candidates[:3] if len(candidates) >= 3 else candidates
-            _, nx, ny = rng.choice(top_k)
-
-            # Si on monte trop → cul-de-sac : créer un petit lac comme avant
-            if land_h[ny][nx] > land_h[y][x] + 0.02:
-                self._carve_disc(x, y, rng.randint(2, 3), levels, land_h, fresh_type)
-                # repartir du bord le plus bas autour du lac
-                cand = []
-                for px, py in self._neighbors8(x, y, W, H):
-                    cand.append((land_h[py][px], px, py))
-                cand.sort()
-                if cand:
-                    nx, ny = cand[0][1], cand[0][2]
-                else:
+            for lx in range(cs):
+                gx = cx * cs + lx
+                if gx >= self.width:
                     break
 
-            prev_dx, prev_dy = nx - x, ny - y
-            x, y = nx, ny
+                # --- domain warp (rend formes + naturelles, casse l’alignement chunk/grid) ---
+                wx, wy = domain_warp(float(gx), float(gy), amp=warp_amp, scale=warp_scale, seed=base + 90000)
+
+                # --- élévation (CONTINUE) ---
+                h1 = _fbm(wx * cont_scale,   wy * cont_scale,   base + 11,  octaves=5)
+                h2 = _fbm(wx * detail_scale, wy * detail_scale, base + 97,  octaves=4)
+                h = 0.70 * h1 + 0.30 * h2
+                h01 = _clamp01((h + 1.0) * 0.5)
+
+                # accentue un peu le contraste (évite les continents “tout pareil”)
+                h01 = _clamp01(h01 ** 1.12)
+
+                # montagnes (ridged) seulement si altitude déjà un peu haute
+                r = ridged(wx * peak_scale, wy * peak_scale, base + 7777, octaves=4)
+                r = r * r  # sharpen
+                mount_mask = _clamp01((h01 - 0.52) / 0.48)
+                h01 = _clamp01(h01 + (0.33 * rugged) * r * (mount_mask ** 2))
+
+                # micro-relief (plaines moins plates)
+                micro = _fbm(wx * micro_scale, wy * micro_scale, base + 4242, octaves=3)  # [-1,1]
+                h01 = _clamp01(h01 + 0.045 * micro)
+
+                # plus d'eau => baisse terre
+                h01 = _clamp01(h01 - 0.06 * water_bias)
+
+                # variation locale du niveau de mer (continue) pour côtes + naturelles
+                sea_here = self.sea_level + coast_var_amp * _fbm(wx * coast_var_scale, wy * coast_var_scale, base + 9991, octaves=2)
+
+                # --- température (CONTINUE) ---
+                tnoise = _fbm(wx * 0.003, wy * 0.003, base + 201, octaves=3)
+                t01 = 1.0 - lat_abs
+                t01 = _clamp01(t01 + 0.25 * tnoise + temp_bias)
+
+                # --- humidité (CONTINUE) ---
+                mnoise = _fbm(wx * 0.004, wy * 0.004, base + 333, octaves=4)
+                m01 = _clamp01((mnoise + 1.0) * 0.5)
+                # plus haut => plus sec
+                m01 = _clamp01(m01 - 0.38 * max(0.0, h01 - sea_here))
+
+                # --- eau / côte ---
+                is_ocean = h01 < sea_here
+                coast = (not is_ocean) and (h01 < sea_here + 0.035)
+
+                # --- biome (inchangé dans l’idée) ---
+                if is_ocean:
+                    bid = BIOME_OCEAN
+                elif coast:
+                    bid = BIOME_COAST
+                else:
+                    if t01 < 0.18:
+                        bid = BIOME_SNOW
+                    elif t01 < 0.30:
+                        bid = BIOME_TAIGA if m01 > 0.35 else BIOME_TUNDRA
+                    else:
+                        if m01 < 0.18:
+                            bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
+                        elif m01 < 0.35:
+                            bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
+                        elif m01 < 0.60:
+                            bid = BIOME_PLAINS if t01 < 0.55 else BIOME_FOREST
+                        else:
+                            bid = BIOME_RAINFOREST if t01 > 0.55 else BIOME_FOREST
+
+                # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
+                if bid == BIOME_OCEAN:
+                    level = 0
+                    gname = "ocean"
+                elif bid == BIOME_COAST:
+                    level = 1
+                    gname = "beach"
+                else:
+                    # normalise hauteur de terre au-dessus côte
+                    base0 = sea_here + 0.040
+                    land01 = (h01 - base0) / max(1e-6, (1.0 - base0))
+                    land01 = _clamp01(land01)
+
+                    # jitter déterministe (casse les grands aplats)
+                    jit = _rand01_from_u32(_hash_u32(base ^ _hash_u32(gx * 92837111) ^ _hash_u32(gy * 689287499))) - 0.5
+                    land01 = _clamp01(land01 + 0.11 * jit)
+
+                    inner = max(1, self.tiles_levels - 2)
+                    level = 2 + int(round(land01 * inner))
+
+                    # boost pics montagneux
+                    if r > 0.78 and level < self.tiles_levels:
+                        level += 1
+
+                    level = max(2, min(self.tiles_levels, level))
+
+                    # ground par biome
+                    if bid in (BIOME_SNOW, BIOME_TUNDRA):
+                        gname = "snow" if bid == BIOME_SNOW else "tundra"
+                    elif bid == BIOME_DESERT:
+                        gname = "desert"
+                    elif bid == BIOME_SAVANNA:
+                        gname = "savanna"
+                    else:
+                        gname = "grass"
+
+                gid = self._safe_tile_id(gname)
+
+                # --- props (IMPORTANT : seed par TUILE, pas par chunk) ---
+                prop = 0
+                if bid not in (BIOME_OCEAN,) and not coast:
+                    base_p = 0.02 * biodiv_mul
+                    if bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
+                        base_p *= 2.2
+                    elif bid == BIOME_SAVANNA:
+                        base_p *= 1.2
+                    elif bid == BIOME_PLAINS:
+                        base_p *= 0.9
+                    elif bid in (BIOME_SNOW, BIOME_TUNDRA):
+                        base_p *= 0.35
+                    elif bid == BIOME_DESERT:
+                        base_p *= 0.25
+
+                    ore_p = 0.0045 * res_mul
+                    if level >= 4:
+                        ore_p *= 1.25
+
+                    tile_seed = _hash_u32(base ^ _hash_u32(gx * 912367) ^ _hash_u32(gy * 972541))
+                    r0 = _rand01_from_u32(tile_seed)
+                    r1 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xA5A5A5A5))
+
+                    if r0 < ore_p:
+                        if level >= 5 and r1 < 0.18:
+                            prop = get_prop_id("ore_gold")
+                        elif r1 < 0.55:
+                            prop = get_prop_id("ore_iron")
+                        else:
+                            prop = get_prop_id("ore_copper")
+                    elif r0 < ore_p + base_p:
+                        if bid == BIOME_DESERT:
+                            prop = get_prop_id("cactus") if r1 < 0.7 else get_prop_id("rock")
+                        elif bid in (BIOME_TUNDRA, BIOME_SNOW):
+                            prop = get_prop_id("rock") if r1 < 0.65 else get_prop_id("stump")
+                        elif bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
+                            prop = get_prop_id("tree_1") if r1 < 0.33 else (get_prop_id("tree_2") if r1 < 0.66 else get_prop_id("tree_3"))
+                        elif bid == BIOME_SAVANNA:
+                            prop = get_prop_id("tree_dead") if r1 < 0.35 else get_prop_id("bush")
+                        else:
+                            prop = get_prop_id("bush") if r1 < 0.6 else get_prop_id("flower")
+
+                # écrit chunk
+                k = ch.idx(lx, ly)
+                ch.height_u8[k] = int(_clamp01(h01) * 255.0)
+                ch.temp_u8[k]   = int(_clamp01(t01) * 255.0)
+                ch.moist_u8[k]  = int(_clamp01(m01) * 255.0)
+                ch.levels_u8[k] = int(level)
+                ch.ground_u16[k]= int(gid)
+                ch.overlay_obj[k] = int(prop)
+                ch.biome_u8[k]  = int(bid)
+
+        return ch
+
+    # ------------------- spawn -------------------
+
+    def _find_spawn(self, progress: ProgressCb = None) -> Tuple[int, int]:
+        """
+        Spawn rapide :
+        - recherche locale autour du centre/équateur (évite générer des chunks partout)
+        - peu d’essais
+        - yield du GIL pour laisser l’UI respirer (sinon "ne répond plus")
+        """
+        rng = random.Random(self.seed ^ 0xC0FFEE)
+
+        mid_x = self.width // 2
+        mid_y = self.height // 2
+
+        # zone de recherche locale (tweakables)
+        x_span = max(64, self.width // 16)      # ~6% de la largeur
+        y_span = max(64, self.height // 10)     # ~10% de la hauteur
+        tries = 60                               # au lieu de 1200
+
+        best = None
+        best_score = -1e9
+
+        for i in range(tries):
+            # IMPORTANT : local, pas un x uniforme sur toute la planète
+            x = _wrap_lon_x(mid_x + rng.randrange(-x_span, x_span + 1), self.width)
+            y = _clamp_lat_y(mid_y + rng.randrange(-y_span, y_span + 1), self.height)
+
+            # 1 seul appel biome (au lieu de get_is_water + get_biome_id)
+            bid = self.get_biome_id(x, y)
+            if bid in (BIOME_OCEAN, BIOME_LAKE):
+                continue
+
+            # éviter props / obstacles
+            if self.get_overlay(x, y):
+                continue
+
+            # score : plains/forest favorisés
+            score = 0.0
+            if bid in (BIOME_PLAINS, BIOME_FOREST):
+                score += 3.0
+            elif bid == BIOME_SAVANNA:
+                score += 1.0
+
+            # pénalise désert/neige
+            if bid in (BIOME_DESERT, BIOME_SNOW, BIOME_TUNDRA):
+                score -= 4.0
+
+            # altitude modérée
+            h = self.get_height01(x, y)
+            score -= abs(h - (self.sea_level + 0.12)) * 6.0
+
+            if score > best_score:
+                best_score = score
+                best = (x, y)
+
+            # Progress + yield GIL (sinon thread UI bloqué)
+            if progress and (i % 5 == 0 or i == tries - 1):
+                progress(i / max(1, tries - 1), f"Recherche du point de départ… ({i+1}/{tries})")
+            if i % 2 == 0:
+                time.sleep(0)  # yield GIL
+
+        if best:
+            return best
+
+        # fallback : spiral courte autour du centre (toujours locale)
+        if progress:
+            progress(1.0, "Fallback spawn…")
+        for r in range(1, 256):
+            # périmètre du carré de rayon r
+            for dx in range(-r, r + 1):
+                for dy in (-r, r):
+                    x = _wrap_lon_x(mid_x + dx, self.width)
+                    y = _clamp_lat_y(mid_y + dy, self.height)
+                    bid = self.get_biome_id(x, y)
+                    if bid not in (BIOME_OCEAN, BIOME_LAKE) and not self.get_overlay(x, y):
+                        return (x, y)
+            for dy in range(-r + 1, r):
+                for dx in (-r, r):
+                    x = _wrap_lon_x(mid_x + dx, self.width)
+                    y = _clamp_lat_y(mid_y + dy, self.height)
+                    bid = self.get_biome_id(x, y)
+                    if bid not in (BIOME_OCEAN, BIOME_LAKE) and not self.get_overlay(x, y):
+                        return (x, y)
+
+            if r % 16 == 0:
+                time.sleep(0)
+
+        return (mid_x, mid_y)
 
 
+    # ------------------- save helpers (optionnel) -------------------
 
-    def _pick_river_sources(self, levels, land_h, rng, count_range=(3,6)):
-        H, W = len(levels), len(levels[0])
+    def get_world_state_minimal(self) -> Dict[str, Any]:
+        """
+        Données minimales à sauvegarder :
+        - params (ou au moins seed/params)
+        - overrides overlay (constructions, props détruits, etc.)
+        """
+        # On ne sauvegarde PAS les chunks (re-générables).
+        # On sauvegarde les modifications seulement.
+        ov = []
+        for (x, y), v in self._overlay_overrides.items():
+            ov.append((int(x), int(y), v))
+        return {
+            "seed": self.seed,
+            "params": self.params.to_dict(),
+            "overlay_overrides": ov,
+        }
 
-        # Optimisation : distance à l'océan calculée en O(W*H) (au lieu d'un scan par tuile)
-        ocean_mask = [[1 if levels[y][x] == 0 else 0 for x in range(W)] for y in range(H)]
-        dist_to_ocean = distance_to_mask_4(ocean_mask)
-
-        cand = []
-        # candidats haut perchés, loin des côtes
-        for y in range(H):
-            row_levels = levels[y]
-            row_h = land_h[y]
-            row_d = dist_to_ocean[y]
-            for x in range(W):
-                if row_levels[x] >= 2 and row_h[x] > 0.55 and row_d[x] > 5:
-                    cand.append((row_h[x], x, y))
-
-        cand.sort(reverse=True)  # plus hauts d'abord
-        sources = []
-        want = rng.randint(*count_range)
-        min_dist = max(10, min(W, H) // 12)
-
-        for h, x, y in cand:
-            if len(sources) >= want:
-                break
-            if all((abs(x - sx) + abs(y - sy)) >= min_dist for sx, sy in sources):
-                sources.append((x, y))
-
-        return sources
+    def apply_world_state_minimal(self, blob: Dict[str, Any]) -> None:
+        ov = blob.get("overlay_overrides", []) or []
+        self._overlay_overrides.clear()
+        for item in ov:
+            try:
+                x, y, v = item
+                self._overlay_overrides[(int(x), int(y))] = v
+            except Exception:
+                continue
 
 
-    def _distance_to_freshwater(self, x, y, fresh_type):
-        H, W = len(fresh_type), len(fresh_type[0])
-        for r in range(1, 6):
-            for dy in range(-r, r+1):
-                for dx in range(-r, r+1):
-                    nx, ny = x+dx, y+dy
-                    if 0 <= nx < W and 0 <= ny < H:
-                        if fresh_type[ny][nx] > 0:
-                            return r
-        return 999
+# --------------------------------------------------------------------------------------
+# Planet world generator
+# --------------------------------------------------------------------------------------
+
+class PlanetWorldGenerator:
+    """
+    Générateur de planète : ne crée pas toute la carte, il renvoie un ChunkedWorld.
+    """
+    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 256):
+        self.tiles_levels = int(tiles_levels)
+        self.chunk_size = int(chunk_size)
+        self.cache_chunks = int(cache_chunks)
+
+    def _dims_from_params(self, params: WorldParams) -> Tuple[int, int]:
+        """
+        Tailles conseillées (assez grandes, mais gérables).
+        - Taille symbolique (<= 2048) : Petite/Moyenne/Grande/Gigantesque.
+        - Taille \"km\" (ex: 22000/28000/34000) : on mappe grossièrement.
+        """
+        t = int(getattr(params, "Taille", 384))
+
+        # si ça ressemble à une taille en km
+        if t >= 8000:
+            # mappage grossier
+            if t < 25000:
+                label = "Petite"
+            elif t < 31000:
+                label = "Moyenne"
+            elif t < 36000:
+                label = "Grande"
+            else:
+                label = "Gigantesque"
+        else:
+            # t symbolique
+            label = "Petite" if t <= 256 else ("Moyenne" if t <= 384 else ("Grande" if t <= 512 else "Gigantesque"))
+
+        size_map = {
+            "Petite": (2048, 1024),
+            "Moyenne": (3072, 1536),
+            "Grande": (4096, 2048),
+            "Gigantesque": (6144, 3072),
+        }
+        w, h = size_map.get(label, (3072, 1536))
+
+        # gravity influence dimensions (perf)
+        grav = str(getattr(params, "gravity", "Moyenne"))
+        if grav in ("Forte", "Élevée", "Haute"):
+            w = int(w * 0.92)
+            h = int(h * 0.92)
+        elif grav in ("Faible", "Basse"):
+            w = int(w * 1.05)
+            h = int(h * 1.05)
+
+        # clamp sécurité
+        w = max(512, min(16384, w))
+        h = max(512, min(8192, h))
+        return w, h
+
+    def generate(self, params: WorldParams, rng_seed: Optional[int] = None, progress: ProgressCb = None) -> ChunkedWorld:
+        def report(p: float, label: str):
+            if progress:
+                progress(max(0.0, min(1.0, float(p))), str(label))
+
+        base = _seed_int(rng_seed if rng_seed is not None else params.seed)
+        final_seed = make_final_seed(base, params)
+        w, h = self._dims_from_params(params)
+
+        # sous-progress entre 5% et 95% pendant le spawn
+        def spawn_progress(t: float, label: str):
+            # t attendu dans [0,1]
+            report(0.05 + 0.90 * max(0.0, min(1.0, float(t))), label)
+
+        world = ChunkedWorld(
+            width=w,
+            height=h,
+            seed=final_seed,
+            params=params,
+            tiles_levels=self.tiles_levels,
+            chunk_size=self.chunk_size,
+            cache_chunks=self.cache_chunks,
+            progress=spawn_progress,   # <-- nouveau
+        )
+
+        report(1.0, "Terminé !")
+        return world
+
+
+# --------------------------------------------------------------------------------------
+# Public API (WorldGenerator) : uniquement planète
+# --------------------------------------------------------------------------------------
+
+class WorldGenerator:
+    """
+    Anciennement : WorldGenerator gérait île + monde.
+    Maintenant : uniquement planète / chunks.
+
+    ⚠️ Paramètres conservés en **kwargs pour compat (si du code passe encore island_margin_frac, etc.).
+    """
+    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 256, **_ignored):
+        self.tiles_levels = int(tiles_levels)
+        self.chunk_size = int(chunk_size)
+        self.cache_chunks = int(cache_chunks)
+
+    def generate_planet(self, params: WorldParams, rng_seed: Optional[int] = None, progress: ProgressCb = None) -> ChunkedWorld:
+        gen = PlanetWorldGenerator(
+            tiles_levels=self.tiles_levels,
+            chunk_size=self.chunk_size,
+            cache_chunks=self.cache_chunks,
+        )
+        return gen.generate(params=params, rng_seed=rng_seed, progress=progress)
+
+    def generate_world(self, params: WorldParams, *args, **kwargs) -> ChunkedWorld:
+        # compat : ignore mode
+        rng_seed = kwargs.get("rng_seed", None)
+        progress = kwargs.get("progress", None)
+        return self.generate_planet(params=params, rng_seed=rng_seed, progress=progress)

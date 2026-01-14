@@ -43,13 +43,13 @@ class LoadingState:
                 preset = kwargs.get("preset", "Custom")
                 seed   = kwargs.get("seed", None)
                 self._params = load_world_params_from_preset(preset)
-                gen = WorldGenerator(tiles_levels=6,island_margin_frac=0.10)
+                gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=256)
 
                 def on_progress(p, label):
                     self.progress = float(p)
                     self.phase_txt = str(label)
 
-                self._world = gen.generate_island(self._params, rng_seed=seed, progress=on_progress)
+                self._world = gen.generate_planet(self._params, rng_seed=seed, progress=on_progress)
                 self.done = True
             except Exception as e:
                 self.failed = e

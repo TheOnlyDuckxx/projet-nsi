@@ -143,7 +143,7 @@ if __name__ == "__main__":
         
         # Génération du monde
         generator = WorldGenerator(tiles_levels=6)
-        world = generator.generate_island(params)
+        world = generator.generate_planet(params)
         
         print("✓ Monde généré!")
         print(f"  Taille: {world.width}x{world.height}")

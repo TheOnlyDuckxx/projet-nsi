@@ -30,7 +30,7 @@ class Phase1:
         self.paused = False
 
         self.view = IsoMapView(self.assets, self.screen.get_size())
-        self.gen = WorldGenerator(tiles_levels=6,island_margin_frac=0.10)
+        self.gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=256)
         self.params = None
         self.world = None
         self.fog=None
@@ -598,11 +598,20 @@ class Phase1:
             if self.params is None:
                 raise  # rien trouvé, on re-propage l'erreur
 
-        self.world = self.gen.generate_island(self.params, rng_seed=seed_override)
+        import traceback
+
+        try:
+            world = gen.generate_planet(params, progress=progress_cb)
+        except Exception:
+            traceback.print_exc()
+            raise
         self.view.set_world(self.world)
         if self.fog is None:
-            self.fog = FogOfWar(self.world.width, self.world.height)
+    # chunk_size à synchroniser avec ton world_gen (64 chez toi)
+            self.fog = FogOfWar(self.world.width, self.world.height, chunk_size=64)
         self.view.fog = self.fog
+
+        self.view.set_world(self.world)
 
         try:
             sx, sy = self.world.spawn
@@ -673,16 +682,6 @@ class Phase1:
                 elif e.key == pygame.K_i:
                     self.inspect_mode_active = True
                     self._set_cursor(self.inspect_cursor_path)
-                elif e.key == pygame.K_r:
-                    self.world = self.gen.generate_island(self.params, rng_seed=random.getrandbits(63))
-                    self.view.set_world(self.world)
-                    try:
-                        sx, sy = self.world.spawn
-                    except Exception:
-                        sx, sy = 0, 0
-                        if self.joueur:
-                            self.joueur.x, self.joueur.y = float(sx), float(sy)
-                        self.selected = None
 
             elif e.type == pygame.KEYUP and e.key == pygame.K_h:
                 self.props_transparency_active = False
@@ -853,7 +852,7 @@ class Phase1:
             ]
             self.fog.recompute(observers, get_radius, light_level)
         else:
-            self.fog = FogOfWar(self.world.width, self.world.height)
+            self.fog = FogOfWar(self.world.width, self.world.height, chunk_size=64)
         self.view.fog = self.fog
 
 
