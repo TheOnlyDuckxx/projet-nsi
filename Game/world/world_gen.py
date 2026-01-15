@@ -1006,9 +1006,9 @@ class ChunkedWorld:
                     land01 = (height - base0) / max(1e-6, (1.0 - base0))
                     land01 = _clamp01(land01)
 
-                    # jitter déterministe (casse les grands aplats)
-                    jit = _rand01_from_u32(_hash_u32(base ^ _hash_u32(gx * 92837111) ^ _hash_u32(gy * 689287499))) - 0.5
-                    land01 = _clamp01(land01 + 0.11 * jit)
+                    # micro-variation continue (évite les aplats sans jitter discret)
+                    jitter = _fbm_perlin(wx * 0.07, wy * 0.07, base + 5151, octaves=2)
+                    land01 = _clamp01(land01 + 0.03 * jitter)
 
                     inner = max(1, self.tiles_levels - 2)
                     level = 2 + int(round(land01 * inner))
