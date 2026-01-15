@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import random
@@ -458,6 +459,61 @@ def _fbm(x: float, y: float, seed: int, octaves: int = 5) -> float:
 
 
 # --------------------------------------------------------------------------------------
+# Perlin gradient noise / fbm
+# --------------------------------------------------------------------------------------
+
+def _perlin_grad(hash_u: int, x: float, y: float) -> float:
+    h = hash_u & 7
+    u = x if h < 4 else y
+    v = y if h < 4 else x
+    return (u if (h & 1) == 0 else -u) + (v if (h & 2) == 0 else -v)
+
+
+def _perlin_noise_2d(x: float, y: float, seed: int) -> float:
+    """
+    Perlin gradient noise déterministe ~[-1,1]
+    """
+    xi = math.floor(x)
+    yi = math.floor(y)
+    xf = x - xi
+    yf = y - yi
+
+    def h(ix: int, iy: int) -> int:
+        return _hash_u32(seed ^ _hash_u32(ix * 0x9E37) ^ _hash_u32(iy * 0x85EB))
+
+    def fade(t: float) -> float:
+        return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+
+    u = fade(xf)
+    v = fade(yf)
+
+    n00 = _perlin_grad(h(int(xi), int(yi)), xf, yf)
+    n10 = _perlin_grad(h(int(xi + 1), int(yi)), xf - 1.0, yf)
+    n01 = _perlin_grad(h(int(xi), int(yi + 1)), xf, yf - 1.0)
+    n11 = _perlin_grad(h(int(xi + 1), int(yi + 1)), xf - 1.0, yf - 1.0)
+
+    nx0 = n00 + (n10 - n00) * u
+    nx1 = n01 + (n11 - n01) * u
+    return nx0 + (nx1 - nx0) * v
+
+
+def _fbm_perlin(x: float, y: float, seed: int, octaves: int = 5) -> float:
+    """
+    fractal brownian motion Perlin ~[-1,1]
+    """
+    val = 0.0
+    amp = 1.0
+    freq = 1.0
+    norm = 0.0
+    for _ in range(max(1, int(octaves))):
+        val += amp * _perlin_noise_2d(x * freq, y * freq, seed)
+        norm += amp
+        amp *= 0.5
+        freq *= 2.0
+    return val / (norm if norm > 1e-9 else 1.0)
+
+
+# --------------------------------------------------------------------------------------
 # Biomes (IDs + names)
 # --------------------------------------------------------------------------------------
 
@@ -640,8 +696,8 @@ class ChunkedWorld:
     def _sea_level_from_params(self, params: WorldParams) -> float:
         v = float(getattr(params, "Niveau_des_océans", 50))
         v = max(0.0, min(100.0, v))
-        # 0% -> mer basse (0.42), 100% -> mer haute (0.58)
-        return 0.42 + (v / 100.0) * 0.16
+        # 0% -> mer basse (-0.10), 100% -> mer haute (+0.10) en hauteur signée
+        return ((v - 50.0) / 100.0) * 0.20
 
     def _knobs(self):
         p = self.params
@@ -799,19 +855,22 @@ class ChunkedWorld:
 
         # -------- helpers bruit (continus) --------
         def ridged(x: float, y: float, seed: int, octaves: int = 4) -> float:
-            # _fbm -> [-1,1], ridged -> [0,1]
-            n = _fbm(x, y, seed, octaves=octaves)
+            # _fbm_perlin -> [-1,1], ridged -> [0,1]
+            n = _fbm_perlin(x, y, seed, octaves=octaves)
             r = 1.0 - abs(n)
             return _clamp01(r)
 
         def domain_warp(gx: float, gy: float, amp: float, scale: float, seed: int) -> tuple[float, float]:
-            wx = gx + amp * _fbm(gx * scale, gy * scale, seed + 1, octaves=3)
-            wy = gy + amp * _fbm((gx + 1337.0) * scale, (gy - 7331.0) * scale, seed + 2, octaves=3)
+            wx = gx + amp * _fbm_perlin(gx * scale, gy * scale, seed + 1, octaves=3)
+            wy = gy + amp * _fbm_perlin((gx + 1337.0) * scale, (gy - 7331.0) * scale, seed + 2, octaves=3)
             return wx, wy
 
         # échelles (IMPORTANT : ne plus dépendre de cx/cy)
         cont_scale   = 0.0011 * rugged
         detail_scale = 0.0100 * rugged
+
+        macro_scale = 0.00035 * rugged
+        macro_amp = 0.55 * rugged
 
         warp_amp   = 140.0 * rugged     # en tuiles
         warp_scale = 0.0009             # fréquence du warp
@@ -821,7 +880,7 @@ class ChunkedWorld:
 
         # petite variation de côte (continue) pour casser les rivages trop lisses
         coast_var_scale = 0.0035
-        coast_var_amp   = 0.020  # +/- 0.02 sur le niveau mer
+        coast_var_amp   = 0.030  # +/- 0.03 sur la hauteur de mer
 
         # boucle chunk
         for ly in range(cs):
@@ -840,30 +899,38 @@ class ChunkedWorld:
                 # --- domain warp (rend formes + naturelles, casse l’alignement chunk/grid) ---
                 wx, wy = domain_warp(float(gx), float(gy), amp=warp_amp, scale=warp_scale, seed=base + 90000)
 
-                # --- élévation (CONTINUE) ---
-                h1 = _fbm(wx * cont_scale,   wy * cont_scale,   base + 11,  octaves=5)
-                h2 = _fbm(wx * detail_scale, wy * detail_scale, base + 97,  octaves=4)
-                h = 0.70 * h1 + 0.30 * h2
-                h01 = _clamp01((h + 1.0) * 0.5)
+                # --- élévation (CONTINUE, Perlin gradient noise) ---
+                h1 = _fbm_perlin(wx * cont_scale,   wy * cont_scale,   base + 11,  octaves=5)
+                h2 = _fbm_perlin(wx * detail_scale, wy * detail_scale, base + 97,  octaves=4)
+                base_h = 0.72 * h1 + 0.28 * h2
 
-                # accentue un peu le contraste (évite les continents “tout pareil”)
-                h01 = _clamp01(h01 ** 1.12)
+                # macro-relief : grandes zones hautes/basses
+                macro = _fbm_perlin(wx * macro_scale, wy * macro_scale, base + 4001, octaves=3)
+
+                # normalisation continue en hauteur signée
+                height = (base_h + macro * macro_amp) / (1.0 + macro_amp)
+                height -= self.sea_level
+
+                # variation locale du niveau de mer (continue) pour côtes + naturelles
+                height += coast_var_amp * _fbm_perlin(wx * coast_var_scale, wy * coast_var_scale, base + 9991, octaves=2)
+
+                h01 = _clamp01((height + 1.0) * 0.5)
 
                 # montagnes (ridged) seulement si altitude déjà un peu haute
                 r = ridged(wx * peak_scale, wy * peak_scale, base + 7777, octaves=4)
                 r = r * r  # sharpen
-                mount_mask = _clamp01((h01 - 0.52) / 0.48)
-                h01 = _clamp01(h01 + (0.33 * rugged) * r * (mount_mask ** 2))
+                mount_mask = _clamp01((h01 - 0.50) / 0.50)
+                height += (0.38 * rugged) * r * (mount_mask ** 2)
 
                 # micro-relief (plaines moins plates)
-                micro = _fbm(wx * micro_scale, wy * micro_scale, base + 4242, octaves=3)  # [-1,1]
-                h01 = _clamp01(h01 + 0.045 * micro)
+                micro = _fbm_perlin(wx * micro_scale, wy * micro_scale, base + 4242, octaves=3)  # [-1,1]
+                height += 0.05 * micro
 
                 # plus d'eau => baisse terre
-                h01 = _clamp01(h01 - 0.06 * water_bias)
+                height -= 0.06 * water_bias
 
-                # variation locale du niveau de mer (continue) pour côtes + naturelles
-                sea_here = self.sea_level + coast_var_amp * _fbm(wx * coast_var_scale, wy * coast_var_scale, base + 9991, octaves=2)
+                # re-normalise 0..1
+                h01 = _clamp01((height + 1.0) * 0.5)
 
                 # --- température (CONTINUE) ---
                 tnoise = _fbm(wx * 0.003, wy * 0.003, base + 201, octaves=3)
@@ -874,27 +941,32 @@ class ChunkedWorld:
                 mnoise = _fbm(wx * 0.004, wy * 0.004, base + 333, octaves=4)
                 m01 = _clamp01((mnoise + 1.0) * 0.5)
                 # plus haut => plus sec
-                m01 = _clamp01(m01 - 0.38 * max(0.0, h01 - sea_here))
+                m01 = _clamp01(m01 - 0.45 * max(0.0, height))
 
                 # --- eau douce (pas d'océans/mer) ---
-                lake_level = sea_here - 0.06 + 0.05 * water_bias
-                lake_level = max(0.30, min(0.70, lake_level))
+                lake_level = 0.08 + 0.04 * water_bias
+                lake_level = max(0.02, min(0.22, lake_level))
                 lake_noise = _fbm(wx * 0.0022, wy * 0.0022, base + 6060, octaves=3)
-                lake_cut = 0.58 - 0.10 * water_bias
-                is_lake = (lake_noise > lake_cut) and (h01 < lake_level)
+                lake_cut = 0.32 - 0.18 * water_bias
+                is_lake = (lake_noise > lake_cut) and (height < lake_level) and (height >= 0.0)
 
                 river_noise = abs(_fbm(wx * 0.008, wy * 0.008, base + 7070, octaves=3))
-                river_th = 0.03 + 0.012 * max(0.0, water_bias)
-                is_river = (river_noise < river_th) and (h01 < 0.78)
+                river_th = 0.032 + 0.014 * max(0.0, water_bias)
+                is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
 
-                is_water = is_lake or is_river
+                is_ocean = height < 0.0
+                is_water = is_ocean or is_lake or is_river
+                coast_band = 0.06
                 coast = (not is_water) and (
-                    (lake_noise > lake_cut - 0.06 and h01 < lake_level + 0.03)
-                    or (river_noise < river_th * 1.8 and h01 < 0.80)
+                    height < coast_band
+                    or (lake_noise > lake_cut - 0.06 and height < lake_level + 0.03)
+                    or (river_noise < river_th * 1.8 and height < 0.62)
                 )
 
                 # --- biome (inchangé dans l’idée) ---
-                if is_lake:
+                if is_ocean:
+                    bid = BIOME_OCEAN
+                elif is_lake:
                     bid = BIOME_LAKE
                 elif is_river:
                     bid = BIOME_RIVER
@@ -916,7 +988,10 @@ class ChunkedWorld:
                             bid = BIOME_RAINFOREST if t01 > 0.55 else BIOME_FOREST
 
                 # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
-                if bid == BIOME_LAKE:
+                if bid == BIOME_OCEAN:
+                    level = 0
+                    gname = "ocean"
+                elif bid == BIOME_LAKE:
                     level = 0
                     gname = "lake"
                 elif bid == BIOME_RIVER:
@@ -927,8 +1002,8 @@ class ChunkedWorld:
                     gname = "beach"
                 else:
                     # normalise hauteur de terre au-dessus côte
-                    base0 = sea_here + 0.040
-                    land01 = (h01 - base0) / max(1e-6, (1.0 - base0))
+                    base0 = coast_band
+                    land01 = (height - base0) / max(1e-6, (1.0 - base0))
                     land01 = _clamp01(land01)
 
                     # jitter déterministe (casse les grands aplats)
@@ -1059,7 +1134,7 @@ class ChunkedWorld:
 
             # altitude modérée
             h = self.get_height01(x, y)
-            score -= abs(h - (self.sea_level + 0.12)) * 6.0
+            score -= abs(h - 0.62) * 6.0
 
             if score > best_score:
                 best_score = score
