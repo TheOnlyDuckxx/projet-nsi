@@ -975,17 +975,17 @@ class ChunkedWorld:
                 else:
                     if t01 < 0.18:
                         bid = BIOME_SNOW
-                    elif t01 < 0.30:
+                    elif t01 < 0.32:
                         bid = BIOME_TAIGA if m01 > 0.35 else BIOME_TUNDRA
                     else:
-                        if m01 < 0.18:
+                        if m01 < 0.22:
                             bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
-                        elif m01 < 0.35:
+                        elif m01 < 0.42:
                             bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
-                        elif m01 < 0.60:
-                            bid = BIOME_PLAINS if t01 < 0.55 else BIOME_FOREST
+                        elif m01 < 0.58:
+                            bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
                         else:
-                            bid = BIOME_RAINFOREST if t01 > 0.55 else BIOME_FOREST
+                            bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
 
                 # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
                 if bid == BIOME_OCEAN:
@@ -1020,14 +1020,23 @@ class ChunkedWorld:
                     level = max(2, min(self.tiles_levels, level))
 
                     # ground par biome
-                    if bid in (BIOME_SNOW, BIOME_TUNDRA):
-                        gname = "snow" if bid == BIOME_SNOW else "tundra"
-                    elif bid == BIOME_DESERT:
-                        gname = "desert"
-                    elif bid == BIOME_SAVANNA:
-                        gname = "savanna"
-                    else:
-                        gname = "grass"
+                    biome_to_ground = {
+                        BIOME_SNOW: "taiga",
+                        BIOME_TUNDRA: "taiga",
+                        BIOME_DESERT: "desert",
+                        BIOME_SAVANNA: "steppe",
+                        BIOME_PLAINS: "grass",
+                        BIOME_FOREST: "forest",
+                        BIOME_TAIGA: "taiga",
+                        BIOME_RAINFOREST: "rainforest",
+                        BIOME_SWAMP: "grass",
+                        BIOME_MANGROVE: "grass",
+                        BIOME_ROCKY: "rock",
+                        BIOME_ALPINE: "rock",
+                        BIOME_VOLCANIC: "rock",
+                        BIOME_MYSTIC: "grass",
+                    }
+                    gname = biome_to_ground.get(bid, "grass")
 
                 gid = self._safe_tile_id(gname)
 
