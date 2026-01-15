@@ -101,6 +101,10 @@ class IsoMapView:
         self.transparent_prop_alpha = 90
         self.default_prop_alpha = 255
 
+        # LOD: masquer props/entités si zoom trop faible
+        self.lod_props_min_zoom = 1.2
+        self.lod_entities_min_zoom = 1.3
+
 
         # Auto-calibrage depuis un sprite "sol" de référence
         self._autocalibrate_from_sprite_key("tile_grass")
@@ -320,6 +324,31 @@ class IsoMapView:
         psy = int(surface_y - (pimg.get_height() - 2 * dy))
         return pygame.Rect(psx, psy, pimg.get_width(), pimg.get_height())
 
+    def _build_entity_index(self, world_entities):
+        if not world_entities:
+            return {}
+        entity_map: dict[tuple[int, int], list] = {}
+        for e in world_entities:
+            key = (int(e.x), int(e.y))
+            entity_map.setdefault(key, []).append(e)
+        return entity_map
+
+    def _build_fog_cache(self, i_min: int, i_max: int, j_min: int, j_max: int):
+        if not (hasattr(self, "fog") and self.fog):
+            return None
+        fog_cache: dict[tuple[int, int], tuple[bool, bool]] = {}
+        for j in range(j_min, j_max + 1):
+            for i in range(i_min, i_max + 1):
+                fog_cache[(i, j)] = (self.fog.is_visible(i, j), self.fog.is_explored(i, j))
+        return fog_cache
+
+    def _build_visible_bands(self, i_min: int, i_max: int, j_min: int, j_max: int):
+        bands = []
+        for s in range(i_min + j_min, i_max + j_max + 1):
+            i0 = max(i_min, s - j_max)
+            i1 = min(i_max, s - j_min)
+            bands.append((i0, i1, s))
+        return bands
 
     def render(self, screen, after_tile_cb=None,world_entities=None):
         if not self.world: return
@@ -333,19 +362,21 @@ class IsoMapView:
 
         if not self.world:
             return
+        entity_map = self._build_entity_index(world_entities)
+        fog_cache = self._build_fog_cache(i_min, i_max, j_min, j_max)
+        draw_props = self.zoom >= self.lod_props_min_zoom
+        draw_entities = self.zoom >= self.lod_entities_min_zoom
+
         # ORDRE ISO: (i+j) croissant pour empilements corrects
-        for s in range(i_min + j_min, i_max + j_max + 1):
-            i0 = max(i_min, s - j_max)
-            i1 = min(i_max, s - j_min)
+        for i0, i1, s in self._build_visible_bands(i_min, i_max, j_min, j_max):
             for i in range(i0, i1 + 1):
                 j = s - i
                 # on vérifie qu’on reste dans la carte
                 if not (0 <= i < W and 0 <= j < H):
                     continue
 
-                if hasattr(self, "fog") and self.fog:
-                    visible = self.fog.is_visible(i, j)
-                    explored = self.fog.is_explored(i, j)
+                if fog_cache is not None:
+                    visible, explored = fog_cache.get((i, j), (True, True))
                 else:
                     visible = True
                     explored = True
@@ -382,29 +413,29 @@ class IsoMapView:
                 if callable(after_tile_cb):
                     after_tile_cb(i, j, sx, sy, dx, dy, wall_h)
                 # props
-                if world_entities:
-                    for e in world_entities:
-                        if int(e.x) == i and int(e.y) == j:
-                            # dessiner l’entité maintenant => insérée dans le pipeline iso
-                            e.draw(screen, self, self.world)
+                if draw_entities and entity_map:
+                    for e in entity_map.get((i, j), []):
+                        # dessiner l’entité maintenant => insérée dans le pipeline iso
+                        e.draw(screen, self, self.world)
 
                 # --- PROP DE LA TUILE ---
-                cell = self.world.overlay[j][i]
-                pid = cell.get("pid") if isinstance(cell, dict) else cell
-                if pid:
-                    gray = (not visible)
-                    alpha = self.transparent_prop_alpha if self.props_transparent else self.default_prop_alpha
-                    if isinstance(cell, dict) and cell.get("state") == "building":
-                        alpha = int(alpha * 0.65)
-                    pimg = self._get_scaled_prop(pid, gray=gray, alpha=alpha)
-                    if pimg:
-                        surface_y = sy - (gimg.get_height() - dy * 2)
-                        psx = sx - pimg.get_width() // 2
-                        psy = surface_y - (pimg.get_height() - dy * 2)
-                        screen.blit(pimg, (psx, psy))
-                        prop_rect = pygame.Rect(psx, psy, pimg.get_width(), pimg.get_height())
-                        prop_mask = self._mask_for_surface(pimg)
-                        self.push_hit("prop", (i, j, pid), prop_rect, prop_mask)
+                if draw_props:
+                    cell = self.world.overlay[j][i]
+                    pid = cell.get("pid") if isinstance(cell, dict) else cell
+                    if pid:
+                        gray = (not visible)
+                        alpha = self.transparent_prop_alpha if self.props_transparent else self.default_prop_alpha
+                        if isinstance(cell, dict) and cell.get("state") == "building":
+                            alpha = int(alpha * 0.65)
+                        pimg = self._get_scaled_prop(pid, gray=gray, alpha=alpha)
+                        if pimg:
+                            surface_y = sy - (gimg.get_height() - dy * 2)
+                            psx = sx - pimg.get_width() // 2
+                            psy = surface_y - (pimg.get_height() - dy * 2)
+                            screen.blit(pimg, (psx, psy))
+                            prop_rect = pygame.Rect(psx, psy, pimg.get_width(), pimg.get_height())
+                            prop_mask = self._mask_for_surface(pimg)
+                            self.push_hit("prop", (i, j, pid), prop_rect, prop_mask)
 
 
     # ---------- Projection ----------
