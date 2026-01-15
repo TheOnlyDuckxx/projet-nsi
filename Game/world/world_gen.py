@@ -1053,6 +1053,7 @@ class ChunkedWorld:
                     tile_seed = _hash_u32(base ^ _hash_u32(gx * 912367) ^ _hash_u32(gy * 972541))
                     r0 = _rand01_from_u32(tile_seed)
                     r1 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xA5A5A5A5))
+                    r2 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xC3C3C3C3))
 
                     if r0 < ore_p:
                         if level >= 5 and r1 < 0.18:
@@ -1063,13 +1064,41 @@ class ChunkedWorld:
                             prop = get_prop_id("ore_copper")
                     elif r0 < ore_p + base_p:
                         if bid == BIOME_DESERT:
-                            prop = get_prop_id("cactus") if r1 < 0.7 else get_prop_id("rock")
+                            if r1 < 0.55:
+                                prop = get_prop_id("cactus")
+                            elif r1 < 0.8:
+                                prop = get_prop_id("boulder")
+                            else:
+                                prop = get_prop_id("rock")
                         elif bid in (BIOME_TUNDRA, BIOME_SNOW):
-                            prop = get_prop_id("rock") if r1 < 0.65 else get_prop_id("stump")
+                            prop = get_prop_id("rock") if r1 < 0.55 else get_prop_id("boulder")
                         elif bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
-                            prop = get_prop_id("tree_1") if r1 < 0.33 else (get_prop_id("tree_2") if r1 < 0.66 else get_prop_id("tree_3"))
+                            if r1 < 0.55:
+                                prop = get_prop_id("tree_1") if r2 < 0.33 else (get_prop_id("tree_2") if r2 < 0.66 else get_prop_id("tree_3"))
+                            elif r1 < 0.78:
+                                prop = get_prop_id("mushroom1") if r2 < 0.34 else (get_prop_id("mushroom2") if r2 < 0.67 else get_prop_id("mushroom3"))
+                            elif r1 < 0.9:
+                                prop = get_prop_id("log")
+                            else:
+                                prop = get_prop_id("stump")
                         elif bid == BIOME_SAVANNA:
-                            prop = get_prop_id("tree_dead") if r1 < 0.35 else get_prop_id("bush")
+                            if r1 < 0.45:
+                                prop = get_prop_id("cactus")
+                            elif r1 < 0.8:
+                                prop = get_prop_id("bush")
+                            else:
+                                prop = get_prop_id("tree_dead")
+                        elif bid == BIOME_PLAINS:
+                            if r1 < 0.6:
+                                prop = get_prop_id("flower") if r2 < 0.34 else (get_prop_id("flower2") if r2 < 0.67 else get_prop_id("flower3"))
+                            elif r1 < 0.85:
+                                prop = get_prop_id("bush")
+                            else:
+                                prop = get_prop_id("berry_bush") if r2 < 0.5 else get_prop_id("blueberry_bush")
+                        elif bid in (BIOME_ROCKY, BIOME_ALPINE, BIOME_VOLCANIC):
+                            prop = get_prop_id("rock") if r1 < 0.65 else get_prop_id("boulder")
+                        elif bid in (BIOME_SWAMP, BIOME_MANGROVE):
+                            prop = get_prop_id("reeds") if r1 < 0.6 else get_prop_id("bush")
                         else:
                             prop = get_prop_id("bush") if r1 < 0.6 else get_prop_id("flower")
 
