@@ -676,6 +676,9 @@ class ChunkedWorld:
         self.overlay = _GridProxy(self.width, self.height, self.get_overlay, self.set_overlay)
         self.max_levels = tiles_levels
 
+        self._progress = progress
+        self._progress_phases_reported: set[str] = set()
+
         # Spawn (déterminé rapidement)
         self.spawn = self._find_spawn(progress=progress)
 
@@ -690,6 +693,12 @@ class ChunkedWorld:
                 return int(get_tile_id("grass"))
             except Exception:
                 return 0
+
+    def _report_phase(self, key: str, p: float, label: str) -> None:
+        if not self._progress or key in self._progress_phases_reported:
+            return
+        self._progress_phases_reported.add(key)
+        self._progress(p, label)
 
     # ------------------- parameters -> knobs -------------------
 
@@ -931,6 +940,7 @@ class ChunkedWorld:
 
                 # re-normalise 0..1
                 h01 = _clamp01((height + 1.0) * 0.5)
+                self._report_phase("height", 0.10, "Hauteur…")
 
                 # --- température (CONTINUE) ---
                 tnoise = _fbm(wx * 0.003, wy * 0.003, base + 201, octaves=3)
@@ -942,6 +952,7 @@ class ChunkedWorld:
                 m01 = _clamp01((mnoise + 1.0) * 0.5)
                 # plus haut => plus sec
                 m01 = _clamp01(m01 - 0.45 * max(0.0, height))
+                self._report_phase("climate", 0.30, "Climat…")
 
                 # --- eau douce (pas d'océans/mer) ---
                 lake_level = 0.08 + 0.04 * water_bias
@@ -962,6 +973,7 @@ class ChunkedWorld:
                     or (lake_noise > lake_cut - 0.06 and height < lake_level + 0.03)
                     or (river_noise < river_th * 1.8 and height < 0.62)
                 )
+                self._report_phase("water", 0.50, "Eau…")
 
                 # --- biome (inchangé dans l’idée) ---
                 if is_ocean:
@@ -982,10 +994,11 @@ class ChunkedWorld:
                             bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
                         elif m01 < 0.42:
                             bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
-                        elif m01 < 0.58:
-                            bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
-                        else:
-                            bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
+                    elif m01 < 0.58:
+                        bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
+                    else:
+                        bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
+                self._report_phase("biomes", 0.70, "Biomes…")
 
                 # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
                 if bid == BIOME_OCEAN:
@@ -1110,6 +1123,7 @@ class ChunkedWorld:
                             prop = get_prop_id("reeds") if r1 < 0.6 else get_prop_id("bush")
                         else:
                             prop = get_prop_id("bush") if r1 < 0.6 else get_prop_id("flower")
+                self._report_phase("props", 0.85, "Props…")
 
                 # écrit chunk
                 k = ch.idx(lx, ly)
@@ -1192,6 +1206,9 @@ class ChunkedWorld:
 
         best = None
         best_score = -1e9
+
+        if progress:
+            progress(0.0, "Spawn…")
 
         for i in range(tries):
             # IMPORTANT : local, pas un x uniforme sur toute la planète
