@@ -1112,7 +1112,17 @@ class SpeciesCreationMenu(BaseMenu):
         except Exception:
             pass
 
-        self.app.change_state("LOADING")
+        preset_name = "Custom"
+        seed = None
+        preset_path = os.path.join("Game", "data", "world_presets.json")
+        try:
+            with open(preset_path, "r", encoding="utf-8") as f:
+                presets = json.load(f)
+            seed = presets.get("presets", {}).get(preset_name, {}).get("seed")
+        except Exception:
+            seed = None
+
+        self.app.change_state("LOADING", preset=preset_name, seed=seed)
 
     def handle_input(self, events):
         super().handle_input(events)
