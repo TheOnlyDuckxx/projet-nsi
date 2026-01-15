@@ -1121,7 +1121,55 @@ class ChunkedWorld:
                 ch.overlay_obj[k] = int(prop)
                 ch.biome_u8[k]  = int(bid)
 
+        actual_w = min(cs, max(0, self.width - cx * cs))
+        actual_h = min(cs, max(0, self.height - cy * cs))
+        self._smooth_chunk_levels(ch.levels_u8, cs, actual_w, actual_h, iterations=3)
+
         return ch
+
+    def _smooth_chunk_levels(
+        self,
+        levels: array,
+        stride: int,
+        width: int,
+        height: int,
+        iterations: int = 3,
+    ) -> None:
+        if width <= 1 or height <= 1:
+            return
+        for _ in range(iterations):
+            changed = False
+            # horizontal neighbors
+            for y in range(height):
+                row = y * stride
+                for x in range(width - 1):
+                    idx = row + x
+                    nidx = idx + 1
+                    a = int(levels[idx])
+                    b = int(levels[nidx])
+                    if a - b > 1:
+                        levels[idx] = b + 1
+                        changed = True
+                    elif b - a > 1:
+                        levels[nidx] = a + 1
+                        changed = True
+            # vertical neighbors
+            for y in range(height - 1):
+                row = y * stride
+                next_row = row + stride
+                for x in range(width):
+                    idx = row + x
+                    nidx = next_row + x
+                    a = int(levels[idx])
+                    b = int(levels[nidx])
+                    if a - b > 1:
+                        levels[idx] = b + 1
+                        changed = True
+                    elif b - a > 1:
+                        levels[nidx] = a + 1
+                        changed = True
+            if not changed:
+                break
 
     # ------------------- spawn -------------------
 
