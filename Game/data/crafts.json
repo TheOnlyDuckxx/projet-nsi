@@ -2,8 +2,8 @@
   "Feu_de_camp": {
     "name": "Feu de camp",
     "description": "Petit feu basique pour se réchauffer et cuisiner rapidement.",
-    "image": "feu_de_camp",
-    "sprite": "prop_fire_small",
+    "image": "btn_feu_de_camp",
+    "sprite": "craft_feu_de_camp",
     "cost": {
       "wood": 6,
       "stone": 2,
@@ -22,8 +22,8 @@
   "Entrepot_primitif": {
     "name": "Entrepot primitif",
     "description": "Stockage simple pour éviter de perdre des ressources au sol.",
-    "image": "entrepot_primitif",
-    "sprite": "prop_entrepot",
+    "image": "btn_entrepot",
+    "sprite": "craft_entrepot",
     "cost": {
       "wood": 0,
       "stone": 0,
@@ -42,8 +42,8 @@
   "Taniere": {
     "name": "Taniere",
     "description": "Abri plus solide qu'un simple refuge. Améliore la survie et la reproduction.",
-    "image": "taniere",
-    "sprite": "prop_den",
+    "image": "btn_taniere",
+    "sprite": "craft_taniere",
     "cost": {
       "wood": 14,
       "stone": 10,

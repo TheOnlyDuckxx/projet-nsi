@@ -67,9 +67,7 @@ class App:
         self.states["LOADING"] = LoadingState(self)
         self.states["CREATION"] = WorldCreationMenu(self)
         self.states["SPECIES_CREATION"] = SpeciesCreationMenu(self)
-        # plus tard: self.states["PHASE2"] = Phase2(self)
     
-    #Fonction pour quitter le jeu
     def quit_game(self):
         self.running=False
 

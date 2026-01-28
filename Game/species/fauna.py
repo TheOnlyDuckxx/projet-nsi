@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from typing import Tuple, Sequence
+from typing import Tuple, Sequence, Optional, Dict, List
 
 import pygame
 
@@ -29,6 +29,11 @@ class PassiveFaunaDefinition:
     vision_range: float = 8.0
     flee_distance: float = 5.0
     sprite_keys: Sequence[str] = ("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2")
+    sprite_sheet_idle: Optional[str] = None
+    sprite_sheet_run: Optional[str] = None
+    sprite_sheet_frame_size: Tuple[int, int] = (32, 32)
+    sprite_sheet_frame_counts: Optional[Dict[str, int]] = None
+    sprite_base_scale: Optional[float] = None
 
     def __post_init__(self):
         def _dict(val, fallback):
@@ -103,31 +108,110 @@ class PassiveFaunaDefinition:
 
 
 class PassiveFaunaRenderer:
-    """Rendu simple multi-frames (idle) avec zoom."""
+    """Rendu simple multi-frames (idle/run) avec zoom."""
 
-    def __init__(self, assets, sprite_keys: Sequence[str]):
+    BASE_SIZE = (20, 24)
+
+    def __init__(
+        self,
+        assets,
+        sprite_keys: Sequence[str],
+        creature=None,
+        sprite_sheets: Optional[Dict[str, str]] = None,
+        frame_size: Tuple[int, int] = (32, 32),
+        frame_counts: Optional[Dict[str, int]] = None,
+        base_scale: Optional[float] = None,
+    ):
         self.assets = assets
+        self.creature = creature
+        self.sprite_sheets = sprite_sheets or {}
+        self.frame_w, self.frame_h = frame_size
+        self.frame_counts = frame_counts or {}
+        self.base_scale = float(base_scale) if base_scale is not None else (self.BASE_SIZE[1] / max(1, self.frame_h))
         self.keys = tuple(sprite_keys) if sprite_keys else ()
-        frames = [self.assets.get_image(k) for k in self.keys if k in getattr(self.assets, "images", {})]
-        if not frames and self.keys:
-            frames = [self.assets.get_image(self.keys[0])]
-        if not frames:
+
+        idle_frames: List[pygame.Surface] = []
+        run_frames: List[pygame.Surface] = []
+
+        if self.sprite_sheets:
+            idle_key = self.sprite_sheets.get("idle")
+            run_key = self.sprite_sheets.get("run")
+            if idle_key:
+                idle_frames = self._slice_sheet(idle_key, self.frame_counts.get("idle"))
+            if run_key:
+                run_frames = self._slice_sheet(run_key, self.frame_counts.get("run"))
+
+        if not idle_frames:
+            idle_frames = [self.assets.get_image(k) for k in self.keys if k in getattr(self.assets, "images", {})]
+            if not idle_frames and self.keys:
+                idle_frames = [self.assets.get_image(self.keys[0])]
+
+        if not run_frames:
+            run_frames = list(idle_frames)
+
+        if not idle_frames:
             surf = pygame.Surface((20, 16), pygame.SRCALPHA)
             surf.fill((220, 220, 220, 255))
-            frames = [surf]
-        self.frames = frames
+            idle_frames = [surf]
+        if not run_frames:
+            run_frames = list(idle_frames)
+
+        self.idle_frames = idle_frames
+        self.run_frames = run_frames
         self.frame_ms = 240
+        self._anim_state = "idle"
+        self._anim_start_ms = pygame.time.get_ticks()
+
+    def _slice_sheet(self, key: str, limit: Optional[int] = None) -> List[pygame.Surface]:
+        try:
+            sheet = self.assets.get_image(key)
+        except Exception:
+            return []
+        sw, sh = sheet.get_width(), sheet.get_height()
+        if self.frame_w <= 0 or self.frame_h <= 0:
+            return []
+        frames: List[pygame.Surface] = []
+        for y in range(0, sh, self.frame_h):
+            for x in range(0, sw, self.frame_w):
+                if limit is not None and len(frames) >= limit:
+                    return frames
+                rect = pygame.Rect(x, y, self.frame_w, self.frame_h)
+                if rect.right <= sw and rect.bottom <= sh:
+                    frames.append(sheet.subsurface(rect).copy())
+        return frames
+
+    def _is_moving(self) -> bool:
+        c = self.creature
+        if c is None:
+            return False
+        if getattr(c, "_move_to", None) is not None and getattr(c, "_move_t", 1.0) < 1.0:
+            return True
+        if getattr(c, "move_path", None):
+            try:
+                if len(c.move_path) > 0:
+                    return True
+            except Exception:
+                return True
+        state = c.ia.get("etat") if hasattr(c, "ia") else None
+        return state in ("se_deplace", "se_deplace_vers_prop", "se_deplace_vers_construction")
 
     def _current_frame(self) -> pygame.Surface:
-        if len(self.frames) == 1:
-            return self.frames[0]
-        idx = (pygame.time.get_ticks() // self.frame_ms) % len(self.frames)
-        return self.frames[int(idx)]
+        state = "run" if self._is_moving() else "idle"
+        frames = self.run_frames if state == "run" else self.idle_frames
+        if state != self._anim_state:
+            self._anim_state = state
+            self._anim_start_ms = pygame.time.get_ticks()
+        if len(frames) == 1:
+            return frames[0]
+        elapsed = max(0, pygame.time.get_ticks() - self._anim_start_ms)
+        idx = (elapsed // self.frame_ms) % len(frames)
+        return frames[int(idx)]
 
     def get_draw_surface_and_rect(self, view, world, tx: float, ty: float) -> Tuple[pygame.Surface, pygame.Rect]:
         base = self._current_frame()
         zoom = getattr(view, "zoom", 1.0) or 1.0
-        sprite = pygame.transform.smoothscale(base, (int(base.get_width() * zoom), int(base.get_height() * zoom)))
+        scale = max(0.05, float(zoom) * self.base_scale)
+        sprite = pygame.transform.smoothscale(base, (int(base.get_width() * scale), int(base.get_height() * scale)))
 
         dx, dy, wall_h = view._proj_consts()
         z = 0
@@ -250,7 +334,20 @@ class PassiveFauna(Individu):
         self.nom = definition.entity_name
         self.is_fauna = True
         self.move_speed = definition.move_speed
-        self.renderer = PassiveFaunaRenderer(assets, definition.sprite_keys)
+        sprite_sheets = {}
+        if definition.sprite_sheet_idle:
+            sprite_sheets["idle"] = definition.sprite_sheet_idle
+        if definition.sprite_sheet_run:
+            sprite_sheets["run"] = definition.sprite_sheet_run
+        self.renderer = PassiveFaunaRenderer(
+            assets,
+            definition.sprite_keys,
+            creature=self,
+            sprite_sheets=sprite_sheets,
+            frame_size=definition.sprite_sheet_frame_size,
+            frame_counts=definition.sprite_sheet_frame_counts,
+            base_scale=definition.sprite_base_scale,
+        )
         self.comportement = PassiveFaunaBehavior(
             self,
             phase,

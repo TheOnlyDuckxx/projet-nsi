@@ -38,6 +38,30 @@ class FogOfWar:
         self.visible = _GridProxy(self, "visible")
         self.explored = _GridProxy(self, "explored")
 
+    def export_state(self) -> dict:
+        chunks = []
+        for (cx, cy), data in self._explored_chunks.items():
+            chunks.append((int(cx), int(cy), bytes(data)))
+        return {
+            "width": self.width,
+            "height": self.height,
+            "chunk_size": self.chunk_size,
+            "wrap_x": self.wrap_x,
+            "explored_chunks": chunks,
+        }
+
+    def import_state(self, state: dict) -> None:
+        chunks = state.get("explored_chunks") or []
+        restored = {}
+        for cx, cy, data in chunks:
+            try:
+                restored[(int(cx), int(cy))] = bytearray(data)
+            except Exception:
+                continue
+        self._explored_chunks = restored
+        if "wrap_x" in state:
+            self.wrap_x = bool(state.get("wrap_x"))
+
     def clear_visible(self):
         self._visible.clear()
 

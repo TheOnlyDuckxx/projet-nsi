@@ -62,6 +62,11 @@ class SaveManager:
             repro_state = espece_data.get("reproduction")
             if repro_state is not None and hasattr(espece, "reproduction_system"):
                 espece.reproduction_system.load_state(repro_state, assets=assets)
+        except EOFError:
+            print("✗ Sauvegarde corrompue ou incomplète (EOF)")
+            phase1.save_message = "✗ Sauvegarde corrompue"
+            phase1.save_message_timer = 3.0
+            return False
         except Exception as e:
             print(f"[Save] Échec chargement reproduction: {e}")
         return espece
@@ -159,13 +164,8 @@ class SaveManager:
         fog = phase1.fog
 
         if fog is not None:
-            # On ne sauvegarde que les cases explorées
-            fog_data = {
-                "width": fog.width,
-                "height": fog.height,
-                "explored": fog.explored,
-            }
-        else :
+            fog_data = fog.export_state()
+        else:
             print("pas de fog :(")
 
         # ---------- PAYLOAD FINAL ----------
@@ -242,8 +242,11 @@ class SaveManager:
             phase1.params = data.get("params")
             phase1.view.set_world(phase1.world)
 
+            fog_data = data.get("fog") or {}
             if phase1.world is not None:
-                phase1.fog = FogOfWar(phase1.world.width, phase1.world.height)
+                cs = fog_data.get("chunk_size", 64)
+                wrap_x = bool(fog_data.get("wrap_x", False))
+                phase1.fog = FogOfWar(phase1.world.width, phase1.world.height, chunk_size=cs, wrap_x=wrap_x)
                 phase1.view.fog = phase1.fog
             # ----------------- Espèce + individus -----------------
             species_registry_data = data.get("species_registry") or {}
@@ -387,11 +390,9 @@ class SaveManager:
             # ----------------- Brouillard de guerre -----------------
             fog_data = data.get("fog")
             if fog_data is not None:
-                exp = fog_data.get("explored")
-                if exp is not None:
-                    fog = getattr(phase1, "fog", None)
-                    if fog is not None:
-                        fog.explored = exp
+                fog = getattr(phase1, "fog", None)
+                if fog is not None and hasattr(fog, "import_state"):
+                    fog.import_state(fog_data)
             
             # ----------------- Évènements -----------------
             events_state = data.get("events")

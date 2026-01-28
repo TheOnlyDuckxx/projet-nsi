@@ -682,6 +682,20 @@ class ChunkedWorld:
         # Spawn (déterminé rapidement)
         self.spawn = self._find_spawn(progress=progress)
 
+    def __getstate__(self):
+        # Empêche de sérialiser un callback local (non picklable).
+        state = dict(self.__dict__)
+        state["_progress"] = None
+        state["_progress_phases_reported"] = set()
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if "_progress" not in self.__dict__:
+            self._progress = None
+        if "_progress_phases_reported" not in self.__dict__:
+            self._progress_phases_reported = set()
+
 
     # ------------------- tile ids safe -------------------
 
@@ -994,10 +1008,10 @@ class ChunkedWorld:
                             bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
                         elif m01 < 0.42:
                             bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
-                    elif m01 < 0.58:
-                        bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
-                    else:
-                        bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
+                        elif m01 < 0.58:
+                            bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
+                        else:
+                            bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
                 self._report_phase("biomes", 0.70, "Biomes…")
 
                 # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
@@ -1034,7 +1048,7 @@ class ChunkedWorld:
 
                     # ground par biome
                     biome_to_ground = {
-                        BIOME_SNOW: "taiga",
+                        BIOME_SNOW: "snow",
                         BIOME_TUNDRA: "taiga",
                         BIOME_DESERT: "desert",
                         BIOME_SAVANNA: "steppe",
@@ -1042,12 +1056,12 @@ class ChunkedWorld:
                         BIOME_FOREST: "forest",
                         BIOME_TAIGA: "taiga",
                         BIOME_RAINFOREST: "rainforest",
-                        BIOME_SWAMP: "grass",
-                        BIOME_MANGROVE: "grass",
+                        BIOME_SWAMP: "swamp",
+                        BIOME_MANGROVE: "swamp",
                         BIOME_ROCKY: "rock",
                         BIOME_ALPINE: "rock",
-                        BIOME_VOLCANIC: "rock",
-                        BIOME_MYSTIC: "grass",
+                        BIOME_VOLCANIC: "volcanic_rock",
+                        BIOME_MYSTIC: "mystic_grass",
                     }
                     gname = biome_to_ground.get(bid, "grass")
 
@@ -1189,92 +1203,89 @@ class ChunkedWorld:
 
     def _find_spawn(self, progress: ProgressCb = None) -> Tuple[int, int]:
         """
-        Spawn rapide :
-        - recherche locale autour du centre/équateur (évite générer des chunks partout)
-        - peu d’essais
+        Spawn rapide et non bloquant :
+        - ne génère qu'un petit voisinage de chunks (évite les scans énormes)
+        - scoring simple pour choisir une zone "confortable"
         - yield du GIL pour laisser l’UI respirer (sinon "ne répond plus")
         """
-        rng = random.Random(self.seed ^ 0xC0FFEE)
-
         mid_x = self.width // 2
         mid_y = self.height // 2
-
-        # zone de recherche locale (tweakables)
-        x_span = max(64, self.width // 16)      # ~6% de la largeur
-        y_span = max(64, self.height // 10)     # ~10% de la hauteur
-        tries = 60                               # au lieu de 1200
+        cs = self.chunk_size
+        cx0 = mid_x // cs
+        cy0 = mid_y // cs
 
         best = None
         best_score = -1e9
 
-        if progress:
-            progress(0.0, "Spawn…")
+        def is_blocked(wx: int, wy: int, ch: _Chunk, lx: int, ly: int) -> bool:
+            ov = self._overlay_overrides.get((wx, wy), self._NO)
+            if ov is not self._NO:
+                return ov not in (None, 0)
+            return int(ch.overlay_obj[ch.idx(lx, ly)]) != 0
 
-        for i in range(tries):
-            # IMPORTANT : local, pas un x uniforme sur toute la planète
-            x = _wrap_lon_x(mid_x + rng.randrange(-x_span, x_span + 1), self.width)
-            y = _clamp_lat_y(mid_y + rng.randrange(-y_span, y_span + 1), self.height)
-
-            # 1 seul appel biome (au lieu de get_is_water + get_biome_id)
-            bid = self.get_biome_id(x, y)
-            if bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
-                continue
-
-            # éviter props / obstacles
-            if self.get_overlay(x, y):
-                continue
-
-            # score : plains/forest favorisés
+        def score_tile(bid: int, h01: float) -> float:
             score = 0.0
             if bid in (BIOME_PLAINS, BIOME_FOREST):
                 score += 3.0
             elif bid == BIOME_SAVANNA:
                 score += 1.0
-
-            # pénalise désert/neige
             if bid in (BIOME_DESERT, BIOME_SNOW, BIOME_TUNDRA):
                 score -= 4.0
+            score -= abs(h01 - 0.62) * 6.0
+            return score
 
-            # altitude modérée
-            h = self.get_height01(x, y)
-            score -= abs(h - 0.62) * 6.0
+        if progress:
+            progress(0.0, "Spawn…")
 
-            if score > best_score:
-                best_score = score
-                best = (x, y)
+        # Génère le chunk central, puis (si besoin) les 8 voisins
+        chunk_coords = [(cx0, cy0)]
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                chunk_coords.append((cx0 + dx, cy0 + dy))
 
-            # Progress + yield GIL (sinon thread UI bloqué)
-            if progress and (i % 5 == 0 or i == tries - 1):
-                progress(i / max(1, tries - 1), f"Recherche du point de départ… ({i+1}/{tries})")
-            if i % 2 == 0:
-                time.sleep(0)  # yield GIL
+        total_chunks = len(chunk_coords)
+        for i, (cx, cy) in enumerate(chunk_coords):
+            # clamp vertical
+            if cy < 0 or cy * cs >= self.height:
+                continue
+            # wrap horizontal
+            cx = (cx * cs) % self.width // cs
+
+            # force génération du chunk (cache)
+            ch, _, _ = self._get_chunk(cx * cs, cy * cs)
+            actual_w = min(cs, max(0, self.width - cx * cs))
+            actual_h = min(cs, max(0, self.height - cy * cs))
+
+            for ly in range(actual_h):
+                wy = cy * cs + ly
+                for lx in range(actual_w):
+                    wx = cx * cs + lx
+                    bid = int(ch.biome_u8[ch.idx(lx, ly)])
+                    if bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
+                        continue
+                    if is_blocked(wx, wy, ch, lx, ly):
+                        continue
+                    h01 = ch.height_u8[ch.idx(lx, ly)] / 255.0
+                    score = score_tile(bid, h01)
+                    if score > best_score:
+                        best_score = score
+                        best = (wx, wy)
+
+            if progress:
+                progress((i + 1) / max(1, total_chunks), f"Recherche du point de départ… ({i+1}/{total_chunks})")
+            time.sleep(0)  # yield GIL
+
+            # si on a déjà trouvé une position dans le chunk central, on s'arrête
+            if i == 0 and best:
+                return best
 
         if best:
             return best
 
-        # fallback : spiral courte autour du centre (toujours locale)
         if progress:
             progress(1.0, "Fallback spawn…")
-        for r in range(1, 256):
-            # périmètre du carré de rayon r
-            for dx in range(-r, r + 1):
-                for dy in (-r, r):
-                    x = _wrap_lon_x(mid_x + dx, self.width)
-                    y = _clamp_lat_y(mid_y + dy, self.height)
-                    bid = self.get_biome_id(x, y)
-                    if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not self.get_overlay(x, y):
-                        return (x, y)
-            for dy in range(-r + 1, r):
-                for dx in (-r, r):
-                    x = _wrap_lon_x(mid_x + dx, self.width)
-                    y = _clamp_lat_y(mid_y + dy, self.height)
-                    bid = self.get_biome_id(x, y)
-                    if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not self.get_overlay(x, y):
-                        return (x, y)
-
-            if r % 16 == 0:
-                time.sleep(0)
-
         return (mid_x, mid_y)
 
 

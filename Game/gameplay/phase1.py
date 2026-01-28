@@ -48,6 +48,7 @@ class Phase1:
         self.joueur: Optional[Espece] = None
         self.entities: list = []
         self.fauna_spawn_zones: list[dict] = []
+        self._fauna_spawn_job = None
 
         # UI/HUD
         self.bottom_hud: BottomHUD | None = None
@@ -112,6 +113,7 @@ class Phase1:
         self.joueur2 = None
         self.entities = []
         self.fauna_spawn_zones = []
+        self._fauna_spawn_job = None
         self.warehouse = {}
         self.construction_sites = {}
         self.selected = None
@@ -400,6 +402,10 @@ class Phase1:
             vision_range=10.0,
             flee_distance=6.0,
             sprite_keys=("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2"),
+            sprite_sheet_idle="rabbit_idle",
+            sprite_sheet_run="rabbit_run",
+            sprite_sheet_frame_size=(32, 32),
+            sprite_base_scale=0.75,
         )
 
     def _init_fauna_species(self):
@@ -451,6 +457,76 @@ class Phase1:
             zones.append({"pos": (i, j), "radius": radius, "spawned": False})
 
         self.fauna_spawn_zones = zones
+
+    def _start_fauna_spawn_job(self, count: int = 10, radius: int = 8):
+        if not self.world or self.fauna_spawn_zones or self._fauna_spawn_job is not None:
+            return
+
+        base_seed = getattr(self.params, "seed", 0) or 0
+        try:
+            seed_int = int(base_seed)
+        except Exception:
+            seed_int = random.getrandbits(32)
+        rng = random.Random(seed_int + 4242)
+
+        try:
+            center_x, center_y = self.world.spawn
+        except Exception:
+            center_x = getattr(self.world, "width", 1) // 2
+            center_y = getattr(self.world, "height", 1) // 2
+
+        x_span = min(max(96, getattr(self.world, "width", 1) // 12), 640)
+        y_span = min(max(96, getattr(self.world, "height", 1) // 10), 480)
+
+        self._fauna_spawn_job = {
+            "count": int(count),
+            "radius": int(radius),
+            "rng": rng,
+            "center_x": int(center_x),
+            "center_y": int(center_y),
+            "x_span": int(x_span),
+            "y_span": int(y_span),
+            "zones": [],
+            "attempts": 0,
+            "max_attempts": int(count) * 50,
+            "forbidden": self._occupied_tiles(),
+        }
+
+    def _step_fauna_spawn_job(self, budget: int = 40):
+        job = self._fauna_spawn_job
+        if not job or not self.world:
+            return
+
+        rng = job["rng"]
+        count = job["count"]
+        radius = job["radius"]
+        center_x = job["center_x"]
+        center_y = job["center_y"]
+        x_span = job["x_span"]
+        y_span = job["y_span"]
+        zones = job["zones"]
+        forbidden = job["forbidden"]
+
+        steps = 0
+        while len(zones) < count and job["attempts"] < job["max_attempts"] and steps < budget:
+            job["attempts"] += 1
+            steps += 1
+            i = int(center_x + rng.randrange(-x_span, x_span + 1))
+            j = int(center_y + rng.randrange(-y_span, y_span + 1))
+            if i < 0 or j < 0 or i >= getattr(self.world, "width", 1) or j >= getattr(self.world, "height", 1):
+                continue
+            if not self._is_walkable(i, j):
+                continue
+            if (i, j) in forbidden:
+                continue
+            too_close = any(abs(i - zx) + abs(j - zy) < radius for zx, zy in (z["pos"] for z in zones))
+            if too_close:
+                continue
+            zones.append({"pos": (i, j), "radius": radius, "spawned": False})
+
+        if len(zones) >= count or job["attempts"] >= job["max_attempts"]:
+            self.fauna_spawn_zones = zones
+            self._fauna_spawn_job = None
 
     def _update_fauna_spawning(self):
         if not self.fauna_spawn_zones or not self.world:
@@ -546,7 +622,7 @@ class Phase1:
                 if not self.fauna_species:
                     self._init_fauna_species()
                 if not self.fauna_spawn_zones:
-                    self._generate_fauna_spawn_zones()
+                    self._start_fauna_spawn_job()
                 self._attach_phase_to_entities()
                 self._set_cursor(self.default_cursor_path)
                 return
@@ -588,18 +664,20 @@ class Phase1:
             else:
                 self.bottom_hud.species = self.espece
             if not self.fauna_spawn_zones:
-                self._generate_fauna_spawn_zones()
+                self._start_fauna_spawn_job()
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
 
         # 3) Sinon, génération classique depuis un preset (avec fallback)
-        preset = kwargs.get("preset", "Tropical")
+        # Par défaut on part sur "Custom" (tu n'utilises plus les presets historiques).
+        preset = kwargs.get("preset") or "Custom"
         seed_override = kwargs.get("seed", None)
+        progress_cb = kwargs.get("progress", None)
         try:
             self.params = load_world_params_from_preset(preset)
         except KeyError as ke:
             print(f"[Phase1] {ke} → tentative de fallback de preset…")
             # Petits fallbacks possibles (au cas où ton JSON n'aurait pas 'Tropical')
-            for candidate in ("Temperate", "Default", "default", "Tempéré", "Neutre"):
+            for candidate in ("Custom", "custom", "Default", "default", "Tempéré", "Neutre", "Temperate"):
                 try:
                     self.params = load_world_params_from_preset(candidate)
                     print(f"[Phase1] Fallback preset = {candidate}")
@@ -612,7 +690,7 @@ class Phase1:
         import traceback
 
         try:
-            world = gen.generate_planet(params, progress=progress_cb)
+            world = self.gen.generate_planet(self.params, rng_seed=seed_override, progress=progress_cb)
         except Exception:
             traceback.print_exc()
             raise
@@ -656,7 +734,7 @@ class Phase1:
         else:
             self.bottom_hud.species = self.espece
         if not self.fauna_spawn_zones:
-            self._generate_fauna_spawn_zones()
+            self._start_fauna_spawn_job()
         self._set_cursor(self.default_cursor_path)
 
     # ---------- INPUT ----------
@@ -846,6 +924,7 @@ class Phase1:
         
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+        self._step_fauna_spawn_job()
         self._update_fauna_spawning()
 
         def get_radius(ent):
