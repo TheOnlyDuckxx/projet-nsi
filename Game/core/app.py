@@ -13,6 +13,7 @@ from Game.core.utils import resource_path
 from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
 from Game.ui.hud.notification import draw_notifications
+from Game.save.progression import ProgressionManager
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
@@ -30,8 +31,10 @@ class App:
         self.clock = pygame.time.Clock()
         self.states = {}
         self.state = None
+        self.state_key = None
 
         self.settings = Settings()
+        self.progression = ProgressionManager()
 
         # --- AUDIO ---
         self.audio = AudioManager(resource_path("Game/assets/audio")).load_all()
@@ -46,6 +49,13 @@ class App:
         self.settings.on_change(self._on_setting_changed)
 
         self.selected_base_mutations: list[str] = []
+        self.species_creation = {
+            "name": "",
+            "color": "bleu",
+            "color_rgb": (70, 130, 220),
+            "stats": {},
+            "mutations": [],
+        }
         self._register_states()
         self.change_state("MENU")
 
@@ -69,15 +79,24 @@ class App:
         self.states["SPECIES_CREATION"] = SpeciesCreationMenu(self)
     
     def quit_game(self):
+        if getattr(self, "progression", None):
+            self.progression.flush(force=True)
         self.running=False
 
     # Permet de changer de "STATES"
     def change_state(self, key, **kwargs):
+        prev_key = self.state_key
         if self.state and hasattr(self.state, "leave"):
             self.state.leave()
         self.state = self.states[key]
+        self.state_key = key
         if hasattr(self.state, "enter"):
             self.state.enter(**kwargs)
+        if getattr(self, "progression", None):
+            if prev_key == "PHASE1" and key != "PHASE1":
+                self.progression.flush(force=True)
+            if key == "PHASE1" and prev_key != "PHASE1":
+                self.progression.on_game_start()
 
     # Boucle principale pygame
     def run(self):
@@ -91,10 +110,14 @@ class App:
                     self.running = False
             if hasattr(self.state, "handle_input"):
                 self.state.handle_input(events)
+            if getattr(self, "progression", None):
+                self.progression.tick(dt, active=self.state_key == "PHASE1")
             if hasattr(self.state, "update"):
                 self.state.update(dt)
             if hasattr(self.state, "render"):
                 self.state.render(self.screen)
             draw_notifications(self.screen)
             pygame.display.flip()
+        if getattr(self, "progression", None):
+            self.progression.flush(force=True)
         pygame.quit()

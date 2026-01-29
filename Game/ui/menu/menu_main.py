@@ -7,10 +7,21 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import Button, ButtonStyle, Slider, Toggle
+from Game.species.species import Espece
+from Game.species.sprite_render import EspeceRenderer
 import json 
 import os 
 import math
 import random
+
+def _trim_sprite(surface: pygame.Surface) -> pygame.Surface:
+    try:
+        rect = surface.get_bounding_rect()
+        if rect.width <= 0 or rect.height <= 0:
+            return surface
+        return surface.subsurface(rect).copy()
+    except Exception:
+        return surface
 # --------------- CLASSE PRINCIPALE ---------------
 
 
@@ -180,7 +191,7 @@ class OptionsMenu(BaseMenu):
             # Slider : label est à bar_top - 36, knob dépasse => il faut une “hauteur de bloc” plus grande
             # (on s'aligne sur votre implémentation Slider._rebuild_rects) :contentReference[oaicite:3]{index=3}
             label_h = w.label_surf.get_height()
-            return 36 + label_h + (2 * w.knob_r) + 18  # marge sécurité
+            return 5 + label_h + (2 * w.knob_r) + 5  # marge sécurité
 
         blocks = [item_block_h(w) for w in items]
         total_h = title_h + title_gap + sum(blocks) + item_gap * (len(items) - 1) + back_gap + self.btn_back.rect.height
@@ -253,14 +264,18 @@ class MainMenu(BaseMenu):
         btn_size = clamp(int(HEIGHT * 0.04), 18, 44)
         self.title_font = app.assets.get_font("MightySouly", title_size)
         self.btn_font = app.assets.get_font("MightySouly", btn_size)
+        stats_title_size = clamp(int(HEIGHT * 0.040), 18, 42)
+        stats_size = clamp(int(HEIGHT * 0.030), 14, 32)
+        self.stats_title_font = app.assets.get_font("MightySouly", stats_title_size)
+        self.stats_font = app.assets.get_font("MightySouly", stats_size)
 
         # ---------- Sprite de bouton ----------
         # Tu as demandé "menus_bouton"
         try:
-            self._btn_sprite = app.assets.get_image("menus_bouton").convert_alpha()
+            self._btn_sprite = _trim_sprite(app.assets.get_image("menus_bouton").convert_alpha())
         except Exception:
             # petit fallback au cas où l'asset a un autre nom dans ton dossier
-            self._btn_sprite = app.assets.get_image("boutons_menu").convert_alpha()
+            self._btn_sprite = _trim_sprite(app.assets.get_image("boutons_menu").convert_alpha())
 
         self._sprite_cache: dict[tuple[int, int], pygame.Surface] = {}
 
@@ -499,7 +514,7 @@ class WorldCreationMenu(BaseMenu):
         self._cursor_on = True
 
         # Sprite de bouton vert
-        self._btn_sprite = app.assets.get_image("boutons_menu").convert_alpha()
+        self._btn_sprite = _trim_sprite(app.assets.get_image("boutons_menu").convert_alpha())
         self._sprite_cache: dict[tuple[int, int], pygame.Surface] = {}
 
         # Définition des 12 paramètres (12 boutons)
@@ -927,13 +942,45 @@ class WorldCreationMenu(BaseMenu):
 
 
 class SpeciesCreationMenu(BaseMenu):
+    LEFT_BG = (32, 44, 48)
+    RIGHT_BG = (8, 8, 12)
+    PANEL_LINE = (75, 84, 96)
+    CARD_BG = (46, 58, 68)
+    CARD_BG_HOVER = (56, 70, 82)
+    CARD_BG_DISABLED = (32, 38, 46)
+    ACCENT = (80, 160, 200)
+    TEXT = (232, 232, 232)
+    MUT_GAIN = (80, 200, 140)
+    MUT_COST = (220, 110, 110)
+    INPUT_BG = (235, 235, 235)
+    INPUT_FG = (25, 25, 25)
+    INPUT_PLACEHOLDER = (120, 120, 120)
+
     def __init__(self, app):
-        super().__init__(app, title="Création d'espèce")
+        super().__init__(app, title="Creation d'espece")
 
-        self.font = app.assets.get_font("MightySouly", 22)
-        self.btn_font = app.assets.get_font("MightySouly", 28)
+        self.base_points = 10
+        self.active_tab = 0
+        self.error_msg = ""
 
-        # --- Charger le JSON des mutations ---
+        # --- inputs (nom + couleur) ---
+        prev = getattr(app, "species_creation", {}) if isinstance(getattr(app, "species_creation", None), dict) else {}
+        self.species_name = str(prev.get("name", "") or "")
+        self.name_active = False
+        self._cursor_t = 0.0
+        self._cursor_on = True
+
+        self.color_options = [
+            {"id": "bleu", "label": "Bleu royal", "swatch": (70, 130, 220)},
+            {"id": "cyan", "label": "Cyan", "swatch": (60, 200, 220)},
+            {"id": "saphir", "label": "Saphir", "swatch": (60, 110, 200)},
+            {"id": "marine", "label": "Marine", "swatch": (50, 90, 160)},
+        ]
+        self.selected_color = prev.get("color", "bleu") or "bleu"
+        if self.selected_color not in {c["id"] for c in self.color_options}:
+            self.selected_color = self.color_options[0]["id"]
+
+        # --- mutations (base) ---
         mutations_path = os.path.join("Game", "data", "mutations.json")
         try:
             with open(mutations_path, "r", encoding="utf-8") as f:
@@ -942,171 +989,488 @@ class SpeciesCreationMenu(BaseMenu):
             print(f"[SpeciesCreationMenu] Impossible de charger mutations.json : {e}")
             all_mutations = {}
 
-        # Mutations de base uniquement (base: true)
         self.base_mutations = {
             mid: data for mid, data in all_mutations.items()
             if data.get("base", False)
         }
+        self._mutation_list = sorted(
+            list(self.base_mutations.items()),
+            key=lambda kv: str(kv[1].get("nom", kv[0]))
+        )
 
-        # État local : mutations sélectionnées (id → bool)
-        # On tente de récupérer ce qui a été déjà choisi (session précédente)
         default_sel = []
-        if hasattr(app, "selected_base_mutations"):
+        if isinstance(prev.get("mutations"), list):
+            default_sel = list(prev.get("mutations"))
+        elif hasattr(app, "selected_base_mutations"):
             default_sel = list(app.selected_base_mutations or [])
         else:
-            # fallback éventuel depuis settings (optionnel)
             default_sel = app.settings.get("species.base_mutations", []) or []
 
         self.selected_ids: set[str] = {
             mid for mid in default_sel if mid in self.base_mutations
         }
 
-        self.error_msg: str = ""
+        # --- stats (sliders) ---
+        base_ref = Espece("Base")
+        self._base_stats = {
+            "physique": dict(base_ref.base_physique),
+            "sens": dict(base_ref.base_sens),
+            "mental": dict(base_ref.base_mental),
+            "environnement": dict(base_ref.base_environnement),
+            "social": dict(base_ref.base_social),
+            "genetique": dict(base_ref.genetique),
+        }
 
-        # --- Layout des Toggles ---
-        base_list = list(self.base_mutations.items())
+        self.stat_defs = [
+            ("physique", "force", "Force"),
+            ("physique", "endurance", "Endurance"),
+            ("physique", "vitesse", "Vitesse"),
+            ("physique", "taille", "Taille"),
+            ("physique", "stockage_energetique", "Stockage energie"),
+            ("sens", "vision", "Vision"),
+            ("sens", "ouie", "Ouie"),
+            ("sens", "odorat", "Odorat"),
+            ("mental", "intelligence", "Intelligence"),
+            ("mental", "dexterite", "Dexterite"),
+            ("mental", "agressivite", "Agressivite"),
+            ("mental", "sociabilite", "Sociabilite"),
+            ("social", "cohesion", "Cohesion"),
+            ("environnement", "adaptabilite", "Adaptabilite"),
+        ]
 
-        # Paramètres du layout multi-colonnes
-        max_per_col = 10                            # ← nb max dans la colonne 1 avant de décaler
-        col1_x = 150                                # ← colonne de gauche
-        col2_x = WIDTH // 2                         # ← colonne du milieu / droite
-        start_y = 220
-        gap_y = 45
+        prev_stats = prev.get("stats", {}) if isinstance(prev.get("stats"), dict) else {}
+        self.stat_deltas = {}
+        self.stat_limits = {}
+        for cat, key, _label in self.stat_defs:
+            base_val = int(self._base_stats.get(cat, {}).get(key, 0) or 0)
+            min_delta = -min(5, base_val)
+            max_delta = 5
+            self.stat_limits[(cat, key)] = (min_delta, max_delta)
+            delta = int(prev_stats.get(cat, {}).get(key, 0) or 0)
+            self.stat_deltas[(cat, key)] = max(min_delta, min(max_delta, delta))
 
-        for i, (mutation_id, data) in enumerate(base_list):
+        # --- UI runtime ---
+        self._layout = {}
+        self._last_size = None
+        self._stat_items = []
+        self._stat_layout_key = None
+        self._tab_rects = []
+        self._name_rect = None
+        self._color_rects = []
+        self._mutation_cards = []
+        self._tab_labels = ["Identite", "Stats", "Mutations"]
 
-            # Choix colonne
-            if i < max_per_col:
-                x = col1_x
-                y = start_y + i * gap_y
-            else:
-                # items au-delà du max vont en colonne 2
-                x = col2_x
-                y = start_y + (i - max_per_col) * gap_y
+        # preview (animation)
+        self._preview_espece = None
+        self._preview_renderer = None
+        self._refresh_preview()
 
-            label = data.get("nom", mutation_id)
+        # buttons (created on layout)
+        self.btn_back = None
+        self.btn_start = None
+        self._btn_layout_key = None
 
-            def make_get(mid):
-                return lambda mid=mid: mid in self.selected_ids
+    # ----------------- helpers -----------------
+    def _clamp(self, v, a, b):
+        return a if v < a else b if v > b else v
 
-            def make_set(mid):
-                def setter(value, mid=mid):
-                    self._toggle_mutation(mid, value)
-                return setter
+    def _mutation_points_value(self, mutation_id: str) -> int:
+        data = self.base_mutations.get(mutation_id, {})
+        try:
+            return int(data.get("points", 0) or 0)
+        except Exception:
+            return 0
 
-            self.add(Toggle(
-                label,
-                (x, y),
-                get_value=make_get(mutation_id),
-                set_value=make_set(mutation_id),
-                font=self.btn_font,
-            ))
+    def _mutation_points_total(self) -> int:
+        return sum(self._mutation_points_value(mid) for mid in self.selected_ids)
 
-        # --- Styles de boutons bas ---
-        primary = ButtonStyle(
-            draw_background=True,
-            bg_color=(60, 80, 110),
-            hover_bg_color=(80, 110, 155),
-            active_bg_color=(40, 140, 240),
-            draw_border=True,
-            border_color=(20, 30, 45),
-            border_width=2,
-            radius=14,
-            font=self.btn_font,
-            text_color=(255, 255, 255),
-            hover_text_color=(255, 255, 255),
-            active_text_color=(255, 255, 255),
-            padding_x=26,
-            padding_y=14,
-            shadow=True,
-            shadow_offset=(3, 3),
-            shadow_alpha=90,
-            hover_zoom=1.10,
-            zoom_speed=0.22,
-        )
+    def _stat_spent_points(self) -> int:
+        return int(sum(self.stat_deltas.values()))
 
-        ghost = ButtonStyle(
-            draw_background=False,
-            font=self.btn_font,
-            text_color=(230, 230, 230),
-            hover_zoom=1.08,
-            zoom_speed=0.22,
-        )
+    def _points_remaining(self) -> int:
+        return int(self.base_points - self._stat_spent_points() + self._mutation_points_total())
 
-       # --- Boutons du bas adaptés automatiquement ---
-        # On calcule la plus grande hauteur atteinte parmi les colonnes
-        total_rows_col1 = min(len(base_list), max_per_col)
-        total_rows_col2 = max(0, len(base_list) - max_per_col)
+    def _set_stat_delta(self, key, new_val):
+        old = int(self.stat_deltas.get(key, 0))
+        if new_val == old:
+            return
+        min_delta, max_delta = self.stat_limits.get(key, (-5, 5))
+        new_val = max(min_delta, min(max_delta, int(new_val)))
 
-        height_col1 = start_y + total_rows_col1 * gap_y
-        height_col2 = start_y + total_rows_col2 * gap_y
-
-        y_buttons = max(height_col1, height_col2) + 80
-
-        # Position en bas : centrée
-        button_x = WIDTH // 2
-
-        self.btn_reset = self.add(Button(
-            "Réinitialiser",
-            (button_x - 200, y_buttons),
-            anchor="center",
-            style=ghost,
-            on_click=lambda b: self._reset_selection(),
-        ))
-
-        self.btn_validate = self.add(Button(
-            "Valider",
-            (button_x, y_buttons),
-            anchor="center",
-            style=primary,
-            on_click=lambda b: self._validate_and_back(),
-        ))
-
-        self.btn_back = self.add(Button(
-            "Retour",
-            (button_x + 200, y_buttons),
-            anchor="center",
-            style=ghost,
-            on_click=lambda b: self.app.change_state("CREATION"),
-        ))
-    # --- Logique de sélection / incompatibilités ---
-
-    def _toggle_mutation(self, mutation_id: str, enabled: bool):
-        """
-        Active/désactive une mutation, en vérifiant les incompatibilités.
-        """
-        if enabled:
-            data = self.base_mutations.get(mutation_id, {})
-            incompat_ids = set(data.get("incompatibles", []))
-            conflict = incompat_ids & self.selected_ids
-            if conflict:
-                # On bloque et on affiche un message d'erreur
-                noms = [
-                    self.base_mutations[c]["nom"] if c in self.base_mutations else c
-                    for c in conflict
-                ]
-                self.error_msg = "Incompatible avec : " + ", ".join(noms)
-                return
-            self.selected_ids.add(mutation_id)
+        diff = new_val - old
+        if diff > 0:
+            remaining = self._points_remaining()
+            if remaining - diff < 0:
+                new_val = old + max(0, remaining)
+                diff = new_val - old
+        self.stat_deltas[key] = new_val
+        if self._points_remaining() >= 0 and self.error_msg.startswith("Points"):
             self.error_msg = ""
-        else:
+
+    def _get_incompatibles(self, data: dict) -> set:
+        inc1 = set(data.get("incompatibles", []) or [])
+        inc2 = set(data.get("imcompatibles", []) or [])
+        return inc1 | inc2
+
+    def _toggle_mutation(self, mutation_id: str):
+        if mutation_id in self.selected_ids:
             self.selected_ids.discard(mutation_id)
             self.error_msg = ""
+            self._refresh_preview()
+            return
 
-    def _reset_selection(self):
-        self.selected_ids.clear()
+        data = self.base_mutations.get(mutation_id, {})
+        incompat_ids = self._get_incompatibles(data)
+        conflict = incompat_ids & self.selected_ids
+        if conflict:
+            noms = [
+                self.base_mutations[c]["nom"] if c in self.base_mutations else c
+                for c in conflict
+            ]
+            self.error_msg = "Incompatible avec : " + ", ".join(noms)
+            return
+
+        pts = self._mutation_points_value(mutation_id)
+        if self._points_remaining() + pts < 0:
+            self.error_msg = "Points insuffisants pour cette mutation."
+            return
+
+        self.selected_ids.add(mutation_id)
         self.error_msg = ""
+        self._refresh_preview()
 
-    def _validate_and_back(self):
-        """
-        Sauvegarde la sélection dans l'App (et éventuellement dans les settings)
-        puis retourne au menu principal.
-        """
-        # Stockage en mémoire pour la session
-        if hasattr(self.app, "selected_base_mutations"):
-            self.app.selected_base_mutations = list(self.selected_ids)
+    def _refresh_preview(self):
+        self._preview_espece = Espece(self.species_name.strip() or "Espece")
+        try:
+            self._preview_espece.mutations.apply_base_mutations(
+                list(self.selected_ids),
+                apply_to_species=True,
+                apply_to_individus=False,
+            )
+        except Exception:
+            pass
+        self._preview_renderer = EspeceRenderer(self._preview_espece, self.app.assets)
 
-        # Optionnel : persister dans settings
+    # ----------------- layout -----------------
+    def _build_stat_sliders(self, content_rect, slider_w, font):
+        self._stat_items = []
+        for cat, key, label in self.stat_defs:
+            min_delta, max_delta = self.stat_limits.get((cat, key), (-5, 5))
+
+            def make_get(k):
+                return lambda k=k: float(self.stat_deltas.get(k, 0))
+
+            def make_set(k):
+                def setter(v, k=k):
+                    self._set_stat_delta(k, int(round(v)))
+                return setter
+
+            slider = Slider(
+                label,
+                (0, 0),
+                width=slider_w,
+                get_value=make_get((cat, key)),
+                set_value=make_set((cat, key)),
+                font=font,
+                min_v=min_delta,
+                max_v=max_delta,
+                step=1,
+            )
+            self._stat_items.append({
+                "cat": cat,
+                "key": key,
+                "label": label,
+                "slider": slider,
+            })
+
+    def _compute_layout(self, screen):
+        W, H = screen.get_size()
+        if self._last_size == (W, H):
+            return
+        self._last_size = (W, H)
+
+        left_w = int(W * 0.60)
+        right_w = W - left_w
+
+        margin = self._clamp(int(W * 0.04), 12, max(12, int(left_w * 0.14)))
+        top_pad = self._clamp(int(H * 0.04), 10, 40)
+        tabs_h = self._clamp(int(H * 0.065), 34, 72)
+        tabs_gap = self._clamp(int(W * 0.012), 6, 18)
+        content_gap = self._clamp(int(H * 0.02), 8, 30)
+        bottom_pad = self._clamp(int(H * 0.05), 14, 60)
+        buttons_h = self._clamp(int(H * 0.085), 42, 90)
+        buttons_gap = self._clamp(int(W * 0.02), 12, 36)
+
+        content_top = top_pad + tabs_h + content_gap
+        buttons_y = H - bottom_pad - buttons_h
+        content_rect = pygame.Rect(
+            margin,
+            content_top,
+            left_w - 2 * margin,
+            max(20, buttons_y - content_top - content_gap),
+        )
+
+        # fonts
+        tab_size = self._clamp(int(H * 0.028), 14, 28)
+        label_size = self._clamp(int(H * 0.024), 12, 24)
+        small_size = self._clamp(int(H * 0.021), 11, 22)
+        points_size = self._clamp(int(H * 0.040), 18, 40)
+        btn_size = self._clamp(int(H * 0.032), 16, 32)
+
+        self.tab_font = self.app.assets.get_font("MightySouly", tab_size)
+        self.label_font = self.app.assets.get_font("MightySouly", label_size)
+        self.small_font = self.app.assets.get_font("MightySouly", small_size)
+        self.points_font = self.app.assets.get_font("MightySouly", points_size)
+        self.btn_font = self.app.assets.get_font("MightySouly", btn_size)
+
+        # tabs
+        tab_w = int((content_rect.width - 2 * tabs_gap) / 3)
+        self._tab_rects = []
+        for i in range(3):
+            rx = margin + i * (tab_w + tabs_gap)
+            self._tab_rects.append(pygame.Rect(rx, top_pad, tab_w, tabs_h))
+
+        # name input + colors (tab 1)
+        input_h = self._clamp(int(content_rect.height * 0.14), 36, 64)
+        input_w = int(content_rect.width * 0.70)
+        self._name_rect = pygame.Rect(
+            content_rect.x,
+            content_rect.y + self._clamp(int(content_rect.height * 0.06), 6, 20),
+            input_w,
+            input_h,
+        )
+
+        swatch = self._clamp(int(H * 0.05), 28, 48)
+        sw_gap = self._clamp(int(W * 0.01), 8, 16)
+        colors_y = self._name_rect.bottom + self._clamp(int(content_rect.height * 0.08), 12, 30)
+        self._color_rects = []
+        cur_x = content_rect.x
+        for opt in self.color_options:
+            rect = pygame.Rect(cur_x, colors_y, swatch, swatch)
+            self._color_rects.append((rect, opt))
+            cur_x += swatch + sw_gap
+
+        # stats (tab 2)
+        stats_cols = 2 if len(self.stat_defs) > 8 else 1
+        col_gap = self._clamp(int(content_rect.width * 0.06), 12, 32)
+        col_w = int((content_rect.width - col_gap * (stats_cols - 1)) / stats_cols)
+        slider_w = int(col_w * 0.86)
+
+        stat_layout_key = (stats_cols, slider_w, label_size)
+        if self._stat_layout_key != stat_layout_key:
+            self._build_stat_sliders(content_rect, slider_w, self.label_font)
+            self._stat_layout_key = stat_layout_key
+
+        rows = int(math.ceil(len(self._stat_items) / max(1, stats_cols)))
+        label_h = self.label_font.render("X", True, (0, 0, 0)).get_height()
+        knob_r = 10
+        block_h = 36 + label_h + 2 * knob_r + 14
+        row_gap = self._clamp(int(content_rect.height * 0.02), 6, 20)
+        row_h = max(block_h, int((content_rect.height - row_gap * max(0, rows - 1)) / max(1, rows)))
+
+        for idx, item in enumerate(self._stat_items):
+            col = idx // rows
+            row = idx % rows
+            cx = content_rect.x + col * (col_w + col_gap) + col_w / 2
+            row_y = content_rect.y + row * (row_h + row_gap)
+            bar_center_y = row_y + 36 + label_h + 8 + knob_r
+            slider = item["slider"]
+            slider.width = slider_w
+            slider.pos = (int(cx), int(bar_center_y))
+            slider._rebuild_rects()
+
+        # mutations (tab 3)
+        mut_cols = 2 if content_rect.width > 420 else 1
+        mut_gap = self._clamp(int(H * 0.015), 8, 20)
+        mut_rows = int(math.ceil(len(self._mutation_list) / max(1, mut_cols)))
+        mut_w = int((content_rect.width - mut_gap * (mut_cols - 1)) / mut_cols) if mut_cols > 0 else content_rect.width
+        mut_h = int((content_rect.height - mut_gap * max(0, mut_rows - 1)) / max(1, mut_rows)) if mut_rows > 0 else 40
+        mut_h = max(46, min(mut_h, 96))
+
+        self._mutation_cards = []
+        for i, (mid, _data) in enumerate(self._mutation_list):
+            col = i % mut_cols
+            row = i // mut_cols
+            x = content_rect.x + col * (mut_w + mut_gap)
+            y = content_rect.y + row * (mut_h + mut_gap)
+            self._mutation_cards.append({"id": mid, "rect": pygame.Rect(x, y, mut_w, mut_h)})
+
+        # buttons (right panel, under preview)
+        right_margin = self._clamp(int(W * 0.03), 10, max(10, int(right_w * 0.18)))
+        raw_btn_w = int((right_w - 2 * right_margin - buttons_gap) / 2)
+        stacked = raw_btn_w < 90
+        btn_w = max(100, right_w - 2 * right_margin) if stacked else max(90, raw_btn_w)
+        btn_layout_key = (btn_w, buttons_h, btn_size, stacked)
+        if self._btn_layout_key != btn_layout_key:
+            primary = ButtonStyle(
+                draw_background=True,
+                bg_color=(60, 90, 120),
+                hover_bg_color=(80, 120, 160),
+                active_bg_color=(60, 140, 210),
+                draw_border=True,
+                border_color=(20, 30, 45),
+                border_width=2,
+                radius=14,
+                font=self.btn_font,
+                text_color=(255, 255, 255),
+                hover_text_color=(255, 255, 255),
+                active_text_color=(255, 255, 255),
+                padding_x=26,
+                padding_y=14,
+                shadow=True,
+                shadow_offset=(3, 3),
+                shadow_alpha=90,
+                hover_zoom=1.06,
+                zoom_speed=0.22,
+            )
+            ghost = ButtonStyle(
+                draw_background=False,
+                font=self.btn_font,
+                text_color=(230, 230, 230),
+                hover_zoom=1.06,
+                zoom_speed=0.22,
+            )
+            if stacked:
+                back_pos = (left_w + right_margin + btn_w // 2, buttons_y - buttons_h - buttons_gap + buttons_h // 2)
+                start_pos = (left_w + right_margin + btn_w // 2, buttons_y + buttons_h // 2)
+            else:
+                back_pos = (left_w + right_margin + btn_w // 2, buttons_y + buttons_h // 2)
+                start_pos = (left_w + right_margin + btn_w + buttons_gap + btn_w // 2, buttons_y + buttons_h // 2)
+
+            self.btn_back = Button(
+                "Retour",
+                back_pos,
+                size=(btn_w, buttons_h),
+                anchor="center",
+                style=ghost,
+                on_click=lambda b: self.app.change_state("CREATION"),
+            )
+            self.btn_start = Button(
+                "Lancer",
+                start_pos,
+                size=(btn_w, buttons_h),
+                anchor="center",
+                style=primary,
+                on_click=lambda b: self._validate_and_start(),
+            )
+            self._btn_layout_key = btn_layout_key
+        else:
+            if stacked:
+                back_pos = (left_w + right_margin + btn_w // 2, buttons_y - buttons_h - buttons_gap + buttons_h // 2)
+                start_pos = (left_w + right_margin + btn_w // 2, buttons_y + buttons_h // 2)
+            else:
+                back_pos = (left_w + right_margin + btn_w // 2, buttons_y + buttons_h // 2)
+                start_pos = (left_w + right_margin + btn_w + buttons_gap + btn_w // 2, buttons_y + buttons_h // 2)
+            if self.btn_back:
+                self.btn_back.move_to(back_pos)
+            if self.btn_start:
+                self.btn_start.move_to(start_pos)
+
+        self._layout = {
+            "W": W,
+            "H": H,
+            "left_w": left_w,
+            "right_w": right_w,
+            "content_rect": content_rect,
+            "buttons_y": buttons_y,
+        }
+
+    # ----------------- input/update -----------------
+    def update(self, dt):
+        self._cursor_t += dt
+        if self._cursor_t >= 0.45:
+            self._cursor_t = 0.0
+            self._cursor_on = not self._cursor_on
+
+    def handle_input(self, events):
+        screen = self.app.screen if hasattr(self.app, "screen") else None
+        if screen:
+            self._compute_layout(screen)
+
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+
+        # tabs and clicks
+        for e in events:
+            if e.type != pygame.MOUSEBUTTONDOWN or e.button != 1:
+                continue
+            mx, my = e.pos
+
+            # tabs
+            for i, rect in enumerate(self._tab_rects):
+                if rect.collidepoint(mx, my):
+                    self.active_tab = i
+                    self.name_active = False
+                    return
+
+            # tab 1: name + colors
+            if self.active_tab == 0:
+                if self._name_rect and self._name_rect.collidepoint(mx, my):
+                    self.name_active = True
+                else:
+                    self.name_active = False
+                for rect, opt in self._color_rects:
+                    if rect.collidepoint(mx, my):
+                        self.selected_color = opt["id"]
+
+            # tab 3: mutations
+            if self.active_tab == 2:
+                for card in self._mutation_cards:
+                    if card["rect"].collidepoint(mx, my):
+                        self._toggle_mutation(card["id"])
+                        break
+
+        # keyboard input (name)
+        for e in events:
+            if e.type == pygame.KEYDOWN and self.name_active:
+                if e.key == pygame.K_RETURN:
+                    self.name_active = False
+                elif e.key == pygame.K_BACKSPACE:
+                    self.species_name = self.species_name[:-1]
+                else:
+                    if e.unicode and e.unicode.isprintable() and len(self.species_name) < 24:
+                        self.species_name += e.unicode
+
+        # sliders
+        if self.active_tab == 1:
+            for item in self._stat_items:
+                item["slider"].handle(events)
+
+        # buttons
+        if self.btn_back:
+            self.btn_back.handle(events)
+        if self.btn_start:
+            self.btn_start.handle(events)
+
+    # ----------------- validation -----------------
+    def _validate_and_start(self):
+        if self._points_remaining() < 0:
+            self.error_msg = "Points insuffisants."
+            return
+
+        # store in app
+        stats_out = {}
+        for (cat, key), delta in self.stat_deltas.items():
+            if int(delta) == 0:
+                continue
+            stats_out.setdefault(cat, {})[key] = int(delta)
+
+        color_rgb = None
+        for opt in self.color_options:
+            if opt["id"] == self.selected_color:
+                color_rgb = opt["swatch"]
+                break
+
+        self.app.selected_base_mutations = list(self.selected_ids)
+        self.app.species_creation = {
+            "name": self.species_name.strip() or "Espece sans nom",
+            "color": self.selected_color,
+            "color_rgb": color_rgb or (70, 130, 220),
+            "stats": stats_out,
+            "mutations": list(self.selected_ids),
+        }
+
         try:
             self.app.settings.set("species.base_mutations", list(self.selected_ids))
         except Exception:
@@ -1124,22 +1488,164 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.app.change_state("LOADING", preset=preset_name, seed=seed)
 
-    def handle_input(self, events):
-        super().handle_input(events)
-        for e in events:
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                self.app.change_state("MENU")
+    # ----------------- rendering -----------------
+    def _draw_tabs(self, screen):
+        for i, rect in enumerate(self._tab_rects):
+            active = i == self.active_tab
+            bg = self.ACCENT if active else (38, 48, 58)
+            border = (20, 24, 30)
+            pygame.draw.rect(screen, bg, rect, border_radius=12)
+            pygame.draw.rect(screen, border, rect, width=2, border_radius=12)
+            label = self._tab_labels[i]
+            txt = self.tab_font.render(label, True, (250, 250, 250))
+            screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
+
+    def _draw_identity_tab(self, screen):
+        # label
+        label = self.label_font.render("Nom de l'espece", True, self.TEXT)
+        screen.blit(label, (self._name_rect.x, self._name_rect.y - label.get_height() - 6))
+
+        # input
+        pygame.draw.rect(screen, self.INPUT_BG, self._name_rect, border_radius=10)
+        border = (255, 255, 255) if self.name_active else (210, 210, 210)
+        pygame.draw.rect(screen, border, self._name_rect, 2, border_radius=10)
+
+        if self.species_name:
+            txt = self.label_font.render(self.species_name, True, self.INPUT_FG)
+            screen.blit(txt, (self._name_rect.x + 12, self._name_rect.centery - txt.get_height() // 2))
+        else:
+            ph = self.label_font.render("Entrez un nom...", True, self.INPUT_PLACEHOLDER)
+            screen.blit(ph, (self._name_rect.x + 12, self._name_rect.centery - ph.get_height() // 2))
+
+        if self.name_active and self._cursor_on:
+            base_x = self._name_rect.x + 12
+            if self.species_name:
+                tmp = self.label_font.render(self.species_name, True, self.INPUT_FG)
+                base_x += tmp.get_width() + 2
+            cy = self._name_rect.centery
+            pygame.draw.line(screen, (30, 30, 30), (base_x, cy - self._name_rect.height // 4), (base_x, cy + self._name_rect.height // 4), 2)
+
+        # colors
+        color_label_y = self._name_rect.bottom + 12
+        cl = self.label_font.render("Couleur (sprite bleu pour toutes)", True, self.TEXT)
+        screen.blit(cl, (self._name_rect.x, color_label_y))
+
+        for rect, opt in self._color_rects:
+            pygame.draw.rect(screen, opt["swatch"], rect, border_radius=8)
+            is_selected = opt["id"] == self.selected_color
+            border_col = self.ACCENT if is_selected else (20, 24, 30)
+            pygame.draw.rect(screen, border_col, rect, width=3 if is_selected else 2, border_radius=8)
+            if is_selected:
+                pygame.draw.rect(screen, (255, 255, 255), rect.inflate(-6, -6), width=1, border_radius=6)
+
+            label = self.small_font.render(opt["label"], True, self.TEXT)
+            screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 6))
+
+    def _draw_stats_tab(self, screen):
+        for item in self._stat_items:
+            slider = item["slider"]
+            slider.draw(screen)
+            cat = item["cat"]
+            key = item["key"]
+            base_val = int(self._base_stats.get(cat, {}).get(key, 0) or 0)
+            delta = int(self.stat_deltas.get((cat, key), 0))
+            total = base_val + delta
+            sign = f"{delta:+d}"
+            val_txt = self.small_font.render(f"{total} ({sign})", True, self.TEXT)
+            screen.blit(val_txt, (slider.bar_rect.right + 8, slider.bar_rect.centery - val_txt.get_height() // 2))
+
+    def _draw_mutations_tab(self, screen):
+        mouse_pos = pygame.mouse.get_pos()
+        for card in self._mutation_cards:
+            mid = card["id"]
+            rect = card["rect"]
+            data = self.base_mutations.get(mid, {})
+            name = data.get("nom", mid)
+            pts = self._mutation_points_value(mid)
+            selected = mid in self.selected_ids
+
+            incompat = self._get_incompatibles(data)
+            blocked = bool(incompat & self.selected_ids) and not selected
+
+            bg = self.CARD_BG_DISABLED if blocked else (self.CARD_BG_HOVER if rect.collidepoint(mouse_pos) else self.CARD_BG)
+            pygame.draw.rect(screen, bg, rect, border_radius=10)
+            border_col = self.ACCENT if selected else (20, 24, 30)
+            pygame.draw.rect(screen, border_col, rect, width=2, border_radius=10)
+
+            name_surf = self.small_font.render(str(name), True, self.TEXT)
+            screen.blit(name_surf, (rect.x + 12, rect.y + 10))
+
+            pts_color = self.MUT_GAIN if pts > 0 else self.MUT_COST if pts < 0 else (200, 200, 200)
+            pts_surf = self.small_font.render(f"{pts:+d} pts", True, pts_color)
+            screen.blit(pts_surf, (rect.right - pts_surf.get_width() - 12, rect.y + 10))
+
+            if blocked:
+                lock = self.small_font.render("Incompatible", True, (200, 120, 120))
+                screen.blit(lock, (rect.x + 12, rect.bottom - lock.get_height() - 8))
+
+    def _draw_preview(self, screen, rect):
+        pygame.draw.rect(screen, self.RIGHT_BG, rect)
+
+        # subtle vignette
+        vignette = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(vignette, (0, 0, 0, 100), vignette.get_rect(), border_radius=24)
+        screen.blit(vignette, rect.topleft)
+
+        # points
+        remaining = self._points_remaining()
+        pts_color = self.ACCENT if remaining >= 0 else (220, 120, 120)
+        pts_txt = self.points_font.render(f"Points restants : {remaining}", True, pts_color)
+        screen.blit(pts_txt, (rect.centerx - pts_txt.get_width() // 2, rect.y + 24))
+
+        # sprite preview
+        if self._preview_renderer:
+            try:
+                sprite, _ax, _ay = self._preview_renderer._compose()
+                sw, sh = sprite.get_size()
+                target_h = rect.height * 0.45
+                scale = target_h / max(1, sh)
+                scale = max(0.2, min(scale, 4.0))
+                new_w, new_h = int(sw * scale), int(sh * scale)
+                sprite = pygame.transform.smoothscale(sprite, (new_w, new_h))
+                px = rect.centerx - new_w // 2
+                py = rect.centery - new_h // 2 + int(rect.height * 0.08)
+                screen.blit(sprite, (px, py))
+            except Exception:
+                pass
 
     def render(self, screen):
-        super().render(screen)
+        self._compute_layout(screen)
+        W, H = self._layout["W"], self._layout["H"]
+        left_w = self._layout["left_w"]
 
-        # Bandeau d'info / erreurs
-        if self.error_msg:
-            font = self.app.assets.get_font("MightySouly", 22)
-            txt = font.render(self.error_msg, True, (255, 120, 120))
-            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT - 120))
+        # background split
+        pygame.draw.rect(screen, self.LEFT_BG, pygame.Rect(0, 0, left_w, H))
+        pygame.draw.rect(screen, self.RIGHT_BG, pygame.Rect(left_w, 0, W - left_w, H))
+        pygame.draw.line(screen, self.PANEL_LINE, (left_w, 0), (left_w, H), 2)
+
+        # tabs
+        self._draw_tabs(screen)
+
+        # content
+        if self.active_tab == 0:
+            self._draw_identity_tab(screen)
+        elif self.active_tab == 1:
+            self._draw_stats_tab(screen)
         else:
-            font = self.app.assets.get_font("MightySouly", 20)
-            msg = "Sélectionne les mutations de base de ton espèce (les incompatibilités sont bloquées)."
-            surf = font.render(msg, True, (210, 210, 210))
-            screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, HEIGHT - 120))
+            self._draw_mutations_tab(screen)
+
+        # preview right
+        right_rect = pygame.Rect(left_w, 0, W - left_w, H)
+        self._draw_preview(screen, right_rect)
+
+        # buttons (on top of preview, under animation)
+        if self.btn_back:
+            self.btn_back.draw(screen)
+        if self.btn_start:
+            self.btn_start.draw(screen)
+
+        # error/info
+        if self.error_msg:
+            err = self.small_font.render(self.error_msg, True, (230, 120, 120))
+            screen.blit(err, (self._layout["content_rect"].x, self._layout["buttons_y"] - err.get_height() - 6))
+

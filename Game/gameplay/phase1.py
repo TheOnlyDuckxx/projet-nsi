@@ -227,6 +227,53 @@ class Phase1:
         except Exception:
             return []
 
+    def _get_species_creation_data(self) -> dict:
+        data = getattr(self.app, "species_creation", None)
+        return data if isinstance(data, dict) else {}
+
+    def _apply_species_creation_to_espece(self):
+        """
+        Applique le nom, la couleur et les ajustements de stats
+        choisis dans le menu de création d'espèce.
+        """
+        if not self.espece:
+            return
+
+        data = self._get_species_creation_data()
+        if not data:
+            return
+
+        name = str(data.get("name", "") or "").strip()
+        if name:
+            self.espece.nom = name
+
+        color_name = data.get("color")
+        color_rgb = data.get("color_rgb")
+        if color_name:
+            self.espece.color_name = color_name
+        if isinstance(color_rgb, (list, tuple)) and len(color_rgb) == 3:
+            self.espece.color_rgb = tuple(color_rgb)
+
+        stats = data.get("stats", {}) or {}
+        mapping_espece = {
+            "physique": "base_physique",
+            "sens": "base_sens",
+            "mental": "base_mental",
+            "environnement": "base_environnement",
+            "social": "base_social",
+            "genetique": "genetique",
+        }
+        for categorie, d in stats.items():
+            attr_espece = mapping_espece.get(categorie)
+            if not attr_espece or not isinstance(d, dict):
+                continue
+            cible = getattr(self.espece, attr_espece, None)
+            if not isinstance(cible, dict):
+                continue
+            for stat, delta in d.items():
+                if stat in cible and isinstance(delta, (int, float)):
+                    cible[stat] += delta
+
     def _apply_base_mutations_to_species(self):
         """
         Applique les effets des mutations de base sur les stats de base
@@ -645,6 +692,8 @@ class Phase1:
                     sx, sy = 0, 0
                 from Game.species.species import Espece
                 self.espece = Espece("Hominidé")
+                self._apply_species_creation_to_espece()
+                self._apply_base_mutations_to_species()
                 self.joueur = self.espece.create_individu(
                     x=float(sx),
                     y=float(sy),
@@ -656,6 +705,7 @@ class Phase1:
                     y=float(sy+1),
                     assets=self.assets,
                 )
+                self._apply_base_mutations_to_individus()
                 self.entities = [self.joueur,self.joueur2]
                 self._init_fauna_species()
                 self._attach_phase_to_entities()
@@ -710,6 +760,7 @@ class Phase1:
         if not self.joueur:
             from Game.species.species import Espece
             self.espece = Espece("Hominidé")
+            self._apply_species_creation_to_espece()
             self._apply_base_mutations_to_species()
             self.joueur = self.espece.create_individu(
                 x=float(sx),

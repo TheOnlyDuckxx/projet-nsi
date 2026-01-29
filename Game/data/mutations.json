@@ -1,127 +1,152 @@
 {
-  "musculature_developpee": {
-    "nom": "Musculature développée",
-    "description": "Augmente la force et l’endurance, utile pour la survie et la chasse.",
-    "effets": {
-      "physique": {
-        "force": 4,
-        "endurance": 1
-      }
+    "musculature_developpee": {
+        "nom": "Musculature développée",
+        "description": "Augmente la force et l’endurance, utile pour la survie et la chasse.",
+        "effets": {
+            "physique": {
+                "force": 4,
+                "endurance": 1
+            }
+        },
+        "conditions": [],
+        "cout": 20,
+        "categorie": "physique",
+        "phase": 1,
+        "base": true,
+        "points": -2
     },
-    "conditions": [],
-    "cout": 20,
-    "categorie": "physique",
-    "phase": 1,
-    "base":true
-  }, 
     "peau_epaisse": {
         "nom": "Peau épaisse",
         "description": "Offre une meilleure protection contre les agressions extérieures.",
         "effets": {
-        "physique": {
-            "resistance": 3
-        }
+            "physique": {
+                "resistance": 3
+            }
         },
         "conditions": [],
         "imcompatibles": [],
         "cout": 1,
         "categorie": "physique",
         "phase": 1,
-        "base":true
-        },
+        "base": true,
+        "points": -1
+    },
     "omnivore": {
         "nom": "Omnivore",
         "description": "Permet de consommer une variété d'aliments, augmentant les chances de survie.",
         "effets": {
-        "environnement": {
-            "adaptabilité": 5
-        }
+            "environnement": {
+                "adaptabilité": 5
+            }
         },
         "conditions": [],
-        "incompatibles": ["herbivore", "carnivore"],
+        "incompatibles": [
+            "herbivore",
+            "carnivore"
+        ],
         "cout": 10,
         "categorie": "environnement",
         "phase": 1,
-        "base":true},
-
+        "base": true,
+        "points": -1
+    },
     "carnivore": {
         "nom": "Carnivore",
         "description": "Adapté à un régime alimentaire principalement composé de viande.",
         "effets": {
-        "mental": {
-            "agressivite": 7,
-            "intimidation": 10
-        }
+            "mental": {
+                "agressivite": 7,
+                "intimidation": 10
+            }
         },
         "conditions": [],
-        "incompatibles": ["herbivore", "omnivore"],
+        "incompatibles": [
+            "herbivore",
+            "omnivore"
+        ],
         "cout": 0,
         "categorie": "environnement",
         "phase": 1,
-        "base":true},
+        "base": true,
+        "points": 0
+    },
     "herbivore": {
         "nom": "Herbivore",
         "description": "Adapté à un régime alimentaire principalement composé de plantes.",
         "effets": {
-        "genetique": {
-            "taux_reproduction": 0.2
-        },
-        "physique": {
-            "endurence": 5
-        }
+            "genetique": {
+                "taux_reproduction": 0.2
+            },
+            "physique": {
+                "endurence": 5
+            }
         },
         "conditions": [],
-        "incompatibles": ["carnivore", "omnivore"],
+        "incompatibles": [
+            "carnivore",
+            "omnivore"
+        ],
         "cout": 0,
         "categorie": "environnement",
         "phase": 1,
-        "base":true}, 
+        "base": true,
+        "points": 0
+    },
     "ambidextre": {
         "nom": "Ambidextre",
         "description": "Permet une utilisation égale de toutes les mains, améliorant la dextérité.",
         "effets": {
-        "mental": {
-            "dexterite": 10,
-            "intelligence": 5
-        }
+            "mental": {
+                "dexterite": 10,
+                "intelligence": 5
+            }
         },
         "conditions": [],
         "cout": 10,
         "categorie": "sens",
         "phase": 1,
-        "base":true},
-
+        "base": true,
+        "points": -1
+    },
     "Vision Stéréoscopique": {
         "nom": "Vision Stéréoscopique",
         "description": "Permet une meilleure perception de la profondeur et une vision plus précise.",
         "effets": {
-        "sens": {
-            "vision": 20,
-            "attaque_a_distance": 5,
-            "detection_visuelle": -20
-        }
+            "sens": {
+                "vision": 20,
+                "attaque_a_distance": 5,
+                "detection_visuelle": -20
+            }
         },
         "conditions": [],
-        "incompatibles": ["Vision Panoramique"],
+        "incompatibles": [
+            "Vision Panoramique"
+        ],
         "cout": 15,
         "categorie": "sens",
         "phase": 1,
-        "base":true},
+        "base": true,
+        "points": -2
+    },
     "Vision Panoramique": {
         "nom": "Vision Panoramique",
         "description": "Permet une vision à 280 degrés, utile pour détecter les prédateurs.",
         "effets": {
-        "sens": {
-            "vision": -10,
-            "detection_visuelle": 40
-        }
+            "sens": {
+                "vision": -10,
+                "detection_visuelle": 40
+            }
         },
         "conditions": [],
-        "incompatibles": ["Vision Stéréoscopique"],
+        "incompatibles": [
+            "Vision Stéréoscopique"
+        ],
         "cout": 15,
         "categorie": "sens",
         "phase": 1,
-        "base":true},
+        "base": true,
+        "points": -2
+    },
     "Aveugle": {
         "nom": "Aveugle",
         "description": "Perte de la vision, mais amélioration des autres sens.",
@@ -133,11 +158,16 @@
             }
         },
         "conditions": [],
-        "incompatibles": ["Myope","Vision_nocturne","vision_perçante"],
+        "incompatibles": [
+            "Myope",
+            "Vision_nocturne",
+            "vision_perçante"
+        ],
         "cout": -80,
         "categorie": "sens",
         "phase": 1,
-        "base":true
+        "base": true,
+        "points": 8
     },
     "Myope": {
         "nom": "Myope",
@@ -145,18 +175,21 @@
         "effets": {
             "sens": {
                 "vision": -30
-                
             },
             "combat": {
                 "attaque_a_distance": -5
             }
         },
         "conditions": [],
-        "incompatibles": ["aveugle","vision_perçante"],
+        "incompatibles": [
+            "aveugle",
+            "vision_perçante"
+        ],
         "cout": -20,
         "categorie": "sens",
         "phase": 1,
-        "base":true
+        "base": true,
+        "points": 2
     },
     "vision_perçante": {
         "nom": "Vision perçante",
@@ -164,18 +197,21 @@
         "effets": {
             "sens": {
                 "vision": 30
-            }
-            ,
+            },
             "combat": {
                 "attaque_a_distance": 5
             }
         },
         "conditions": [],
-        "incompatibles": ["aveugle","Myope"],
+        "incompatibles": [
+            "aveugle",
+            "Myope"
+        ],
         "cout": 20,
         "categorie": "sens",
         "phase": 1,
-        "base":true
+        "base": true,
+        "points": -2
     },
     "Vision_nocturne": {
         "nom": "Vision nocturne",
@@ -186,11 +222,14 @@
             }
         },
         "conditions": [],
-        "incompatibles": ["aveugle"],
+        "incompatibles": [
+            "aveugle"
+        ],
         "cout": 10,
         "categorie": "sens",
         "phase": 1,
-        "base":true
+        "base": true,
+        "points": -1
     },
     "Vision_thermique": {
         "nom": "Vision thermique",
@@ -206,84 +245,92 @@
         "cout": 15,
         "categorie": "sens",
         "phase": 1,
-        "base":false
+        "base": false
     },
     "Semibipedie": {
         "nom": "Semi bipedie",
-         "description": "1ère étape vers la bipédie complète, améliore la vue et la dextérité des membres supérieurs.",
+        "description": "1ère étape vers la bipédie complète, améliore la vue et la dextérité des membres supérieurs.",
         "effets": {
             "sens": {
                 "detection_visuelle": 15,
-                "vision":10 },
-            "physique":{
-                "endurance":20,
-                "vitesse":-15,
-                "force":-20},
-            "mental":{
-                "intelligence":5,
-                "dexterite":10,
-                "intimidation":5
+                "vision": 10
+            },
+            "physique": {
+                "endurance": 20,
+                "vitesse": -15,
+                "force": -20
+            },
+            "mental": {
+                "intelligence": 5,
+                "dexterite": 10,
+                "intimidation": 5
             }
-            
         },
         "conditions": [],
         "incompatibles": [],
-        "cout":30,
+        "cout": 30,
         "categorie": "sens",
         "phase": 1,
-        "base":true
+        "base": true,
+        "points": -3
     },
     "Bipedie": {
         "nom": "Bipédie",
-         "description": "Permet de se déplacer sur deux jambes, libérant les membres supérieurs pour d'autres tâches.",
+        "description": "Permet de se déplacer sur deux jambes, libérant les membres supérieurs pour d'autres tâches.",
         "effets": {
             "sens": {
                 "detection_visuelle": 25,
-                "vision":15 },
-            "physique":{
-                "endurance":40,
-                "vitesse":-25,
-                "force":-20},
-            "mental":{
-                "intelligence":10,
-                "dexterite":15,
-                "intimidation":10
+                "vision": 15
+            },
+            "physique": {
+                "endurance": 40,
+                "vitesse": -25,
+                "force": -20
+            },
+            "mental": {
+                "intelligence": 10,
+                "dexterite": 15,
+                "intimidation": 10
             }
-            
         },
-        "conditions": ["Semibipedie"],
+        "conditions": [
+            "Semibipedie"
+        ],
         "incompatibles": [],
-        "cout":50,
+        "cout": 50,
         "categorie": "sens",
         "phase": 2,
-        "base":false
+        "base": false
     },
     "Bipedie exclusive": {
         "nom": "Bipédie exclusive",
-         "description": "Adoption complète de la bipédie, avec des adaptations supplémentaires pour l'équilibre et la locomotion.",
+        "description": "Adoption complète de la bipédie, avec des adaptations supplémentaires pour l'équilibre et la locomotion.",
         "effets": {
             "sens": {
                 "detection_visuelle": 35,
-                "vision":20 },
-            "physique":{
-                "endurance":60,
-                "vitesse":-35,
-                "force":-25},
-            "mental":{
-                "intelligence":15,
-                "dexterite":20,
-                "intimidation":15
+                "vision": 20
+            },
+            "physique": {
+                "endurance": 60,
+                "vitesse": -35,
+                "force": -25
+            },
+            "mental": {
+                "intelligence": 15,
+                "dexterite": 20,
+                "intimidation": 15
             }
-            
         },
-        "conditions": ["Bipedie"],
+        "conditions": [
+            "Bipedie"
+        ],
         "incompatibles": [],
-        "cout":75,
+        "cout": 75,
         "categorie": "sens",
         "phase": 3,
-        "base":false
+        "base": false
     },
-    "Cannibale":{
+    "Cannibale": {
         "nom": "Cannibale",
         "description": "L'espèce accepte de se nourrir de ses morts pour survivre.",
         "effets": {
@@ -302,7 +349,7 @@
         "phase": 1,
         "base": false
     },
-    "Machoire puissante":{
+    "Machoire puissante": {
         "nom": "Mâchoire puissante",
         "description": "Augmentation de la force de la mâchoire pour une meilleure capacité de morsure.",
         "effets": {
@@ -312,63 +359,76 @@
             "mental": {
                 "intimidation": 5
             },
-            "social":{"communication":-5}
+            "social": {
+                "communication": -5
+            }
         },
         "conditions": [],
-        "incompatibles": ["Mâchoire réduite"],
+        "incompatibles": [
+            "Mâchoire réduite"
+        ],
         "cout": 15,
         "categorie": "physique",
         "phase": 1,
-        "base":false
+        "base": false
     },
-    "Mâchoire réduite":{
+    "Mâchoire réduite": {
         "nom": "Mâchoire réduite",
         "description": "Réduction de la taille de la mâchoire pour améliorer la parole et la manipulation d'outils.",
         "effets": {
             "mental": {
                 "intelligence": 10,
-                "dexterite": 5            
+                "dexterite": 5
             },
-            "social":{"communication":5},
+            "social": {
+                "communication": 5
+            },
             "combat": {
                 "attaque_melee": -5
             },
             "physique": {
                 "endurance": -2
             }
-
         },
         "conditions": [],
-        "incompatibles": ["Mâchoire puissante"],
+        "incompatibles": [
+            "Mâchoire puissante"
+        ],
         "cout": 15,
         "categorie": "physique",
         "phase": 1,
-        "base":false
+        "base": false
     },
-
     "Carapace": {
-    "nom": "Carapace",
-    "description": "Développement d'une carapace protectrice.",
-    "effets": {
-        "physique": { "vitesse": -10, "endurance": -25 },
-        "combat": { "defense": 15 }
-    },
-
-    "effets_temporaire": {
-        "nom": "Se réfugier dans sa carapace",
-        "description": "Se protège…",
-        "durée": 300,
-
+        "nom": "Carapace",
+        "description": "Développement d'une carapace protectrice.",
         "effets": {
-            "physique": { "vitesse": -2000000 },
-            "combat": { "defense": 100 }
-        }},
-
+            "physique": {
+                "vitesse": -10,
+                "endurance": -25
+            },
+            "combat": {
+                "defense": 15
+            }
+        },
+        "effets_temporaire": {
+            "nom": "Se réfugier dans sa carapace",
+            "description": "Se protège…",
+            "durée": 300,
+            "effets": {
+                "physique": {
+                    "vitesse": -2000000
+                },
+                "combat": {
+                    "defense": 100
+                }
+            }
+        },
         "conditions": [],
         "incompatibles": [],
-        "cout":25,
+        "cout": 25,
         "categorie": "physique",
         "phase": 1,
-        "base":false
+        "base": false
     }
 }
