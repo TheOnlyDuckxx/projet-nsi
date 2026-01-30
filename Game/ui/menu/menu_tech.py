@@ -44,5 +44,41 @@ class TechMenu:
         title_rect = title_surf.get_rect(midtop=(w // 2, margin))
         screen.blit(title_surf, title_rect)
 
+        bubble_radius = max(28, int(min(w, h) * 0.07))
+        bubble_font = pygame.font.SysFont("consolas", max(16, int(bubble_radius * 0.55)), bold=True)
+        bubble_color = (90, 90, 95)
+        bubble_border = (220, 220, 220)
+        line_color = (180, 180, 190)
+
+        root_center = (w // 2, int(h * 0.32))
+        child_y = int(h * 0.62)
+        child_offset = int(w * 0.22)
+        left_center = (root_center[0] - child_offset, child_y)
+        right_center = (root_center[0] + child_offset, child_y)
+
+        pygame.draw.line(screen, line_color, root_center, left_center, 4)
+        pygame.draw.line(screen, line_color, root_center, right_center, 4)
+
+        pygame.draw.line(screen, line_color, left_center, right_center, 4)
+        mid_x = (left_center[0] + right_center[0]) // 2
+        mid_y = (left_center[1] + right_center[1]) // 2
+        warning_radius = max(10, int(bubble_radius * 0.25))
+        pygame.draw.circle(screen, (200, 40, 40), (mid_x, mid_y), warning_radius)
+        warning_font = pygame.font.SysFont("consolas", max(14, int(warning_radius * 1.2)), bold=True)
+        warning_text = warning_font.render("!", True, (245, 245, 245))
+        warning_rect = warning_text.get_rect(center=(mid_x, mid_y - 1))
+        screen.blit(warning_text, warning_rect)
+
+        def draw_bubble(center, label):
+            pygame.draw.circle(screen, bubble_color, center, bubble_radius)
+            pygame.draw.circle(screen, bubble_border, center, bubble_radius, 3)
+            text = bubble_font.render(label, True, (245, 245, 245))
+            text_rect = text.get_rect(center=center)
+            screen.blit(text, text_rect)
+
+        draw_bubble(root_center, "Feu")
+        draw_bubble(left_center, "FEU TOTEM")
+        draw_bubble(right_center, "FEUX D’INTIMIDATION")
+
         self.back_btn.move_to((margin, h - margin))
         self.back_btn.draw(screen)
