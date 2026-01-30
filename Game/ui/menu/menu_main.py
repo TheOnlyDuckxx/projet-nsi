@@ -261,23 +261,20 @@ class MainMenu(BaseMenu):
 
         # ---------- Fonts (dépendants de HEIGHT) ----------
         title_size = clamp(int(HEIGHT * 0.10), 42, 96)
-        btn_size = clamp(int(HEIGHT * 0.04), 18, 44)
+        btn_size = clamp(int(HEIGHT * 0.04), 18, 30)
         self.title_font = app.assets.get_font("MightySouly", title_size)
-        self.btn_font = app.assets.get_font("MightySouly", btn_size)
-        stats_title_size = clamp(int(HEIGHT * 0.040), 18, 42)
-        stats_size = clamp(int(HEIGHT * 0.030), 14, 32)
-        self.stats_title_font = app.assets.get_font("MightySouly", stats_title_size)
-        self.stats_font = app.assets.get_font("MightySouly", stats_size)
-
+        self.btn_font = app.assets.get_font("KiwiSoda", btn_size)
         # ---------- Sprite de bouton ----------
-        # Tu as demandé "menus_bouton"
+        # On évite de "trim" pour ne pas casser les marges transparentes du sprite.
         try:
-            self._btn_sprite = _trim_sprite(app.assets.get_image("menus_bouton").convert_alpha())
+            self._btn_sprite_default = _trim_sprite(app.assets.get_image("btn_menu_default").convert_alpha())
+            self._btn_sprite_hover = _trim_sprite(app.assets.get_image("btn_menu_hover").convert_alpha())
         except Exception:
-            # petit fallback au cas où l'asset a un autre nom dans ton dossier
-            self._btn_sprite = _trim_sprite(app.assets.get_image("boutons_menu").convert_alpha())
+            # fallback (anciens noms)
+            self._btn_sprite_default = _trim_sprite(app.assets.get_image("menus_bouton").convert_alpha())
+            self._btn_sprite_hover = self._btn_sprite_default
 
-        self._sprite_cache: dict[tuple[int, int], pygame.Surface] = {}
+        self._sprite_cache: dict[tuple[int, int, bool], pygame.Surface] = {}
 
         # ---------- Boutons ----------
         from Game.gameplay.phase1 import Phase1
@@ -308,10 +305,15 @@ class MainMenu(BaseMenu):
                         self.on_click()
                     self.pressed = False
 
-    def _get_scaled_sprite(self, w: int, h: int) -> pygame.Surface:
-        key = (max(1, w), max(1, h))
+    def _get_scaled_sprite(self, w: int, h: int, hovered: bool) -> pygame.Surface:
+        key = (max(1, w), max(1, h), hovered)
         if key not in self._sprite_cache:
-            self._sprite_cache[key] = pygame.transform.smoothscale(self._btn_sprite, key)
+            src = self._btn_sprite_hover if hovered else self._btn_sprite_default
+            sw, sh = src.get_size()
+            scale = min(w / max(1, sw), h / max(1, sh))
+            nw = max(1, int(sw * scale))
+            nh = max(1, int(sh * scale))
+            self._sprite_cache[key] = pygame.transform.smoothscale(src, (nw, nh))
         return self._sprite_cache[key]
 
     def _rebuild_layout(self):
@@ -319,19 +321,19 @@ class MainMenu(BaseMenu):
         self._buttons.clear()
 
         # Dimensions boutons (dépendants de WIDTH/HEIGHT)
-        btn_w = self._clamp(int(self.overlay_w * 0.78), 180, self.overlay_w - 30)
-        btn_h = self._clamp(int(HEIGHT * 0.10), 48, 120)
+        btn_w = self._clamp(int(self.overlay_w * 0.86), 200, self.overlay_w - 20)
+        btn_h = self._clamp(int(HEIGHT * 0.12), 56, 140)
         gap = self._clamp(int(HEIGHT * 0.03), 10, 44)
         title_gap = self._clamp(int(HEIGHT * 0.05), 12, 60)
 
         # Liste des actions (avec ou sans sauvegarde)
         actions = []
         if self.has_save:
-            actions.append(("REPRENDRE LA PARTIE", lambda: self.app.change_state("PHASE1", load_save=True)))
+            actions.append(("Reprendre", lambda: self.app.change_state("PHASE1", load_save=True)))
         actions += [
-            ("NOUVELLE PARTIE", lambda: self.app.change_state("CREATION")),
-            ("OPTIONS", lambda: self.app.change_state("OPTIONS")),
-            ("Crédits", lambda: self.app.change_state("CREDITS")),
+            ("Commencer", lambda: self.app.change_state("CREATION")),
+            ("Options", lambda: self.app.change_state("OPTIONS")),
+            ("Credits", lambda: self.app.change_state("CREDITS")),
             ("Quitter", lambda: self.app.quit_game()),
         ]
 
@@ -385,14 +387,13 @@ class MainMenu(BaseMenu):
 
         # 4) boutons sprite (centrés dans l'overlay)
         for b in self._buttons:
-            sprite = self._get_scaled_sprite(b.rect.width, b.rect.height)
-            screen.blit(sprite, b.rect.topleft)
+            sprite = self._get_scaled_sprite(b.rect.width, b.rect.height, b.hovered)
+            screen.blit(
+                sprite,
+                (b.rect.centerx - sprite.get_width() // 2, b.rect.centery - sprite.get_height() // 2),
+            )
 
-            # effets hover / pressed (facultatif mais utile visuellement)
-            if b.hovered:
-                ov = pygame.Surface(b.rect.size, pygame.SRCALPHA)
-                ov.fill((255, 255, 255, 25))
-                screen.blit(ov, b.rect.topleft)
+            # plus d'overlay au survol : sprite only
             if b.pressed:
                 ov = pygame.Surface(b.rect.size, pygame.SRCALPHA)
                 ov.fill((0, 0, 0, 35))
@@ -513,9 +514,13 @@ class WorldCreationMenu(BaseMenu):
         self._cursor_t = 0.0
         self._cursor_on = True
 
-        # Sprite de bouton vert
-        self._btn_sprite = _trim_sprite(app.assets.get_image("boutons_menu").convert_alpha())
-        self._sprite_cache: dict[tuple[int, int], pygame.Surface] = {}
+        # Sprite de bouton (default + hover) sans trim pour préserver les marges transparentes
+        self._btn_sprite_default = _trim_sprite(app.assets.get_image("btn_menu_default").convert_alpha())
+        try:
+            self._btn_sprite_hover = _trim_sprite(app.assets.get_image("btn_menu_hover").convert_alpha())
+        except Exception:
+            self._btn_sprite_hover = self._btn_sprite_default
+        self._sprite_cache: dict[tuple[int, int, bool], pygame.Surface] = {}
 
         # Définition des 12 paramètres (12 boutons)
         self.param_defs = [
@@ -619,10 +624,15 @@ class WorldCreationMenu(BaseMenu):
                         self.on_click()
                     self.pressed = False
 
-    def _get_scaled_sprite(self, w: int, h: int) -> pygame.Surface:
-        key = (max(1, w), max(1, h))
+    def _get_scaled_sprite(self, w: int, h: int, hovered: bool) -> pygame.Surface:
+        key = (max(1, w), max(1, h), hovered)
         if key not in self._sprite_cache:
-            self._sprite_cache[key] = pygame.transform.smoothscale(self._btn_sprite, key)
+            src = self._btn_sprite_hover if hovered else self._btn_sprite_default
+            sw, sh = src.get_size()
+            scale = min(w / max(1, sw), h / max(1, sh))
+            nw = max(1, int(sw * scale))
+            nh = max(1, int(sh * scale))
+            self._sprite_cache[key] = pygame.transform.smoothscale(src, (nw, nh))
         return self._sprite_cache[key]
 
     @staticmethod
@@ -649,9 +659,9 @@ class WorldCreationMenu(BaseMenu):
         label_size = self._clamp(int(H * 0.026), 14, 30)
         value_size = self._clamp(int(H * 0.030), 16, 34)
 
-        self.title_font = self.app.assets.get_font("MightySouly", title_size)
-        self.small_font = self.app.assets.get_font("MightySouly", label_size)
-        self.value_font = self.app.assets.get_font("MightySouly", value_size)
+        self.title_font = self.app.assets.get_font("KiwiSoda", title_size)
+        self.small_font = self.app.assets.get_font("KiwiSoda", label_size)
+        self.value_font = self.app.assets.get_font("KiwiSoda", value_size)
 
         # Dimensions cibles (on rescale si ça dépasse)
         top_pad = int(H * 0.04)
@@ -663,10 +673,10 @@ class WorldCreationMenu(BaseMenu):
         input_h = int(H * 0.10)
         input_w = int(left_w * 0.50)
 
-        btn_h = int(H * 0.10)
+        btn_h = int(H * 0.12)
         row_gap = max(2, int(H * 0.012))
 
-        nav_h = int(H * 0.10)
+        nav_h = int(H * 0.12)
 
         # Mesure du titre
         title_surf = self.title_font.render(self.title, True, (245, 245, 245))
@@ -837,14 +847,13 @@ class WorldCreationMenu(BaseMenu):
     # ----------------- Render -----------------
 
     def _draw_sprite_button(self, screen, rect, hovered, pressed, lines):
-        sprite = self._get_scaled_sprite(rect.width, rect.height)
-        screen.blit(sprite, rect.topleft)
+        sprite = self._get_scaled_sprite(rect.width, rect.height, hovered)
+        screen.blit(
+            sprite,
+            (rect.centerx - sprite.get_width() // 2, rect.centery - sprite.get_height() // 2),
+        )
 
-        # Effet hover/press simple (pas d’éléments “schéma” dessinés)
-        if hovered:
-            ov = pygame.Surface(rect.size, pygame.SRCALPHA)
-            ov.fill((255, 255, 255, 22))
-            screen.blit(ov, rect.topleft)
+        # Plus d'overlay au survol : sprite only
         if pressed:
             ov = pygame.Surface(rect.size, pygame.SRCALPHA)
             ov.fill((0, 0, 0, 25))
@@ -1648,4 +1657,3 @@ class SpeciesCreationMenu(BaseMenu):
         if self.error_msg:
             err = self.small_font.render(self.error_msg, True, (230, 120, 120))
             screen.blit(err, (self._layout["content_rect"].x, self._layout["buttons_y"] - err.get_height() - 6))
-
