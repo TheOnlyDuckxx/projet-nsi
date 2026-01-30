@@ -6,6 +6,8 @@ class TechMenu:
         self.phase = phase
         self.on_close = on_close
         self.active = False
+        self.scroll_x = 0
+        self._max_scroll_x = 0
 
         if not pygame.font.get_init():
             pygame.font.init()
@@ -26,7 +28,20 @@ class TechMenu:
 
     def handle(self, events):
         if self.active:
+            self._handle_scroll_input(events)
             self.back_btn.handle(events)
+
+    def _scroll_tree(self, delta: int):
+        if self._max_scroll_x <= 0:
+            self.scroll_x = 0
+            return
+        self.scroll_x = max(0, min(self.scroll_x + delta, self._max_scroll_x))
+
+    def _handle_scroll_input(self, events):
+        for e in events:
+            if e.type == pygame.MOUSEWHEEL:
+                # Utiliser la molette pour défiler horizontalement dans l'arbre
+                self._scroll_tree(-e.y * 40)
 
     def draw(self, screen):
         if not self.active:
@@ -50,18 +65,32 @@ class TechMenu:
         bubble_border = (220, 220, 220)
         line_color = (180, 180, 190)
 
-        root_center = (w // 2, int(h * 0.32))
-        child_y = int(h * 0.62)
-        child_offset = int(w * 0.22)
-        left_center = (root_center[0] - child_offset, child_y)
-        right_center = (root_center[0] + child_offset, child_y)
+        root_x = margin + bubble_radius + 10
+        root_y = int(h * 0.5)
+        child_x = root_x + int(w * 0.5)
+        child_offset_y = int(h * 0.18)
+        upper_center = (child_x, root_y - child_offset_y)
+        lower_center = (child_x, root_y + child_offset_y)
+        root_center = (root_x, root_y)
 
-        pygame.draw.line(screen, line_color, root_center, left_center, 4)
-        pygame.draw.line(screen, line_color, root_center, right_center, 4)
+        tree_width = child_x + bubble_radius + margin
+        view_width = w - margin
+        self._max_scroll_x = max(0, tree_width - view_width)
+        self.scroll_x = max(0, min(self.scroll_x, self._max_scroll_x))
 
-        pygame.draw.line(screen, line_color, left_center, right_center, 4)
-        mid_x = (left_center[0] + right_center[0]) // 2
-        mid_y = (left_center[1] + right_center[1]) // 2
+        def apply_scroll(center):
+            return (center[0] - self.scroll_x, center[1])
+
+        root_center = apply_scroll(root_center)
+        upper_center = apply_scroll(upper_center)
+        lower_center = apply_scroll(lower_center)
+
+        pygame.draw.line(screen, line_color, root_center, upper_center, 4)
+        pygame.draw.line(screen, line_color, root_center, lower_center, 4)
+
+        pygame.draw.line(screen, line_color, upper_center, lower_center, 4)
+        mid_x = (upper_center[0] + lower_center[0]) // 2
+        mid_y = (upper_center[1] + lower_center[1]) // 2
         warning_radius = max(10, int(bubble_radius * 0.25))
         pygame.draw.circle(screen, (200, 40, 40), (mid_x, mid_y), warning_radius)
         warning_font = pygame.font.SysFont("consolas", max(14, int(warning_radius * 1.2)), bold=True)
@@ -77,8 +106,8 @@ class TechMenu:
             screen.blit(text, text_rect)
 
         draw_bubble(root_center, "Feu")
-        draw_bubble(left_center, "FEU TOTEM")
-        draw_bubble(right_center, "FEUX D’INTIMIDATION")
+        draw_bubble(upper_center, "FEU TOTEM")
+        draw_bubble(lower_center, "FEUX D’INTIMIDATION")
 
         self.back_btn.move_to((margin, h - margin))
         self.back_btn.draw(screen)
