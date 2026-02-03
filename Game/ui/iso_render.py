@@ -27,7 +27,7 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         23: "prop_boulder",
         25:"prop_flower2",
         26:"prop_flower3",
-        102: "prop_entrepot",
+        102: "craft_entrepot",
         28: "prop_blueberry_bush",
         29: "prop_rock",
         30: "prop_rock",

@@ -52,6 +52,7 @@ class Phase1:
         # entités
         self.espece = None
         self.fauna_species: Espece | None = None
+        self.fauna_species_by_name = {}
         self.joueur: Optional[Espece] = None
         self.entities: list = []
         self.fauna_spawn_zones: list[dict] = []
@@ -116,6 +117,7 @@ class Phase1:
         # Données de progression / entités
         self.espece = None
         self.fauna_species = None
+        self.fauna_species_by_name = {}
         self.joueur = None
         self.joueur2 = None
         self.entities = []
@@ -468,27 +470,45 @@ class Phase1:
                 scaled[key] = value
         return scaled
 
-    def _rabbit_definition(self) -> PassiveFaunaDefinition:
+    def _rabbit_definition(self):
         return PassiveFaunaDefinition(
             species_name="Lapin",
             entity_name="Lapin",
             move_speed=3.1,
             vision_range=10.0,
             flee_distance=6.0,
-            sprite_keys=("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2"),
             sprite_sheet_idle="rabbit_idle",
             sprite_sheet_run="rabbit_run",
             sprite_sheet_frame_size=(32, 32),
             sprite_base_scale=0.75,
         )
+    
+    def capybara_definition(self):
+        return PassiveFaunaDefinition(
+            species_name="Capybara",
+            entity_name="Capybara",
+            move_speed=4.1,
+            vision_range=4.0,
+            flee_distance=2.0,
+            sprite_sheet_idle="capybara_idle",
+            sprite_sheet_frame_size=(32, 32),
+            sprite_base_scale=0.75,
+        )
+        
+    def _all_fauna_definitions(self):
+        return [self._rabbit_definition(), self.capybara_definition()]
 
-    def _init_fauna_species(self):
-        if self.fauna_species:
-            return self.fauna_species
-
-        factory = PassiveFaunaFactory(self, self.assets, self._rabbit_definition())
-        self.fauna_species = factory.create_species()
-        return self.fauna_species
+    def _init_fauna_species(self, definition: PassiveFaunaDefinition | None = None):
+        if definition is None:
+            definition = self._rabbit_definition()
+        key = definition.species_name
+        if key not in self.fauna_species_by_name:
+            factory = PassiveFaunaFactory(self, self.assets, definition)
+            self.fauna_species_by_name[key] = factory.create_species()
+        species = self.fauna_species_by_name[key]
+        if self.fauna_species is None:
+            self.fauna_species = species
+        return species
 
     def _generate_fauna_spawn_zones(self, count: int = 10, radius: int = 8, force: bool = False):
         if not self.world or (self.fauna_spawn_zones and not force):
@@ -664,13 +684,16 @@ class Phase1:
         zone.setdefault("activated", False)
 
     def _spawn_fauna_from_zone(self, zone: dict, center: tuple[int, int], forbidden: set):
-        species = self._init_fauna_species()
-        if not species:
-            return
-        factory = PassiveFaunaFactory(self, self.assets, self._rabbit_definition())
-        cx, cy = int(center[0]), int(center[1])
+        defs = self._all_fauna_definitions()
         spawn_index = int(zone.get("spawn_index", 0))
         rng = random.Random(int(zone.get("seed", 0)) + spawn_index * 113)
+
+        definition = rng.choice(defs)  # lapin OU capybara
+        species = self._init_fauna_species(definition)
+        factory = PassiveFaunaFactory(self, self.assets, definition)
+        if not species:
+            return
+        cx, cy = int(center[0]), int(center[1])
         ox = rng.uniform(-1.5, 1.5)
         oy = rng.uniform(-1.5, 1.5)
         target_tile = (int(round(cx + ox)), int(round(cy + oy)))
