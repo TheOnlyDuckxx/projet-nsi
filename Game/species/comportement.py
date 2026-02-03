@@ -193,6 +193,12 @@ class Comportement:
                 if random.random() <= entry["p"]:
                     qty = random.randint(entry["min"], entry["max"])
                     drops.append((entry["id"], qty))
+            # Évite les récoltes "vides" qui déclenchaient à tort
+            # le message "inventaire plein !".
+            if not drops and conf:
+                entry = conf[0]
+                qty = max(1, int(entry.get("min", 1)))
+                drops.append((entry["id"], qty))
             return drops
         except :
             return [("stone",1)]

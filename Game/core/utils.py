@@ -61,6 +61,8 @@ class Button:
     # Gestion partagée du curseur (pour restaurer un éventuel curseur personnalisé)
     _cursor_owner = None
     _cursor_prev = None
+    _hover_cursor = None
+    _hover_cursor_path = resource_path("Game/assets/vfx/10.png")
 
     """
     Bouton modulaire :
@@ -163,6 +165,51 @@ class Button:
             self.rect = self._compute_rect()
             setattr(self.rect, self.anchor, prev_anchor_pos)
 
+    @classmethod
+    def set_hover_cursor_path(cls, image_path: str):
+        cls._hover_cursor_path = image_path
+        cls._hover_cursor = None
+
+    @classmethod
+    def _get_hover_cursor(cls):
+        if cls._hover_cursor is not None:
+            return cls._hover_cursor
+        try:
+            surf = pygame.image.load(cls._hover_cursor_path).convert_alpha()
+            cls._hover_cursor = pygame.cursors.Cursor((0, 0), surf)
+            return cls._hover_cursor
+        except Exception:
+            return None
+
+    @classmethod
+    def reset_cursor_state(cls, restore: bool = True):
+        owner = cls._cursor_owner
+        prev = cls._cursor_prev
+        if owner is None and prev is None:
+            return
+
+        if owner is not None:
+            try:
+                owner._cursor_set = False
+            except Exception:
+                pass
+
+        cls._cursor_owner = None
+        cls._cursor_prev = None
+
+        if not restore:
+            return
+        if prev is not None:
+            try:
+                pygame.mouse.set_cursor(prev)
+                return
+            except Exception:
+                pass
+        try:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+        except Exception:
+            pass
+
     def handle(self, events) -> bool:
         """Retourne True si cliqué (gauche ou droit) ce frame et déclenche les callbacks si fournis."""
         clicked = False
@@ -174,6 +221,8 @@ class Button:
         # Gestion du curseur main
         if self.style.mouse_cursor_hand:
             if self.is_hovered and not self._cursor_set:
+                if Button._cursor_owner is not None and Button._cursor_owner is not self:
+                    Button.reset_cursor_state(restore=True)
                 if Button._cursor_owner is None:
                     try:
                         Button._cursor_prev = pygame.mouse.get_cursor()
@@ -181,19 +230,17 @@ class Button:
                     except Exception:
                         Button._cursor_prev = None
                         Button._cursor_owner = self
-                pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+                hover_cursor = Button._get_hover_cursor()
+                if hover_cursor is not None:
+                    pygame.mouse.set_cursor(hover_cursor)
+                else:
+                    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
                 self._cursor_set = True
             elif not self.is_hovered and self._cursor_set:
-                if Button._cursor_owner is self and Button._cursor_prev is not None:
-                    try:
-                        pygame.mouse.set_cursor(Button._cursor_prev)
-                    except Exception:
-                        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
-                elif Button._cursor_owner is self:
-                    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
-                self._cursor_set = False
                 if Button._cursor_owner is self:
-                    Button._cursor_owner = None
+                    Button.reset_cursor_state(restore=True)
+                else:
+                    self._cursor_set = False
 
         for e in events:
             # Hotkey clavier

@@ -115,8 +115,14 @@ class LeftHUD:
     def open_menu(self, key: str):
         if key not in self.menus:
             return
+        Button.reset_cursor_state(restore=True)
         self.active_menu_key = key
         self.menus[key].open()
+        reset_drag = getattr(self.phase, "_reset_drag_selection", None)
+        if callable(reset_drag):
+            reset_drag()
+        if hasattr(self.phase, "_ui_click_blocked"):
+            self.phase._ui_click_blocked = False
 
         # Pause du jeu (sans déclencher l'écran "PAUSE" classique)
         self.phase.ui_menu_open = True
@@ -126,8 +132,14 @@ class LeftHUD:
         if self.active_menu_key and self.active_menu_key in self.menus:
             self.menus[self.active_menu_key].close()
 
+        Button.reset_cursor_state(restore=True)
         self.active_menu_key = None
         self.phase.ui_menu_open = False
+        reset_drag = getattr(self.phase, "_reset_drag_selection", None)
+        if callable(reset_drag):
+            reset_drag()
+        if hasattr(self.phase, "_ui_click_blocked"):
+            self.phase._ui_click_blocked = False
 
     # ---------- Interaction ----------
     def handle(self, events) -> bool:

@@ -832,11 +832,14 @@ class Phase1:
                 self.espece.lvl_up.handle_event(e, self.screen)
             return
 
-        if self.bottom_hud is not None:
-            self.bottom_hud.handle(events)
-        
+        # Le menu latéral a priorité : s'il est ouvert il consomme tout l'input.
         if self.right_hud and self.right_hud.handle(events):
             return
+
+        # Le HUD du bas ne doit pas rester interactif pendant une pause
+        # ou quand un menu en jeu est ouvert.
+        if self.bottom_hud is not None and not self.paused and not self.ui_menu_open:
+            self.bottom_hud.handle(events)
 
         for e in events:
             # Fenêtres d'information : priorité de gestion
@@ -1192,7 +1195,8 @@ class Phase1:
         if not self.paused and self.right_hud:
             self.right_hud.draw(screen)
 
-        self._draw_happiness_banner(screen)
+        if not self.paused and not self.ui_menu_open:
+            self._draw_happiness_banner(screen)
 
         if self.save_message:
             add_notification(self.save_message)
@@ -1268,6 +1272,10 @@ class Phase1:
         return False
 
     def _set_cursor(self, image_path: str, hotspot=(0, 0)):
+        app_cursor = getattr(self.app, "set_cursor_image", None)
+        if callable(app_cursor):
+            if app_cursor(image_path, hotspot=hotspot):
+                return
         try:
             surf = pygame.image.load(image_path).convert_alpha()
             cursor = pygame.cursors.Cursor(hotspot, surf)
