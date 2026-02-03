@@ -3,6 +3,8 @@ import pygame
 import random
 import heapq
 import json
+import hashlib
+import math
 from typing import Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
@@ -21,7 +23,7 @@ from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
-from Game.world.weather import WeatherSystem
+from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
 from Game.gameplay.tech_tree import TechTreeManager
 class Phase1:
     def __init__(self, app):
@@ -44,6 +46,17 @@ class Phase1:
         self.event_manager = EventManager()
         #Météo
         self.weather_system = None 
+        self.weather_icons: dict[str, pygame.Surface] = {}
+        self._load_weather_icons()
+        self._weather_vfx_particles: dict[str, list[dict]] = {
+            "rain": [],
+            "snow": [],
+            "sand": [],
+        }
+        self._weather_vfx_time = 0.0
+        self._weather_flash_timer = 0.0
+        self._weather_flash_alpha = 0
+        self._weather_last_condition_id = None
         self.tech_tree = TechTreeManager(
             resource_path("Game/data/tech_tree.json"),
             on_unlock=self._on_tech_unlocked,
@@ -159,6 +172,11 @@ class Phase1:
         self.death_response_mode = None
         self.food_reserve_capacity = 100
         self.weather_system = None
+        self._weather_vfx_particles = {"rain": [], "snow": [], "sand": []}
+        self._weather_vfx_time = 0.0
+        self._weather_flash_timer = 0.0
+        self._weather_flash_alpha = 0
+        self._weather_last_condition_id = None
         self.tech_tree = TechTreeManager(
             resource_path("Game/data/tech_tree.json"),
             on_unlock=self._on_tech_unlocked,
@@ -180,6 +198,241 @@ class Phase1:
         self.info_windows = []
         # Réinitialise le curseur
         self._set_cursor(self.default_cursor_path)
+
+    def _load_weather_icons(self):
+        """Charge les icônes météo disponibles dans le pack d'assets."""
+        self.weather_icons = {}
+        if not self.assets:
+            return
+
+        default_sprite = None
+        try:
+            default_sprite = self.assets.get_image("placeholder")
+        except Exception:
+            default_sprite = None
+
+        for condition_id, condition in WEATHER_CONDITIONS.items():
+            sprite_key = condition.sprites or condition_id
+            try:
+                sprite = self.assets.get_image(sprite_key)
+            except Exception:
+                sprite = default_sprite
+            if sprite is None:
+                continue
+
+            scaled_sprite = pygame.transform.smoothscale(sprite, (40, 40))
+            self.weather_icons[condition_id] = scaled_sprite
+            self.weather_icons[str(sprite_key)] = scaled_sprite
+            self.weather_icons[condition.name] = scaled_sprite
+
+    def _ensure_weather_system(self):
+        """Initialise la météo si un monde est présent."""
+        if self.weather_system is not None or self.world is None:
+            return
+        try:
+            raw_seed = getattr(self.params, "seed", 0) if self.params is not None else 0
+            world_seed = getattr(self.world, "seed", None)
+            if isinstance(raw_seed, str):
+                # Ex: "Aléatoire" dans le menu de création.
+                # Si le monde a déjà un seed final, on l'utilise.
+                if isinstance(world_seed, int):
+                    seed = world_seed
+                else:
+                    digest = hashlib.sha256(raw_seed.encode("utf-8")).hexdigest()
+                    seed = int(digest[:8], 16)
+            else:
+                seed = int(raw_seed or 0)
+            self.weather_system = WeatherSystem(
+                world=self.world,
+                day_night_cycle=self.day_night,
+                seed=seed,
+            )
+        except Exception as e:
+            print(f"[Weather] Erreur initialisation: {e}")
+
+    def _reset_weather_vfx_if_needed(self, condition_id: str | None):
+        if condition_id == self._weather_last_condition_id:
+            return
+        self._weather_last_condition_id = condition_id
+        self._weather_vfx_particles["rain"].clear()
+        self._weather_vfx_particles["snow"].clear()
+        self._weather_vfx_particles["sand"].clear()
+        self._weather_flash_timer = 0.0
+        self._weather_flash_alpha = 0
+
+    def _update_weather_vfx(self, dt: float):
+        if not self.weather_system:
+            return
+
+        weather_info = self.weather_system.get_weather_info()
+        condition_id = weather_info.get("id")
+        self._reset_weather_vfx_if_needed(condition_id)
+        self._weather_vfx_time += max(0.0, dt)
+
+        w, h = self.screen.get_size()
+        area_scale = max(0.55, min(2.0, (w * h) / (1280 * 720)))
+
+        rain_target = 0
+        snow_target = 0
+        sand_target = 0
+
+        if condition_id == "rain":
+            rain_target = int(150 * area_scale)
+        elif condition_id == "heavy_rain":
+            rain_target = int(250 * area_scale)
+        elif condition_id == "storm":
+            rain_target = int(320 * area_scale)
+        elif condition_id == "snow":
+            snow_target = int(120 * area_scale)
+        elif condition_id == "blizzard":
+            snow_target = int(230 * area_scale)
+        elif condition_id == "sandstorm":
+            sand_target = int(220 * area_scale)
+
+        rain_particles = self._weather_vfx_particles["rain"]
+        while len(rain_particles) < rain_target:
+            rain_particles.append({
+                "x": random.uniform(-w * 0.2, w * 1.2),
+                "y": random.uniform(-h, 0),
+                "vx": random.uniform(-140.0, -40.0),
+                "vy": random.uniform(620.0, 980.0),
+                "length": random.uniform(8.0, 20.0),
+                "width": random.choice((1, 1, 1, 2)),
+            })
+        del rain_particles[rain_target:]
+
+        for p in rain_particles:
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt
+            if p["y"] > h + 24 or p["x"] < -w * 0.3:
+                p["x"] = random.uniform(-w * 0.2, w * 1.2)
+                p["y"] = random.uniform(-h * 0.35, -8.0)
+
+        snow_particles = self._weather_vfx_particles["snow"]
+        while len(snow_particles) < snow_target:
+            snow_particles.append({
+                "x": random.uniform(0, w),
+                "y": random.uniform(-h, 0),
+                "vx": random.uniform(-30.0, 30.0),
+                "vy": random.uniform(30.0, 80.0),
+                "radius": random.uniform(1.5, 3.8),
+                "phase": random.uniform(0.0, math.tau),
+            })
+        del snow_particles[snow_target:]
+
+        for p in snow_particles:
+            p["x"] += (p["vx"] + math.sin(self._weather_vfx_time * 1.6 + p["phase"]) * 18.0) * dt
+            p["y"] += p["vy"] * dt
+            if p["y"] > h + 8:
+                p["y"] = random.uniform(-h * 0.3, -6.0)
+                p["x"] = random.uniform(0, w)
+            elif p["x"] < -12:
+                p["x"] = w + 12
+            elif p["x"] > w + 12:
+                p["x"] = -12
+
+        sand_particles = self._weather_vfx_particles["sand"]
+        while len(sand_particles) < sand_target:
+            sand_particles.append({
+                "x": random.uniform(-w, 0),
+                "y": random.uniform(0, h),
+                "vx": random.uniform(260.0, 440.0),
+                "vy": random.uniform(-20.0, 20.0),
+                "length": random.uniform(10.0, 18.0),
+            })
+        del sand_particles[sand_target:]
+
+        for p in sand_particles:
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt
+            if p["x"] > w + 20:
+                p["x"] = random.uniform(-w * 0.35, -8.0)
+                p["y"] = random.uniform(0, h)
+            elif p["y"] < -8 or p["y"] > h + 8:
+                p["y"] = random.uniform(0, h)
+
+        if condition_id == "storm":
+            if self._weather_flash_timer > 0.0:
+                self._weather_flash_timer -= dt
+                self._weather_flash_alpha = max(0, int(self._weather_flash_alpha * 0.88))
+            elif random.random() < min(0.35 * max(dt, 0.0), 0.2):
+                self._weather_flash_timer = random.uniform(0.05, 0.18)
+                self._weather_flash_alpha = random.randint(120, 185)
+        else:
+            self._weather_flash_timer = 0.0
+            self._weather_flash_alpha = 0
+
+    def _draw_weather_effects(self, screen: pygame.Surface):
+        if not self.weather_system:
+            return
+
+        condition_id = self.weather_system.get_weather_info().get("id")
+        if not condition_id:
+            return
+
+        w, h = screen.get_size()
+        fx = pygame.Surface((w, h), pygame.SRCALPHA)
+
+        if condition_id in ("rain", "heavy_rain", "storm"):
+            rain_color = (160, 185, 220, 150 if condition_id == "rain" else 180)
+            for p in self._weather_vfx_particles["rain"]:
+                x0 = int(p["x"])
+                y0 = int(p["y"])
+                x1 = int(p["x"] + (p["vx"] / max(p["vy"], 1.0)) * p["length"])
+                y1 = int(p["y"] + p["length"])
+                pygame.draw.line(fx, rain_color, (x0, y0), (x1, y1), int(p["width"]))
+            if condition_id in ("heavy_rain", "storm"):
+                fx.fill((16, 24, 36, 28), special_flags=pygame.BLEND_RGBA_ADD)
+
+        if condition_id in ("snow", "blizzard"):
+            for p in self._weather_vfx_particles["snow"]:
+                pygame.draw.circle(
+                    fx,
+                    (245, 248, 255, 190 if condition_id == "blizzard" else 160),
+                    (int(p["x"]), int(p["y"])),
+                    max(1, int(p["radius"])),
+                )
+            if condition_id == "blizzard":
+                fx.fill((210, 220, 235, 40))
+
+        if condition_id == "sandstorm":
+            fx.fill((165, 120, 65, 58))
+            for p in self._weather_vfx_particles["sand"]:
+                x0 = int(p["x"])
+                y0 = int(p["y"])
+                x1 = int(p["x"] + p["length"])
+                y1 = int(p["y"] + p["length"] * 0.06)
+                pygame.draw.line(fx, (225, 185, 120, 140), (x0, y0), (x1, y1), 2)
+
+        if condition_id == "fog":
+            fx.fill((208, 220, 228, 74))
+            for i in range(4):
+                y = int((i + 0.2) * (h / 4) + math.sin(self._weather_vfx_time * 0.35 + i * 0.9) * 24)
+                band_h = int(h * 0.22)
+                pygame.draw.ellipse(
+                    fx,
+                    (228, 236, 242, 36),
+                    (-int(w * 0.12), y, int(w * 1.25), band_h),
+                )
+
+        if condition_id == "heatwave":
+            fx.fill((255, 188, 118, 22))
+            for y in range(0, h, 7):
+                shift = int(math.sin(self._weather_vfx_time * 4.0 + y * 0.028) * 4)
+                pygame.draw.line(fx, (255, 218, 165, 18), (0 + shift, y), (w + shift, y), 1)
+
+        if condition_id == "cloudy":
+            fx.fill((86, 96, 112, 18))
+
+        if condition_id == "storm":
+            fx.fill((10, 14, 24, 44))
+
+        screen.blit(fx, (0, 0))
+
+        if self._weather_flash_alpha > 0:
+            flash = pygame.Surface((w, h), pygame.SRCALPHA)
+            flash.fill((236, 244, 255, self._weather_flash_alpha))
+            screen.blit(flash, (0, 0))
 
     def _init_craft_unlocks(self):
         """Initialise l'ensemble des crafts accessibles par défaut."""
@@ -721,6 +974,7 @@ class Phase1:
                 if not self.fauna_spawn_zones:
                     self._start_fauna_spawn_job()
                 self._attach_phase_to_entities()
+                self._ensure_weather_system()
                 self._set_cursor(self.default_cursor_path)
                 return
 
@@ -765,6 +1019,7 @@ class Phase1:
                 self.bottom_hud.species = self.espece
             if not self.fauna_spawn_zones:
                 self._start_fauna_spawn_job()
+            self._ensure_weather_system()
             return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
 
         # 3) Sinon, génération classique depuis un preset (avec fallback)
@@ -837,16 +1092,7 @@ class Phase1:
         if not self.fauna_spawn_zones:
             self._start_fauna_spawn_job()
         self._set_cursor(self.default_cursor_path)
-        if self.weather_system is None and self.world:
-            try:
-                seed = getattr(self.params, "seed", 0) or 0
-                self.weather_system = WeatherSystem(
-                    world=self.world,
-                    day_night_cycle=self.day_night,
-                    seed=int(seed)
-                )
-            except Exception as e:
-                print(f"[Weather] Erreur initialisation: {e}")
+        self._ensure_weather_system()
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -880,6 +1126,11 @@ class Phase1:
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
+                elif e.key == pygame.K_F6:
+                    self._ensure_weather_system()
+                    if self.weather_system:
+                        self.weather_system.force_weather("rain", duration_minutes=30.0)
+                        add_notification("Meteo forcee : pluie")
                 elif e.key == pygame.K_h:
                     self.props_transparency_active = True
                     self.view.set_props_transparency(True)
@@ -1030,6 +1281,13 @@ class Phase1:
         self.event_manager.update(dt, self)
         #mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
+        if self.weather_system and self.joueur:
+            self.weather_system.update(
+                dt,
+                int(self.joueur.x),
+                int(self.joueur.y),
+            )
+        self._update_weather_vfx(dt)
         if self.tech_tree:
             current_day = self.day_night.jour
             if current_day > self._last_innovation_day:
@@ -1138,24 +1396,6 @@ class Phase1:
             button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
             screen.blit(button_text, button_text_rect)
 
-    def _draw_happiness_banner(self, screen: pygame.Surface):
-        icon = "🙂"
-        value = int(self.happiness)
-        color = (90, 200, 120) if value >= 0 else (220, 100, 90)
-        bg = pygame.Surface((210, 42), pygame.SRCALPHA)
-        bg.fill((20, 28, 36, 200))
-        rect = bg.get_rect()
-        rect.x = 20
-        rect.y = 16
-
-        pygame.draw.rect(bg, (80, 120, 150), bg.get_rect(), 2, border_radius=10)
-
-        font = pygame.font.SysFont("consolas", 22, bold=True)
-        text = font.render(f"{icon} Bonheur : {value}", True, color)
-        text_rect = text.get_rect(center=bg.get_rect().center)
-        bg.blit(text, text_rect)
-        screen.blit(bg, rect.topleft)
-
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
         screen.fill((10, 12, 18))
@@ -1194,6 +1434,7 @@ class Phase1:
 
         # 2) Appliquer le filtre jour/nuit sur TOUT ce qui est déjà dessiné
         self.apply_day_night_lighting(screen)
+        self._draw_weather_effects(screen)
         #2bis)
         if not self.paused and not self.ui_menu_open:
             self._draw_weather_hud(screen)
@@ -1217,9 +1458,6 @@ class Phase1:
         # HUD droite : toujours visible (et affiche le menu si ouvert)
         if not self.paused and self.right_hud:
             self.right_hud.draw(screen)
-
-        if not self.paused and not self.ui_menu_open:
-            self._draw_happiness_banner(screen)
 
         if self.save_message:
             add_notification(self.save_message)
@@ -1993,9 +2231,18 @@ class Phase1:
             pygame.draw.rect(bg, (80, 120, 150), bg.get_rect(), 2, border_radius=10)
             
             # --- MODIFICATION ICI : AFFICHAGE DU SPRITE ---
-            weather_name = weather_info["name"]
-            if weather_name in self.weather_icons:
-                sprite = self.weather_icons[weather_name]
+            weather_id = weather_info.get("id")
+            weather_icon_key = weather_info.get("icon")
+            weather_name = weather_info.get("name", "Inconnu")
+            sprite = self.weather_icons.get(weather_id)
+            if sprite is None and weather_icon_key is not None:
+                sprite = (
+                    self.weather_icons.get(weather_icon_key)
+                    or self.weather_icons.get(str(weather_icon_key))
+                )
+            if sprite is None:
+                sprite = self.weather_icons.get(weather_name)
+            if sprite is not None:
                 # On place le sprite à gauche (x=10, y=15)
                 bg.blit(sprite, (10, 15))
             else:
@@ -2015,7 +2262,7 @@ class Phase1:
             
             # Temps restant
             font_small = pygame.font.SysFont("consolas", 12)
-            time_left = int(weather_info["time_remaining"])
+            time_left = int(weather_info.get("time_remaining", 0))
             time_surf = font_small.render(f"Durée: {time_left}min", True, (180, 180, 180))
             bg.blit(time_surf, (15, 70))
             
