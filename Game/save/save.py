@@ -190,6 +190,7 @@ class SaveManager:
             "species_death_count": getattr(phase1, "species_death_count", 0),
             "unlocked_crafts": list(getattr(phase1, "unlocked_crafts", []) or []),
             "food_reserve_capacity": getattr(phase1, "food_reserve_capacity", None),
+            "tech_tree": getattr(getattr(phase1, "tech_tree", None), "to_dict", lambda: {})(),
         }
 
 
@@ -432,6 +433,17 @@ class SaveManager:
             unlocked = data.get("unlocked_crafts")
             if unlocked is not None:
                 phase1.unlocked_crafts = set(unlocked)
+                if phase1.bottom_hud:
+                    phase1.bottom_hud.refresh_craft_buttons()
+
+            tech_state = data.get("tech_tree")
+            tech_tree = getattr(phase1, "tech_tree", None)
+            if tech_tree is not None and tech_state is not None:
+                tech_tree.load_state(tech_state)
+                for tech_id in tech_tree.unlocked:
+                    tech_data = tech_tree.get_tech(tech_id)
+                    for craft_id in tech_data.get("craft", []) or []:
+                        phase1.unlock_craft(craft_id)
                 if phase1.bottom_hud:
                     phase1.bottom_hud.refresh_craft_buttons()
 
