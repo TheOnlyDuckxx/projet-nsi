@@ -21,7 +21,7 @@ from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
-
+from Game.world.weather import WeatherSystem
 class Phase1:
     def __init__(self, app):
         self.app = app
@@ -41,7 +41,8 @@ class Phase1:
         self.day_night.set_time(6, 0)  # Commence à 6h du matin
         self.day_night.set_speed(3.0)   # Vitesse normale
         self.event_manager = EventManager()
-        
+        #Météo
+        self.weather_system = None 
         # entités
         self.espece = None
         self.fauna_species: Espece | None = None
@@ -149,7 +150,7 @@ class Phase1:
         self.death_event_ready = False
         self.death_response_mode = None
         self.food_reserve_capacity = 100
-
+        self.weather_system = None
     def _attach_phase_to_entities(self):
         for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
             if espece and hasattr(espece, "reproduction_system"):
@@ -787,6 +788,16 @@ class Phase1:
         if not self.fauna_spawn_zones:
             self._start_fauna_spawn_job()
         self._set_cursor(self.default_cursor_path)
+        if self.weather_system is None and self.world:
+            try:
+                seed = getattr(self.params, "seed", 0) or 0
+                self.weather_system = WeatherSystem(
+                    world=self.world,
+                    day_night_cycle=self.day_night,
+                    seed=int(seed)
+                )
+            except Exception as e:
+                print(f"[Weather] Erreur initialisation: {e}")
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -985,7 +996,13 @@ class Phase1:
             return max(2, int(1 + vision * 0.7))
 
         if self.fog:
-            light_level = self.day_night.get_light_level()  # Niveau de luminosité actuel
+            light_level = self.day_night.get_light_level()
+    
+            # Réduction de visibilité par la météo
+            if self.weather_system:
+                visibility_mult = self.weather_system.get_visibility_multiplier()
+                light_level *= visibility_mult
+            
             observers = [
                 e
                 for e in self.entities
@@ -1119,7 +1136,10 @@ class Phase1:
 
         # 2) Appliquer le filtre jour/nuit sur TOUT ce qui est déjà dessiné
         self.apply_day_night_lighting(screen)
-
+        #2bis)
+        if not self.paused and not self.ui_menu_open:
+            self._draw_weather_hud(screen)
+        
         # 2bis) Sélection rectangle (drag)
         self._draw_selection_box(screen)
 
@@ -1888,3 +1908,55 @@ class Phase1:
         # alpha faible sinon ça “salit” l’image
         tint.fill((r, g, b, 35))
         surface.blit(tint, (0, 0))
+    def _draw_weather_hud(self, screen: pygame.Surface):
+        if not self.weather_system or not self.joueur:
+            return
+        
+        try:
+            weather_info = self.weather_system.get_weather_info()
+            temperature = self.weather_system.get_current_temperature(
+                int(self.joueur.x), 
+                int(self.joueur.y)
+            )
+            
+            # Dimensions du panel
+            w, h = screen.get_size()
+            panel_w, panel_h = 220, 95
+            x, y = w - panel_w - 20, 20
+            
+            # Fond
+            bg = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+            bg.fill((20, 28, 36, 200))
+            pygame.draw.rect(bg, (80, 120, 150), bg.get_rect(), 2, border_radius=10)
+            
+            # --- MODIFICATION ICI : AFFICHAGE DU SPRITE ---
+            weather_name = weather_info["name"]
+            if weather_name in self.weather_icons:
+                sprite = self.weather_icons[weather_name]
+                # On place le sprite à gauche (x=10, y=15)
+                bg.blit(sprite, (10, 15))
+            else:
+                # Fallback : dessiner un carré gris si l'image manque
+                pygame.draw.rect(bg, (100, 100, 100), (10, 15, 40, 40))
+            
+            # Nom condition (décalé pour laisser la place au sprite)
+            font_name = pygame.font.SysFont("consolas", 16, bold=True)
+            name_surf = font_name.render(weather_name, True, (220, 230, 255))
+            bg.blit(name_surf, (60, 15))
+            
+            # Température
+            font_temp = pygame.font.SysFont("consolas", 20, bold=True)
+            temp_color = (100, 150, 255) if temperature < 10 else (255, 150, 100) if temperature > 25 else (200, 220, 200)
+            temp_surf = font_temp.render(f"{temperature}°C", True, temp_color)
+            bg.blit(temp_surf, (60, 40))
+            
+            # Temps restant
+            font_small = pygame.font.SysFont("consolas", 12)
+            time_left = int(weather_info["time_remaining"])
+            time_surf = font_small.render(f"Durée: {time_left}min", True, (180, 180, 180))
+            bg.blit(time_surf, (15, 70))
+            
+            screen.blit(bg, (x, y))
+            
+        except Exception as e:
+            print(f"[Weather] Erreur affichage HUD: {e}")
