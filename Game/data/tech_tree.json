@@ -1,0 +1,27 @@
+{
+    "Feu": {
+        "nom": "Feu",
+        "description": "La ",
+        "effets": {
+        },
+        "craft":["Feu de camps"],
+        "conditions": [],
+        "event": {},
+        "cout": 1000,
+        "categorie": "Flamme",
+        "phase": 1
+    },
+"": {
+        "nom": "Feu",
+        "description": "La ",
+        "effets": {
+        },
+        "craft":["Feu de camps"],
+        "conditions": [],
+        "cout": 20,
+        "categorie": "Flamme",
+        "phase": 1
+
+
+
+}}

@@ -8,7 +8,7 @@
       "wood": 6,
       "stone": 2,
       "flint": 1
-    },
+    }, "conditions":[],
     "interaction": {
       "type": "campfire",
       "message": "Feu de camp : repos et cuisson légère."
@@ -29,6 +29,7 @@
       "stone": 0,
       "fiber": 0
     },
+    "conditions":[],
     "interaction": {
       "type": "warehouse",
       "message": "Entrepot : transfert et stockage des ressources."
@@ -49,6 +50,7 @@
       "stone": 10,
       "leather": 4
     },
+    "conditions":[],
     "interaction": {
       "type": "shelter",
       "message": "Taniere : repos protégé, meilleure récupération."
@@ -69,6 +71,7 @@
       "stone": 6,
       "rope": 3
     },
+    "conditions":[],
     "interaction": {
       "type": "defense",
       "message": "Defense : zone dangereuse pour les intrus."
@@ -90,6 +93,7 @@
       "rope": 6,
       "clay": 8
     },
+    "conditions":[],
     "interaction": {
       "type": "generator_hydro",
       "message": "Generateur : production d'energie près de l'eau."
@@ -110,6 +114,7 @@
       "stone": 18,
       "copper_ore": 4
     },
+    "conditions":[],
     "interaction": {
       "type": "weather_protect",
       "message": "Paratonnerre : protection contre les orages."
@@ -131,6 +136,7 @@
       "water": 6,
       "seed": 3
     },
+    "conditions":[],
     "interaction": {
       "type": "farm_small",
       "message": "Jardin : production de nourriture dans le temps."
@@ -151,6 +157,7 @@
       "stone": 2,
       "rope": 2
     },
+    "conditions":[],
     "interaction": {
       "type": "trap",
       "message": "Piège : chance de récupérer nourriture + peaux."
@@ -170,6 +177,7 @@
       "stone": 16,
       "clay": 6
     },
+    "conditions":[],
     "interaction": {
       "type": "totem",
       "message": "Totem : bonus de cohésion / joie."
@@ -190,6 +198,7 @@
       "stone": 6,
       "flint": 2
     },
+    "conditions":[],
     "interaction": {
       "type": "bonfire",
       "message": "Feu de joie : rassemblement et bonus moral."
@@ -210,6 +219,7 @@
       "clay": 12,
       "wood": 10
     },
+    "conditions":[],
     "interaction": {
       "type": "oven",
       "message": "Four : cuisson avancée / transformation de ressources."
@@ -230,6 +240,7 @@
       "fiber": 10,
       "stone": 4
     },
+    "conditions":[],
     "interaction": {
       "type": "food_storage",
       "message": "Reserve : stockage nourriture, pertes réduites."
@@ -250,6 +261,7 @@
       "wood": 8,
       "rope": 4
     },
+    "conditions":[],
     "interaction": {
       "type": "water_source",
       "message": "Puit : production d'eau régulière."
@@ -269,6 +281,7 @@
       "stone": 12,
       "wood": 6
     },
+    "conditions":[],
     "interaction": {
       "type": "memorial",
       "message": "Un endroit pour se recueillir."

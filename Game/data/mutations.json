@@ -196,7 +196,7 @@
         "description": "Amélioration de la capacité visuelle à longue distance.",
         "effets": {
             "sens": {
-                "vision": 30
+                "vision": 15
             },
             "combat": {
                 "attaque_a_distance": 5
@@ -284,7 +284,7 @@
             },
             "physique": {
                 "endurance": 40,
-                "vitesse": -25,
+                "vitesse": -20,
                 "force": -20
             },
             "mental": {
@@ -316,7 +316,7 @@
                 "force": -25
             },
             "mental": {
-                "intelligence": 15,
+                "intelligence": 20,
                 "dexterite": 20,
                 "intimidation": 15
             }
