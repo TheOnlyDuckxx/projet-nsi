@@ -22,6 +22,7 @@ from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WeatherSystem
+from Game.gameplay.tech_tree import TechTreeManager
 class Phase1:
     def __init__(self, app):
         self.app = app
@@ -43,6 +44,11 @@ class Phase1:
         self.event_manager = EventManager()
         #Météo
         self.weather_system = None 
+        self.tech_tree = TechTreeManager(
+            resource_path("Game/data/tech_tree.json"),
+            on_unlock=self._on_tech_unlocked,
+        )
+        self._last_innovation_day = self.day_night.jour
         # entités
         self.espece = None
         self.fauna_species: Espece | None = None
@@ -151,6 +157,11 @@ class Phase1:
         self.death_response_mode = None
         self.food_reserve_capacity = 100
         self.weather_system = None
+        self.tech_tree = TechTreeManager(
+            resource_path("Game/data/tech_tree.json"),
+            on_unlock=self._on_tech_unlocked,
+        )
+        self._last_innovation_day = self.day_night.jour
     def _attach_phase_to_entities(self):
         for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
             if espece and hasattr(espece, "reproduction_system"):
@@ -175,6 +186,21 @@ class Phase1:
             locked = craft_def.get("locked") or craft_def.get("requires_unlock")
             if not locked:
                 self.unlocked_crafts.add(cid)
+
+    def _on_tech_unlocked(self, tech_id: str, tech_data: dict) -> None:
+        for craft_id in tech_data.get("craft", []) or []:
+            self.unlock_craft(craft_id)
+        name = tech_data.get("nom", tech_id)
+        add_notification(f"Technologie débloquée : {name}")
+
+    def start_tech_research(self, tech_id: str) -> bool:
+        if not self.tech_tree:
+            return False
+        ok = self.tech_tree.start_research(tech_id)
+        if ok:
+            tech = self.tech_tree.get_tech(tech_id)
+            add_notification(f"Recherche lancée : {tech.get('nom', tech_id)}")
+        return ok
 
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
@@ -978,6 +1004,12 @@ class Phase1:
         self.event_manager.update(dt, self)
         #mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
+        if self.tech_tree:
+            current_day = self.day_night.jour
+            if current_day > self._last_innovation_day:
+                for _ in range(current_day - self._last_innovation_day):
+                    self.tech_tree.add_innovation(1)
+                self._last_innovation_day = current_day
         if self.espece and getattr(self.espece, "reproduction_system", None):
             try:
                 self.espece.reproduction_system.update(dt)
