@@ -35,7 +35,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=1.0,
         movement_modifier=1.0,
         morale_per_minute=0.1,
-        sprites=None
+        sprites="placeholder"
     ),
     "cloudy": WeatherCondition(
         id="cloudy",
@@ -46,7 +46,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.95,
         movement_modifier=1.0,
         morale_per_minute=0.0,
-        sprites=None
+        sprites="placeholder"
     ),
     "rain": WeatherCondition(
         id="rain",
@@ -57,7 +57,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.75,
         movement_modifier=0.85,
         morale_per_minute=-0.15,
-        sprites=None
+        sprites="rain"
     ),
     "heavy_rain": WeatherCondition(
         id="heavy_rain",
@@ -68,7 +68,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.55,
         movement_modifier=0.65,
         morale_per_minute=-0.35,
-        sprites=None
+        sprites="placeholder"
     ),
     "storm": WeatherCondition(
         id="storm",
@@ -79,7 +79,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.50,
         movement_modifier=0.60,
         morale_per_minute=-0.50,
-        sprites=None
+        sprites="placeholder"
     ),
     "snow": WeatherCondition(
         id="snow",
@@ -90,7 +90,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.70,
         movement_modifier=0.70,
         morale_per_minute=-0.25,
-        sprites=None
+        sprites="placeholder"
     ),
     "blizzard": WeatherCondition(
         id="blizzard",
@@ -101,7 +101,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.40,
         movement_modifier=0.50,
         morale_per_minute=-0.60,
-        sprites=None
+        sprites="placeholder"
     ),
     "fog": WeatherCondition(
         id="fog",
@@ -112,7 +112,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.50,
         movement_modifier=0.90,
         morale_per_minute=-0.10,
-        sprites=None
+        sprites="placeholder"
     ),
     "sandstorm": WeatherCondition(
         id="sandstorm",
@@ -123,7 +123,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.35,
         movement_modifier=0.55,
         morale_per_minute=-0.45,
-        sprites=None
+        sprites="placeholder"
     ),
     "heatwave": WeatherCondition(
         id="heatwave",
@@ -134,7 +134,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.90,
         movement_modifier=0.75,
         morale_per_minute=-0.20,
-        sprites=None
+        sprites="placeholder"
     ),
 }
 
@@ -384,9 +384,6 @@ class WeatherSystem:
             biome = self.world.get_biome_name(player_x, player_y)
             self._cached_biome = biome
             self._cache_position = pos
-            #######TEST
-            print(biome)
-            #######TEST
             return biome
         except Exception:
             return "plains"  # fallback

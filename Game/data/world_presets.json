@@ -1,7 +1,7 @@
 {
     "presets": {
         "Custom": {
-            "world_name": "nom",
+            "world_name": "Alpha",
             "seed": "Aléatoire",
             "world_size": "Petite",
             "water_coverage": "Tempéré",
