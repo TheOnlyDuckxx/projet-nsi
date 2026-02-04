@@ -1,10 +1,14 @@
 import os
 import pickle
 import time
+import json
+import random
+from datetime import datetime
 from typing import Any, Dict
 from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")
+SAVES_DIR = os.path.join("Game", "save", "slots")
 SAVE_VERSION = "1.3"
 SAVE_HEADER = b"EVOBYTE"  # petite signature maison
 
@@ -14,14 +18,209 @@ class SaveError(Exception):
 
 
 class SaveManager:
-    def __init__(self, path: str = DEFAULT_SAVE_PATH):
-        self.path = path
+    def __init__(self, path: str | None = None, slot_id: str | None = None):
+        if path is None and slot_id:
+            path = self.slot_path(slot_id)
+        self.path = path or DEFAULT_SAVE_PATH
+
+    @classmethod
+    def _safe_slot_id(cls, slot_id: str) -> str:
+        raw = str(slot_id or "").strip().replace(" ", "_")
+        allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        safe = "".join(ch for ch in raw if ch in allowed)
+        return safe or "slot"
+
+    @classmethod
+    def slot_path(cls, slot_id: str) -> str:
+        return os.path.join(SAVES_DIR, f"{cls._safe_slot_id(slot_id)}.evosave")
+
+    @classmethod
+    def create_new_slot_id(cls) -> str:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        suffix = f"{random.randint(0, 0xFFFF):04x}"
+        return f"save_{stamp}_{suffix}"
+
+    @classmethod
+    def create_new_save_path(cls) -> str:
+        os.makedirs(SAVES_DIR, exist_ok=True)
+        return cls.slot_path(cls.create_new_slot_id())
+
+    @staticmethod
+    def _meta_path_for(save_path: str) -> str:
+        return f"{save_path}.meta.json"
+
+    @staticmethod
+    def _collect_species_meta(payload: Dict[str, Any]) -> tuple[str, int]:
+        species_data = payload.get("espece") or {}
+        if not species_data:
+            species_data = (payload.get("species_registry") or {}).get("player") or {}
+        name = str(species_data.get("nom") or "Espèce inconnue")
+        try:
+            level = int(species_data.get("species_level", 1) or 1)
+        except Exception:
+            level = 1
+        return name, level
+
+    @classmethod
+    def _build_metadata(cls, save_path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        species_name, species_level = cls._collect_species_meta(payload or {})
+        tech_state = payload.get("tech_tree") or {}
+        unlocked = tech_state.get("unlocked") or []
+        current_research = tech_state.get("current_research")
+        now_ts = time.time()
+        return {
+            "save_version": payload.get("version", SAVE_VERSION),
+            "save_path": save_path,
+            "slot_id": os.path.splitext(os.path.basename(save_path))[0],
+            "species_name": species_name,
+            "species_level": species_level,
+            "tech_unlocked_count": len(unlocked),
+            "tech_current_research": current_research,
+            "updated_at": now_ts,
+            "updated_at_iso": datetime.fromtimestamp(now_ts).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    @classmethod
+    def _extract_metadata_from_save_file(cls, save_path: str) -> Dict[str, Any] | None:
+        try:
+            with open(save_path, "rb") as f:
+                header = f.read(len(SAVE_HEADER))
+                if header != SAVE_HEADER:
+                    return None
+                payload = pickle.load(f)
+            if not isinstance(payload, dict):
+                return None
+            meta = cls._build_metadata(save_path, payload)
+            try:
+                mtime = os.path.getmtime(save_path)
+                meta["updated_at"] = float(mtime)
+                meta["updated_at_iso"] = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+            return meta
+        except Exception:
+            return None
+
+    def _write_metadata(self, payload: Dict[str, Any]) -> None:
+        meta_path = self._meta_path_for(self.path)
+        meta = self._build_metadata(self.path, payload or {})
+        os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+        with open(meta_path, "w", encoding="utf-8") as mf:
+            json.dump(meta, mf, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def list_saves(cls) -> list[Dict[str, Any]]:
+        paths: list[str] = []
+        if os.path.isdir(SAVES_DIR):
+            for name in os.listdir(SAVES_DIR):
+                if not name.lower().endswith(".evosave"):
+                    continue
+                p = os.path.join(SAVES_DIR, name)
+                if os.path.isfile(p):
+                    paths.append(p)
+        # Compat : ancienne sauvegarde unique.
+        if os.path.isfile(DEFAULT_SAVE_PATH):
+            paths.append(DEFAULT_SAVE_PATH)
+
+        unique_paths = []
+        seen = set()
+        for p in paths:
+            rp = os.path.realpath(p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            unique_paths.append(p)
+
+        results: list[Dict[str, Any]] = []
+        for save_path in unique_paths:
+            meta_path = cls._meta_path_for(save_path)
+            meta = None
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as mf:
+                        meta = json.load(mf)
+                except Exception:
+                    meta = None
+            if not isinstance(meta, dict):
+                meta = cls._extract_metadata_from_save_file(save_path)
+                if isinstance(meta, dict):
+                    try:
+                        with open(meta_path, "w", encoding="utf-8") as mf:
+                            json.dump(meta, mf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+            if not isinstance(meta, dict):
+                try:
+                    mtime = os.path.getmtime(save_path)
+                except Exception:
+                    mtime = 0.0
+                meta = {
+                    "save_path": save_path,
+                    "slot_id": os.path.splitext(os.path.basename(save_path))[0],
+                    "species_name": "Espèce inconnue",
+                    "species_level": 1,
+                    "updated_at": mtime,
+                    "updated_at_iso": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S") if mtime else "Inconnu",
+                    "save_version": "?",
+                    "tech_unlocked_count": 0,
+                    "tech_current_research": None,
+                }
+
+            meta["save_path"] = save_path
+            results.append(meta)
+
+        results.sort(key=lambda d: float(d.get("updated_at", 0.0) or 0.0), reverse=True)
+        return results
+
+    @classmethod
+    def has_any_save(cls) -> bool:
+        if os.path.isfile(DEFAULT_SAVE_PATH):
+            return True
+        if not os.path.isdir(SAVES_DIR):
+            return False
+        for name in os.listdir(SAVES_DIR):
+            if name.lower().endswith(".evosave"):
+                return True
+        return False
+
+    @classmethod
+    def latest_save_path(cls) -> str | None:
+        saves = cls.list_saves()
+        if not saves:
+            return None
+        return str(saves[0].get("save_path") or "")
+
+    @classmethod
+    def delete_save(cls, save_path: str) -> bool:
+        target = str(save_path or "").strip()
+        if not target:
+            return False
+
+        removed = False
+        try:
+            if os.path.isfile(target):
+                os.remove(target)
+                removed = True
+        except Exception:
+            pass
+
+        meta_path = cls._meta_path_for(target)
+        try:
+            if os.path.isfile(meta_path):
+                os.remove(meta_path)
+                removed = True
+        except Exception:
+            pass
+
+        return removed
 
     def _serialize_species(self, espece):
         if espece is None:
             return None
         return {
             "nom": getattr(espece, "nom", None),
+            "color_name": getattr(espece, "color_name", None),
+            "color_rgb": getattr(espece, "color_rgb", None),
             "base_physique": getattr(espece, "base_physique", None),
             "base_sens": getattr(espece, "base_sens", None),
             "base_mental": getattr(espece, "base_mental", None),
@@ -59,6 +258,19 @@ class SaveManager:
         espece.species_level = espece_data.get("species_level", 1)
         espece.xp = espece_data.get("xp", 0)
         espece.xp_to_next = espece_data.get("xp_to_next", 100)
+        color_name = espece_data.get("color_name")
+        color_rgb = espece_data.get("color_rgb")
+        if color_name:
+            espece.color_name = str(color_name)
+        if isinstance(color_rgb, (list, tuple)) and len(color_rgb) == 3:
+            try:
+                espece.color_rgb = (
+                    max(0, min(255, int(color_rgb[0]))),
+                    max(0, min(255, int(color_rgb[1]))),
+                    max(0, min(255, int(color_rgb[2]))),
+                )
+            except Exception:
+                pass
         try:
             repro_state = espece_data.get("reproduction")
             if repro_state is not None and hasattr(espece, "reproduction_system"):
@@ -207,6 +419,10 @@ class SaveManager:
                 # petite signature + pickle
                 f.write(SAVE_HEADER)
                 pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+            try:
+                self._write_metadata(payload)
+            except Exception as e:
+                print(f"[Save] Metadata non ecrite: {e}")
 
             phase1.save_message = "✓ Partie sauvegardée !"
             phase1.save_message_timer = 3.0

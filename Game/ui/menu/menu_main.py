@@ -7,6 +7,7 @@
 import pygame
 from Game.core.config import WIDTH, HEIGHT
 from Game.core.utils import Button, ButtonStyle, Slider, Toggle
+from Game.save.save import SaveManager
 from Game.species.species import Espece
 from Game.species.sprite_render import EspeceRenderer
 import json 
@@ -338,7 +339,7 @@ class MainMenu(BaseMenu):
         # Liste des actions (avec ou sans sauvegarde)
         actions = []
         if self.has_save:
-            actions.append(("Reprendre", lambda: self.app.change_state("PHASE1", load_save=True)))
+            actions.append(("Reprendre", lambda: self.app.change_state("SAVE_SELECT")))
         actions += [
             ("Commencer", lambda: self.app.change_state("CREATION")),
             ("Options", lambda: self.app.change_state("OPTIONS")),
@@ -413,6 +414,221 @@ class MainMenu(BaseMenu):
             screen.blit(txt, (b.rect.centerx - txt.get_width() // 2, b.rect.centery - txt.get_height() // 2))
 
     
+class SaveSelectionMenu(BaseMenu):
+    def __init__(self, app):
+        super().__init__(app, title="Choisir une sauvegarde")
+        self.title_font = app.assets.get_font("MightySouly", max(38, int(HEIGHT * 0.08)))
+        self.btn_font = app.assets.get_font("KiwiSoda", max(18, int(HEIGHT * 0.028)))
+        self.info_font = app.assets.get_font("KiwiSoda", max(14, int(HEIGHT * 0.020)))
+        self._slots: list[dict] = []
+        self._visible_slots: list[dict] = []
+        self._page = 0
+        self._page_count = 1
+        self._per_page = 1
+        self._notice = ""
+        self._refresh_slot_buttons(reset_page=True)
+
+    def _format_slot_label(self, slot: dict) -> str:
+        species_name = str(slot.get("species_name") or "Espèce inconnue")
+        try:
+            level = int(slot.get("species_level", 1) or 1)
+        except Exception:
+            level = 1
+        date_txt = str(slot.get("updated_at_iso") or "Date inconnue")
+        return f"{species_name}  |  Niveau {level}  |  {date_txt}"
+
+    def _change_page(self, delta: int):
+        if self._page_count <= 1:
+            return
+        old_page = self._page
+        self._page = max(0, min(self._page + int(delta), self._page_count - 1))
+        if self._page != old_page:
+            self._refresh_slot_buttons()
+
+    def _delete_slot(self, save_path: str):
+        ok = SaveManager.delete_save(save_path)
+        self._notice = "Sauvegarde supprimée." if ok else "Suppression impossible."
+        self._refresh_slot_buttons()
+
+    def _refresh_slot_buttons(self, reset_page: bool = False):
+        self.widgets = []
+        self._slots = SaveManager.list_saves()
+        if reset_page:
+            self._page = 0
+
+        panel_w = int(WIDTH * 0.56)
+        btn_h = max(48, int(HEIGHT * 0.075))
+        gap = max(8, int(HEIGHT * 0.015))
+        top = int(HEIGHT * 0.23)
+        bottom_reserved = int(HEIGHT * 0.22)
+        usable_h = max(btn_h, HEIGHT - top - bottom_reserved)
+        self._per_page = max(1, usable_h // (btn_h + gap))
+
+        self._page_count = max(1, int(math.ceil(len(self._slots) / max(1, self._per_page))))
+        self._page = max(0, min(self._page, self._page_count - 1))
+        start = self._page * self._per_page
+        end = start + self._per_page
+        self._visible_slots = self._slots[start:end]
+
+        delete_w = max(72, int(panel_w * 0.11))
+        row_gap = max(10, int(HEIGHT * 0.015))
+        load_w = panel_w - delete_w - row_gap
+        row_x = WIDTH // 2 - panel_w // 2
+
+        load_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(36, 48, 62),
+            hover_bg_color=(58, 82, 110),
+            active_bg_color=(44, 108, 150),
+            draw_border=True,
+            border_color=(120, 160, 200),
+            border_width=2,
+            radius=12,
+            font=self.btn_font,
+            text_color=(238, 242, 248),
+            padding_x=16,
+            padding_y=10,
+            hover_zoom=1.0,
+            mouse_cursor_hand=True,
+        )
+        delete_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(88, 36, 44),
+            hover_bg_color=(124, 48, 62),
+            active_bg_color=(150, 56, 74),
+            draw_border=True,
+            border_color=(195, 120, 135),
+            border_width=2,
+            radius=12,
+            font=self.btn_font,
+            text_color=(250, 240, 240),
+            hover_zoom=1.0,
+            mouse_cursor_hand=True,
+        )
+
+        y = top
+        if self._visible_slots:
+            for slot in self._visible_slots:
+                label = self._format_slot_label(slot)
+                save_path = str(slot.get("save_path") or "")
+                self.add(
+                    Button(
+                        label,
+                        (row_x + load_w // 2, y + btn_h // 2),
+                        size=(load_w, btn_h),
+                        anchor="center",
+                        style=load_style,
+                        on_click=lambda _b, p=save_path: self.app.change_state("PHASE1", load_save=True, save_path=p),
+                    )
+                )
+                self.add(
+                    Button(
+                        "Suppr.",
+                        (row_x + load_w + row_gap + delete_w // 2, y + btn_h // 2),
+                        size=(delete_w, btn_h),
+                        anchor="center",
+                        style=delete_style,
+                        on_click=lambda _b, p=save_path: self._delete_slot(p),
+                    )
+                )
+                y += btn_h + gap
+
+        pager_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(36, 40, 52),
+            hover_bg_color=(56, 66, 88),
+            active_bg_color=(72, 88, 116),
+            draw_border=True,
+            border_color=(130, 145, 175),
+            border_width=2,
+            radius=10,
+            font=self.btn_font,
+            text_color=(236, 236, 236),
+            hover_zoom=1.0,
+        )
+        pager_y = HEIGHT - max(122, int(HEIGHT * 0.18))
+        pager_w = max(84, int(WIDTH * 0.12))
+        pager_h = max(40, int(HEIGHT * 0.065))
+        self.add(
+            Button(
+                "◀",
+                (WIDTH // 2 - max(110, int(WIDTH * 0.14)), pager_y),
+                size=(pager_w, pager_h),
+                anchor="center",
+                style=pager_style,
+                on_click=lambda _b: self._change_page(-1),
+                enabled=self._page > 0,
+            )
+        )
+        self.add(
+            Button(
+                "▶",
+                (WIDTH // 2 + max(110, int(WIDTH * 0.14)), pager_y),
+                size=(pager_w, pager_h),
+                anchor="center",
+                style=pager_style,
+                on_click=lambda _b: self._change_page(1),
+                enabled=self._page < self._page_count - 1,
+            )
+        )
+
+        back_style = ButtonStyle(
+            draw_background=True,
+            bg_color=(42, 45, 54),
+            hover_bg_color=(60, 67, 86),
+            active_bg_color=(88, 95, 120),
+            draw_border=True,
+            border_color=(140, 150, 170),
+            border_width=2,
+            radius=10,
+            font=self.btn_font,
+            text_color=(236, 236, 236),
+            hover_zoom=1.0,
+        )
+        self.add(
+            Button(
+                "Retour",
+                (WIDTH // 2, HEIGHT - max(60, int(HEIGHT * 0.09))),
+                size=(max(180, int(WIDTH * 0.2)), max(42, int(HEIGHT * 0.07))),
+                anchor="center",
+                style=back_style,
+                on_click=lambda _b: self.app.change_state("MENU"),
+            )
+        )
+
+    def enter(self):
+        self._notice = ""
+        self._refresh_slot_buttons(reset_page=True)
+
+    def handle_input(self, events):
+        super().handle_input(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+            elif e.type == pygame.KEYDOWN and e.key in (pygame.K_RIGHT, pygame.K_PAGEDOWN):
+                self._change_page(1)
+            elif e.type == pygame.KEYDOWN and e.key in (pygame.K_LEFT, pygame.K_PAGEUP):
+                self._change_page(-1)
+            elif e.type == pygame.MOUSEWHEEL:
+                if e.y < 0:
+                    self._change_page(1)
+                elif e.y > 0:
+                    self._change_page(-1)
+
+    def render(self, screen):
+        super().render(screen)
+        if not self._visible_slots:
+            txt = self.info_font.render("Aucune sauvegarde disponible.", True, (230, 230, 230))
+            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, int(HEIGHT * 0.35)))
+        info = self.info_font.render(
+            f"Page {self._page + 1}/{self._page_count}  •  {len(self._slots)} sauvegarde(s)",
+            True,
+            (210, 215, 225),
+        )
+        screen.blit(info, (WIDTH // 2 - info.get_width() // 2, HEIGHT - max(164, int(HEIGHT * 0.24))))
+        if self._notice:
+            note = self.info_font.render(self._notice, True, (230, 210, 120))
+            screen.blit(note, (WIDTH // 2 - note.get_width() // 2, HEIGHT - max(138, int(HEIGHT * 0.20))))
 
 
 class CreditMenu(BaseMenu):
@@ -990,9 +1206,12 @@ class SpeciesCreationMenu(BaseMenu):
 
         self.color_options = [
             {"id": "bleu", "label": "Bleu royal", "swatch": (70, 130, 220)},
-            {"id": "cyan", "label": "Cyan", "swatch": (60, 200, 220)},
-            {"id": "saphir", "label": "Saphir", "swatch": (60, 110, 200)},
-            {"id": "marine", "label": "Marine", "swatch": (50, 90, 160)},
+            {"id": "rouge", "label": "Rouge", "swatch": (205, 82, 82)},
+            {"id": "vert", "label": "Vert", "swatch": (95, 175, 105)},
+            {"id": "jaune", "label": "Jaune", "swatch": (220, 190, 85)},
+            {"id": "orange", "label": "Orange", "swatch": (220, 145, 78)},
+            {"id": "violet", "label": "Violet", "swatch": (156, 106, 208)},
+            {"id": "rose", "label": "Rose", "swatch": (214, 116, 170)},
         ]
         self.selected_color = prev.get("color", "bleu") or "bleu"
         if self.selected_color not in {c["id"] for c in self.color_options}:
@@ -1159,6 +1378,11 @@ class SpeciesCreationMenu(BaseMenu):
 
     def _refresh_preview(self):
         self._preview_espece = Espece(self.species_name.strip() or "Espece")
+        self._preview_espece.color_name = self.selected_color
+        for opt in self.color_options:
+            if opt["id"] == self.selected_color:
+                self._preview_espece.color_rgb = tuple(opt["swatch"])
+                break
         try:
             self._preview_espece.mutations.apply_base_mutations(
                 list(self.selected_ids),
@@ -1431,6 +1655,8 @@ class SpeciesCreationMenu(BaseMenu):
                 for rect, opt in self._color_rects:
                     if rect.collidepoint(mx, my):
                         self.selected_color = opt["id"]
+                        self._refresh_preview()
+                        break
 
             # tab 3: mutations
             if self.active_tab == 2:
@@ -1545,7 +1771,7 @@ class SpeciesCreationMenu(BaseMenu):
 
         # colors
         color_label_y = self._name_rect.bottom + 12
-        cl = self.label_font.render("Couleur (sprite bleu pour toutes)", True, self.TEXT)
+        cl = self.label_font.render("Couleur de l'espece", True, self.TEXT)
         screen.blit(cl, (self._name_rect.x, color_label_y))
 
         for rect, opt in self._color_rects:

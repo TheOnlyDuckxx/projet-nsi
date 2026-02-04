@@ -9,6 +9,7 @@
       "stone": 2,
       "flint": 1
     }, "conditions":[],
+    "locked": true,
     "interaction": {
       "type": "campfire",
       "message": "Feu de camp : repos et cuisson légère."

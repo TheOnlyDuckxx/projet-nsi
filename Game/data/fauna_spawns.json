@@ -1,0 +1,87 @@
+{
+  "settings": {
+    "spawn_interval_sec": 3,
+    "spawn_interval_jitter_sec": 0.5,
+    "max_global_fauna": 90,
+    "anchor_scan_per_cycle": 2,
+    "max_spawn_per_cycle": 2,
+    "local_target_per_anchor": 5,
+    "local_count_radius_tiles": 26,
+    "spawn_ring_min_tiles": 12,
+    "spawn_ring_max_tiles": 28,
+    "spawn_attempts_per_anchor": 8,
+    "despawn_interval_sec": 1.6,
+    "despawn_distance_tiles": 68,
+    "max_despawn_per_cycle": 10,
+    "bucket_size_tiles": 16
+  },
+  "default": [
+    { "species": "lapin", "weight": 1 },
+    { "species": "capybara", "weight": 1 }
+  ],
+  "biomes": {
+    "ocean": [],
+    "lake": [],
+    "river": [],
+    "plains": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "forest": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "rainforest": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "savanna": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "desert": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "taiga": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "tundra": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "snow": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "swamp": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "mangrove": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "rocky": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "alpine": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "volcanic": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "mystic": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ],
+    "unknown": [
+      { "species": "lapin", "weight": 1 },
+      { "species": "capybara", "weight": 1 }
+    ]
+  }
+}

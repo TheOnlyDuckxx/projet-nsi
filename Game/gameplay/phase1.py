@@ -16,7 +16,12 @@ from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud.bottom_hud import BottomHUD
-from Game.ui.hud.game_hud import draw_inspection_panel, draw_work_bar
+from Game.ui.hud.game_hud import (
+    draw_inspection_panel,
+    draw_work_bar,
+    handle_inspection_panel_click,
+    inspection_panel_contains_point,
+)
 from Game.ui.hud.left_hud import LeftHUD
 from Game.ui.hud.notification import add_notification
 from Game.world.fog_of_war import FogOfWar
@@ -26,8 +31,14 @@ from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
 from Game.gameplay.tech_tree import TechTreeManager
+from Game.gameplay.fauna_spawner import FaunaSpawner
 
 _WATER_BIOME_IDS = {1, 3, 4}
+_AUTO_HARVESTABLE_PROP_IDS = {
+    10, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 23, 29, 30, 31, 32, 33, 34,
+    35, 36, 37, 38, 39, 40,
+}
 
 class Phase1:
     def __init__(self, app):
@@ -74,6 +85,8 @@ class Phase1:
         self.entities: list = []
         self.fauna_spawn_zones: list[dict] = []
         self._fauna_spawn_job = None
+        self.fauna_spawner = FaunaSpawner(resource_path("Game/data/fauna_spawns.json"))
+        self._save_path: str | None = None
 
         # UI/HUD
         self.bottom_hud: BottomHUD | None = None
@@ -95,6 +108,7 @@ class Phase1:
         self.craft_system = Craft()
         self.selected_craft = None
         self.construction_sites: dict[tuple[int, int], dict] = {}
+        self.shared_harvest_jobs: dict[tuple[int, int, str], dict] = {}
         self.warehouse: dict[str, int] = {}
         self.unlocked_crafts: set[str] = set()
         self._init_craft_unlocks()
@@ -119,6 +133,7 @@ class Phase1:
         self._dragging_selection = False
         self._drag_threshold = 6
         self._ui_click_blocked = False
+        self._update_frame_id = 0
         self._perf_logs_enabled = True
         self._perf_slow_frame_sec = 0.12
         self._perf_trace_frames = 0
@@ -171,8 +186,12 @@ class Phase1:
         self.entities = []
         self.fauna_spawn_zones = []
         self._fauna_spawn_job = None
+        if hasattr(self, "fauna_spawner") and self.fauna_spawner is not None:
+            self.fauna_spawner.reset()
+        self._save_path = None
         self.warehouse = {}
         self.construction_sites = {}
+        self.shared_harvest_jobs = {}
         self.selected = None
         self.selected_entities = []
         self.selected_craft = None
@@ -189,6 +208,7 @@ class Phase1:
         self._drag_select_rect = None
         self._dragging_selection = False
         self._ui_click_blocked = False
+        self._update_frame_id = 0
 
         # Systèmes à remettre à zéro
         self.day_night = DayNightCycle(cycle_duration=600)
@@ -471,9 +491,20 @@ class Phase1:
 
     def _init_craft_unlocks(self):
         """Initialise l'ensemble des crafts accessibles par défaut."""
+        tech_locked_crafts: set[str] = set()
+        if self.tech_tree and getattr(self.tech_tree, "techs", None):
+            for tech_data in (self.tech_tree.techs or {}).values():
+                if not isinstance(tech_data, dict):
+                    continue
+                for craft_id in tech_data.get("craft", []) or []:
+                    if craft_id:
+                        tech_locked_crafts.add(str(craft_id))
+
         self.unlocked_crafts = set()
         for cid, craft_def in self.craft_system.crafts.items():
             locked = craft_def.get("locked") or craft_def.get("requires_unlock")
+            if cid in tech_locked_crafts:
+                locked = True
             if not locked:
                 self.unlocked_crafts.add(cid)
 
@@ -495,13 +526,22 @@ class Phase1:
     # ---- Sauvegarde / Chargement (wrappers pour le menu) ----
     @staticmethod
     def save_exists() -> bool:
-        return SaveManager().save_exists()
+        return SaveManager.has_any_save()
+
+    def _save_manager(self) -> SaveManager:
+        return SaveManager(path=self._save_path)
 
     def save(self) -> bool:
-        return SaveManager().save_phase1(self)
+        if not self._save_path:
+            self._save_path = SaveManager.create_new_save_path()
+        return self._save_manager().save_phase1(self)
 
     def load(self) -> bool:
-        return SaveManager().load_phase1(self)
+        if not self._save_path:
+            self._save_path = SaveManager.latest_save_path()
+        if not self._save_path:
+            return False
+        return self._save_manager().load_phase1(self)
 
     def _ensure_move_runtime(self, ent):
         """S'assure que l'entité a tout le runtime nécessaire au déplacement."""
@@ -510,7 +550,219 @@ class Phase1:
         if not hasattr(ent, "_move_from"):  ent._move_from = None       # (x,y) float
         if not hasattr(ent, "_move_to"):    ent._move_to = None         # (i,j) int
         if not hasattr(ent, "_move_t"):     ent._move_t = 0.0           # 0..1
+        if not hasattr(ent, "_combat_target"): ent._combat_target = None
+        if not hasattr(ent, "_combat_attack_cd"): ent._combat_attack_cd = 0.0
+        if not hasattr(ent, "_combat_repath_cd"): ent._combat_repath_cd = 0.0
         # ---------- Mutations de base de l'espèce ----------
+
+    def _clear_entity_combat_refs(self, ent):
+        self._ensure_move_runtime(ent)
+        ent._combat_target = None
+        ent._combat_attack_cd = 0.0
+        ent._combat_repath_cd = 0.0
+
+    def _stop_entity_combat(self, ent, stop_motion: bool = True):
+        self._clear_entity_combat_refs(ent)
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return
+        if ent.ia.get("etat") == "combat":
+            ent.ia["etat"] = "idle"
+            ent.ia["objectif"] = None
+            ent.ia["order_action"] = None
+            ent.ia["target_craft_id"] = None
+        if stop_motion:
+            ent.move_path = []
+            ent._move_from = (float(ent.x), float(ent.y))
+            ent._move_to = None
+            ent._move_t = 0.0
+
+    def _start_entity_combat(self, attacker, target) -> bool:
+        if not attacker or not target:
+            return False
+        if attacker is target:
+            return False
+        if attacker not in self.entities or target not in self.entities:
+            return False
+        if getattr(attacker, "is_fauna", False):
+            return False
+        if getattr(attacker, "is_egg", False):
+            return False
+        if not getattr(target, "is_fauna", False):
+            return False
+        if not hasattr(attacker, "ia") or not isinstance(attacker.ia, dict):
+            return False
+
+        self._ensure_move_runtime(attacker)
+        if hasattr(attacker, "comportement"):
+            attacker.comportement.cancel_work("combat_start")
+        attacker.ia["etat"] = "combat"
+        attacker.ia["objectif"] = ("combat", (int(target.x), int(target.y)))
+        attacker.ia["order_action"] = None
+        attacker.ia["target_craft_id"] = None
+        attacker._combat_target = target
+        attacker._combat_attack_cd = 0.0
+        attacker._combat_repath_cd = 0.0
+        return True
+
+    def _combat_attack_interval(self, attacker) -> float:
+        speed = float(getattr(attacker, "physique", {}).get("vitesse", 3) or 3)
+        agilite = float(getattr(attacker, "combat", {}).get("agilite", 0) or 0)
+        return max(0.35, 1.2 - speed * 0.05 - agilite * 0.01)
+
+    def _combat_attack_range(self, attacker) -> float:
+        taille = float(getattr(attacker, "physique", {}).get("taille", 3) or 3)
+        return max(0.85, 0.75 + taille * 0.06)
+
+    def _combat_damage(self, attacker, target) -> float:
+        physique = getattr(attacker, "physique", {}) or {}
+        force = float(physique.get("force", 1) or 1)
+        speed = float(physique.get("vitesse", 1) or 1)
+        taille = float(physique.get("taille", 1) or 1)
+        melee = float(getattr(attacker, "combat", {}).get("attaque_melee", 0) or 0)
+        defense = float(getattr(target, "combat", {}).get("defense", 0) or 0)
+
+        raw = 1.0 + force * 1.4 + speed * 0.55 + taille * 0.2 + melee * 0.05
+        reduced = raw - defense * 0.2
+        dmg = max(1.0, reduced)
+        return dmg * random.uniform(0.9, 1.1)
+
+    def _grant_fauna_combat_rewards(self, attacker, target):
+        if not attacker or not target:
+            return
+        if getattr(target, "_combat_loot_granted", False):
+            return
+        target._combat_loot_granted = True
+
+        physique = getattr(target, "physique", {}) or {}
+        taille = float(physique.get("taille", 2) or 2)
+        endurance = float(physique.get("endurance", 3) or 3)
+        xp_gain = max(8, int(round(endurance * 5 + taille * 2)))
+        attacker.add_xp(xp_gain)
+
+        meat_qty = max(1, int(round(taille * 0.7 + endurance * 0.35 + random.uniform(0.2, 1.2))))
+        leather_qty = int(taille // 3)
+        if random.random() < 0.55:
+            leather_qty += 1
+
+        drops = [("meat", meat_qty)]
+        if leather_qty > 0:
+            drops.append(("leather", leather_qty))
+
+        gained: list[str] = []
+        for item_id, qty in drops:
+            taken = 0
+            if hasattr(attacker, "comportement") and hasattr(attacker.comportement, "_add_to_inventory"):
+                try:
+                    taken = int(attacker.comportement._add_to_inventory(item_id, int(qty)))
+                except Exception:
+                    taken = 0
+            if taken > 0:
+                gained.append(f"{item_id} x{taken}")
+
+        add_notification(f"{attacker.nom} a vaincu {target.nom} (+{xp_gain} XP espèce).")
+        if gained:
+            add_notification("Butin récupéré : " + ", ".join(gained))
+
+    def _update_entity_combat(self, ent, dt: float):
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return
+        self._ensure_move_runtime(ent)
+
+        if ent.ia.get("etat") != "combat":
+            if ent._combat_target is not None:
+                self._clear_entity_combat_refs(ent)
+            return
+
+        if getattr(ent, "is_fauna", False):
+            self._stop_entity_combat(ent)
+            return
+
+        target = ent._combat_target
+        if (
+            target is None
+            or target is ent
+            or target not in self.entities
+            or not getattr(target, "is_fauna", False)
+        ):
+            self._stop_entity_combat(ent)
+            return
+        if getattr(target, "_dead_processed", False) or target.jauges.get("sante", 0) <= 0:
+            self._stop_entity_combat(ent)
+            return
+
+        dist = math.hypot(float(target.x) - float(ent.x), float(target.y) - float(ent.y))
+        attack_range = self._combat_attack_range(ent)
+
+        ent._combat_attack_cd = max(0.0, float(ent._combat_attack_cd) - dt)
+
+        if dist <= attack_range:
+            ent.move_path = []
+            ent._move_from = (float(ent.x), float(ent.y))
+            ent._move_to = None
+            ent._move_t = 0.0
+
+            if ent._combat_attack_cd > 0.0:
+                return
+
+            damage = self._combat_damage(ent, target)
+            target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
+            target._last_attacker = ent
+            ent._combat_attack_cd = self._combat_attack_interval(ent)
+
+            if target.jauges.get("sante", 0) <= 0:
+                self._grant_fauna_combat_rewards(ent, target)
+                self._stop_entity_combat(ent)
+            return
+
+        ent._combat_repath_cd = max(0.0, float(ent._combat_repath_cd) - dt)
+        if ent._combat_repath_cd > 0.0:
+            return
+
+        chase_tile = self._find_nearest_walkable(
+            (int(target.x), int(target.y)),
+            max_radius=2,
+            forbidden=self._occupied_tiles(exclude=[ent, target]),
+        )
+        if chase_tile is None:
+            chase_tile = (int(target.x), int(target.y))
+
+        self._apply_entity_order(
+            ent,
+            target=chase_tile,
+            etat="combat",
+            objectif=("combat", (int(target.x), int(target.y))),
+            action_mode=None,
+            craft_id=None,
+        )
+        ent._combat_repath_cd = 0.25
+
+    def _draw_fauna_health_bar(self, screen, ent):
+        if not getattr(ent, "is_fauna", False):
+            return
+        if ent.jauges.get("sante", 0) <= 0:
+            return
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return
+
+        max_hp = float(getattr(ent, "max_sante", 100) or 100)
+        hp = float(ent.jauges.get("sante", 0) or 0)
+        ratio = max(0.0, min(1.0, hp / max(1.0, max_hp)))
+
+        cx = sum(p[0] for p in poly) / len(poly)
+        top = min(p[1] for p in poly) - 18
+        bar_w, bar_h = 46, 7
+        bg = pygame.Rect(int(cx - bar_w / 2), int(top - bar_h), bar_w, bar_h)
+        fg = bg.inflate(-2, -2)
+        fg.width = int(max(1, fg.width) * ratio)
+
+        surface = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
+        surface.fill((0, 0, 0, 175))
+        screen.blit(surface, (bg.x, bg.y))
+
+        if fg.width > 0:
+            color = (220, 60, 60) if ratio < 0.35 else (235, 170, 60) if ratio < 0.7 else (90, 205, 105)
+            pygame.draw.rect(screen, color, fg, border_radius=2)
 
     def _load_mutations_data(self):
         """
@@ -699,6 +951,19 @@ class Phase1:
         if getattr(ent, "_dead_processed", False):
             return
         ent._dead_processed = True
+        self._stop_entity_combat(ent, stop_motion=False)
+
+        for other in list(self.entities):
+            if other is ent:
+                continue
+            if getattr(other, "_combat_target", None) is ent:
+                self._stop_entity_combat(other)
+
+        if hasattr(ent, "comportement"):
+            try:
+                ent.comportement.cancel_work("death")
+            except Exception:
+                pass
 
         if hasattr(ent, "espece"):
             try:
@@ -762,7 +1027,7 @@ class Phase1:
         return PassiveFaunaDefinition(
             species_name="Lapin",
             entity_name="Lapin",
-            move_speed=3.1,
+            move_speed=2.1,
             vision_range=10.0,
             flee_distance=6.0,
             sprite_sheet_idle="rabbit_idle",
@@ -775,16 +1040,30 @@ class Phase1:
         return PassiveFaunaDefinition(
             species_name="Capybara",
             entity_name="Capybara",
-            move_speed=4.1,
+            move_speed=1.1,
             vision_range=4.0,
-            flee_distance=2.0,
+            flee_distance=1.0,
             sprite_sheet_idle="capybara_idle",
             sprite_sheet_frame_size=(32, 32),
             sprite_base_scale=0.75,
         )
         
     def _all_fauna_definitions(self):
-        return [self._rabbit_definition(), self.capybara_definition()]
+        catalog = self._fauna_definition_catalog()
+        return [catalog["lapin"], catalog["capybara"]]
+
+    def _fauna_definition_catalog(self) -> dict[str, PassiveFaunaDefinition]:
+        return {
+            "lapin": self._rabbit_definition(),
+            "rabbit": self._rabbit_definition(),
+            "capybara": self.capybara_definition(),
+        }
+
+    def get_fauna_definition(self, species_id: str | None) -> Optional[PassiveFaunaDefinition]:
+        if not species_id:
+            return None
+        key = str(species_id).strip().lower()
+        return self._fauna_definition_catalog().get(key)
 
     def _init_fauna_species(self, definition: PassiveFaunaDefinition | None = None):
         if definition is None:
@@ -998,8 +1277,10 @@ class Phase1:
     def enter(self, **kwargs):
         self._perf_update_settings()
         self._perf_trace_frames = 120 if self._perf_logs_enabled else 0
+        requested_save_path = kwargs.get("save_path")
+        load_save = bool(kwargs.get("load_save", False))
         source = "new_world"
-        if kwargs.get("load_save", False):
+        if load_save:
             source = "load_save"
         elif kwargs.get("world", None) is not None:
             source = "loading_state_world"
@@ -1009,9 +1290,16 @@ class Phase1:
         # ou de generer un nouveau monde.
         self._reset_session_state()
         self._perf_enter_mark(perf, "Etat de session reset")
+        if requested_save_path:
+            self._save_path = str(requested_save_path)
+        elif load_save:
+            self._save_path = SaveManager.latest_save_path()
+        else:
+            self._save_path = SaveManager.create_new_save_path()
+        self._perf_enter_mark(perf, f"Save slot actif = {self._save_path}")
 
         # 1) Si on demande explicitement de charger une sauvegarde et qu'elle existe
-        if kwargs.get("load_save", False) and self.save_exists():
+        if load_save and self.save_exists():
             self._perf_enter_mark(perf, "Sauvegarde detectee, tentative de chargement")
             if self.load():
                 self._perf_enter_mark(perf, "Sauvegarde chargee")
@@ -1021,9 +1309,6 @@ class Phase1:
                 if not self.fauna_species:
                     self._init_fauna_species()
                     self._perf_enter_mark(perf, "Espece faune initialisee depuis sauvegarde")
-                if not self.fauna_spawn_zones:
-                    self._start_fauna_spawn_job()
-                    self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
                 self._attach_phase_to_entities()
                 self._ensure_weather_system()
                 self._perf_enter_mark(perf, "Entites rattachees a la phase")
@@ -1093,10 +1378,7 @@ class Phase1:
             if pre_fauna_zones:
                 self.fauna_spawn_zones = list(pre_fauna_zones)
                 self._fauna_spawn_job = None
-                self._perf_enter_mark(perf, f"Zones de spawn faune prechargees ({len(self.fauna_spawn_zones)})")
-            elif not self.fauna_spawn_zones:
-                self._start_fauna_spawn_job()
-                self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
+                self._perf_enter_mark(perf, f"Zones legacy de spawn chargees ({len(self.fauna_spawn_zones)})")
             self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")            
             self._ensure_weather_system()
             return  # IMPORTANT: on ne tente pas de regenerer ni de charger un preset
@@ -1190,9 +1472,6 @@ class Phase1:
         else:
             self.bottom_hud.species = self.espece
             self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
-        if not self.fauna_spawn_zones:
-            self._start_fauna_spawn_job()
-            self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
         self._set_cursor(self.default_cursor_path)
         self._perf_enter_mark(perf, "Curseur initialise")
         self._ensure_weather_system()
@@ -1295,6 +1574,11 @@ class Phase1:
                                 self.selected_craft = None  # on sort du mode placement
                         self._reset_drag_selection()
                         return  # on ne fait pas la logique de sélection classique
+
+                    if handle_inspection_panel_click(self, (mx, my), self.screen):
+                        self._ui_click_blocked = True
+                        self._reset_drag_selection()
+                        continue
 
                     if self._ui_captures_click((mx, my)):
                         self._ui_click_blocked = True
@@ -1400,6 +1684,7 @@ class Phase1:
                 self._perf_trace_frames -= 1
             return
 
+        self._update_frame_id += 1
         self.event_manager.update(dt, self)
         mark("Event manager update")
 
@@ -1433,12 +1718,6 @@ class Phase1:
         self.view.update(dt, keys)
         mark("Vue update")
 
-        self._step_fauna_spawn_job()
-        mark("Step fauna spawn job")
-
-        self._update_fauna_spawning()
-        mark("Update fauna spawning")
-
         def get_radius(ent):
             if getattr(ent, "is_egg", False):
                 return 1
@@ -1466,6 +1745,10 @@ class Phase1:
             mark("Fog recreate")
         self.view.fog = self.fog
 
+        if self.fauna_spawner:
+            self.fauna_spawner.update(dt, self)
+        mark("Fauna spawner update")
+
         dead_entities: list = []
         for e in list(self.entities):
             if getattr(e, "is_egg", False):
@@ -1480,6 +1763,8 @@ class Phase1:
                     e.comportement.try_eating()
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
+            self._update_entity_combat(e, dt)
+            self._update_entity_auto_mode(e, dt)
             if e.jauges.get("sante", 0) <= 0:
                 dead_entities.append(e)
         mark(f"Entities update loop (count={len(self.entities)})")
@@ -1550,6 +1835,7 @@ class Phase1:
         self._draw_construction_bars(screen)
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
+            self._draw_fauna_health_bar(screen, ent)
             draw_work_bar(self, screen, ent)
 
             renderer = getattr(ent, "renderer", None)
@@ -1664,6 +1950,8 @@ class Phase1:
         self._drag_select_rect = pygame.Rect(x, y, w, h)
 
     def _ui_captures_click(self, pos: tuple[int, int]) -> bool:
+        if inspection_panel_contains_point(self, pos, self.screen):
+            return True
         if self.bottom_hud:
             if self.bottom_hud.context_menu and self.bottom_hud.context_menu.get("rect"):
                 if self.bottom_hud.context_menu["rect"].collidepoint(pos):
@@ -1695,6 +1983,247 @@ class Phase1:
                 return []
             return [self.selected[1]]
         return []
+
+    def _entity_inventory_weight(self, ent) -> float:
+        total = 0.0
+        for stack in getattr(ent, "carrying", []) or []:
+            qty = float(stack.get("quantity", 0) or 0)
+            unit_weight = float(stack.get("weight", 0) or 0)
+            total += qty * unit_weight
+        return total
+
+    def _entity_inventory_is_full(self, ent) -> bool:
+        limit = float(getattr(ent, "physique", {}).get("weight_limit", 10) or 10)
+        if limit <= 0:
+            return True
+        return self._entity_inventory_weight(ent) >= max(0.0, limit - 0.05)
+
+    def _auto_mark_failed_prop(self, ent, prop_target):
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return
+        if not prop_target:
+            return
+        i, j, pid = prop_target
+        ent.ia["auto_failed_prop"] = (int(i), int(j), str(pid))
+
+    def _auto_is_failed_prop(self, ent, prop_target) -> bool:
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return False
+        blocked = ent.ia.get("auto_failed_prop")
+        if not blocked:
+            return False
+        i, j, pid = prop_target
+        return tuple(blocked) == (int(i), int(j), str(pid))
+
+    def _auto_find_nearest_harvestable_prop(self, ent, max_radius: int = 8):
+        if not self.world:
+            return None
+        ex, ey = int(ent.x), int(ent.y)
+        width, height = self.world.width, self.world.height
+
+        for r in range(1, max_radius + 1):
+            best = None
+            best_dist = 1e9
+            x0 = max(0, ex - r)
+            x1 = min(width - 1, ex + r)
+            y0 = max(0, ey - r)
+            y1 = min(height - 1, ey + r)
+            for j in range(y0, y1 + 1):
+                for i in range(x0, x1 + 1):
+                    if max(abs(i - ex), abs(j - ey)) != r:
+                        continue
+                    cell = self._get_construction_cell(i, j)
+                    if not isinstance(cell, int) or cell not in _AUTO_HARVESTABLE_PROP_IDS:
+                        continue
+                    if self._auto_is_failed_prop(ent, (i, j, cell)):
+                        continue
+                    dist = abs(i - ex) + abs(j - ey)
+                    if dist < best_dist:
+                        best = (i, j, int(cell))
+                        best_dist = dist
+            if best is not None:
+                return best
+        return None
+
+    def _auto_extract_warehouse_target(self, i: int, j: int):
+        cell = self._get_construction_cell(i, j)
+        if isinstance(cell, int):
+            if int(cell) == 102:
+                return (i, j, 102, "Entrepot_primitif")
+            return None
+        if not isinstance(cell, dict):
+            return None
+
+        craft_id = cell.get("craft_id")
+        interaction = cell.get("interaction")
+        interaction_type = interaction.get("type") if isinstance(interaction, dict) else None
+        if interaction_type != "warehouse" and craft_id != "Entrepot_primitif":
+            return None
+        pid = int(cell.get("pid", 102) or 102)
+        return (i, j, pid, craft_id or "Entrepot_primitif")
+
+    def _auto_find_nearest_warehouse(self, ent, max_radius: int = 120):
+        if not self.world:
+            return None
+        ex, ey = int(ent.x), int(ent.y)
+        width, height = self.world.width, self.world.height
+
+        for r in range(1, max_radius + 1):
+            best = None
+            best_dist = 1e9
+            x0 = max(0, ex - r)
+            x1 = min(width - 1, ex + r)
+            y0 = max(0, ey - r)
+            y1 = min(height - 1, ey + r)
+            for j in range(y0, y1 + 1):
+                for i in range(x0, x1 + 1):
+                    if max(abs(i - ex), abs(j - ey)) != r:
+                        continue
+                    target = self._auto_extract_warehouse_target(i, j)
+                    if not target:
+                        continue
+                    dist = abs(i - ex) + abs(j - ey)
+                    if dist < best_dist:
+                        best = target
+                        best_dist = dist
+            if best is not None:
+                return best
+        return None
+
+    def _auto_order_harvest(self, ent, prop_target) -> bool:
+        i, j, pid = prop_target
+        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]))
+        if not target:
+            return False
+        objectif = ("prop", (i, j, pid))
+        if self._same_prop_target(ent, ("prop", (i, j, pid))):
+            return False
+        return self._apply_entity_order(
+            ent,
+            target=target,
+            etat="se_deplace_vers_prop",
+            objectif=objectif,
+            action_mode=None,
+            craft_id=None,
+        )
+
+    def _auto_order_deposit(self, ent, warehouse_target) -> bool:
+        i, j, pid, craft_id = warehouse_target
+        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]))
+        if not target:
+            return False
+        return self._apply_entity_order(
+            ent,
+            target=target,
+            etat="se_deplace_vers_prop",
+            objectif=("prop", (i, j, pid)),
+            action_mode="interact",
+            craft_id=craft_id,
+        )
+
+    def _auto_next_step_tile(self, ent):
+        ex, ey = int(ent.x), int(ent.y)
+        occupied = self._occupied_tiles(exclude=[ent])
+        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        start_dir = int(ent.ia.get("auto_walk_dir", 0) or 0) % len(directions)
+
+        for k in range(len(directions)):
+            idx = (start_dir + k) % len(directions)
+            dx, dy = directions[idx]
+            tile = (ex + dx, ey + dy)
+            if tile in occupied:
+                continue
+            if self._is_walkable(*tile):
+                ent.ia["auto_walk_dir"] = idx
+                return tile
+
+        fallback = self._find_nearest_walkable((ex, ey), max_radius=2, forbidden=occupied)
+        if fallback and fallback != (ex, ey):
+            return fallback
+        return None
+
+    def _update_entity_auto_mode(self, ent, dt: float):
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return
+        if ent.ia.get("auto_mode") != "harvest":
+            return
+        if getattr(ent, "is_fauna", False):
+            return
+
+        cooldown = max(0.0, float(ent.ia.get("auto_next_decision_in", 0.0) or 0.0) - dt)
+        ent.ia["auto_next_decision_in"] = cooldown
+        if cooldown > 0.0:
+            return
+        ent.ia["auto_next_decision_in"] = 0.2
+
+        force_deposit = bool(ent.ia.get("auto_need_deposit")) or self._entity_inventory_is_full(ent)
+        if force_deposit:
+            ent.ia["auto_need_deposit"] = True
+
+            objectif = ent.ia.get("objectif")
+            heading_warehouse = False
+            if objectif and objectif[0] == "prop":
+                oi, oj, opid = objectif[1]
+                wh_target = self._auto_extract_warehouse_target(int(oi), int(oj))
+                heading_warehouse = ent.ia.get("order_action") == "interact" and wh_target is not None
+                if not heading_warehouse:
+                    self._auto_mark_failed_prop(ent, (oi, oj, opid))
+
+            work = getattr(ent, "work", None)
+            if work and work.get("type") == "harvest":
+                self._auto_mark_failed_prop(
+                    ent,
+                    (work.get("i", int(ent.x)), work.get("j", int(ent.y)), work.get("pid", 0)),
+                )
+
+            if not heading_warehouse:
+                if hasattr(ent, "comportement"):
+                    ent.comportement.cancel_work("auto_need_deposit")
+                else:
+                    ent.work = None
+                    ent.ia["etat"] = "idle"
+                    ent.ia["objectif"] = None
+                    ent.ia["order_action"] = None
+                    ent.ia["target_craft_id"] = None
+                ent.move_path = []
+                ent._move_from = (float(ent.x), float(ent.y))
+                ent._move_to = None
+                ent._move_t = 0.0
+
+            warehouse = self._auto_find_nearest_warehouse(ent)
+            if warehouse and self._auto_order_deposit(ent, warehouse):
+                ent.ia["auto_next_decision_in"] = 0.5
+            return
+
+        if getattr(ent, "work", None):
+            return
+        if getattr(ent, "move_path", None):
+            if ent.move_path:
+                return
+        if getattr(ent, "_move_to", None) is not None:
+            return
+
+        etat = ent.ia.get("etat")
+        if etat not in ("idle", "se_deplace"):
+            return
+
+        harvest_target = self._auto_find_nearest_harvestable_prop(ent)
+        if harvest_target and self._auto_order_harvest(ent, harvest_target):
+            ent.ia["auto_next_decision_in"] = 0.45
+            return
+
+        step_tile = self._auto_next_step_tile(ent)
+        if step_tile:
+            ok = self._apply_entity_order(
+                ent,
+                target=step_tile,
+                etat="se_deplace",
+                objectif=None,
+                action_mode=None,
+                craft_id=None,
+            )
+            if ok:
+                ent.ia["auto_next_decision_in"] = 0.5
 
     def deposit_to_warehouse(self, inventory: list[dict]) -> int:
         """
@@ -2089,6 +2618,9 @@ class Phase1:
         return best
 
     def _apply_entity_order(self, ent, target: tuple[int, int], etat: str, objectif, action_mode: str | None, craft_id: str | None):
+        if etat != "combat":
+            self._clear_entity_combat_refs(ent)
+
         if hasattr(ent, "comportement"):
             ent.comportement.cancel_work("player_new_order")
         else:
@@ -2144,6 +2676,10 @@ class Phase1:
                 objectif = None
                 etat = "se_deplace"
             elif kind == "entity":
+                if getattr(payload, "is_fauna", False):
+                    for ent in entities:
+                        self._start_entity_combat(ent, payload)
+                    return
                 base_target = (int(payload.x), int(payload.y))
                 objectif = None
                 etat = "se_deplace"

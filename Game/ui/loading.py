@@ -37,6 +37,7 @@ class LoadingState:
         self._world = None
         self._params = None
         self._fauna_spawn_zones = []
+        self._save_path = None
         self._perf_logs_enabled = True
 
     def _set_progress(self, value: float, label: str | None = None):
@@ -327,6 +328,7 @@ class LoadingState:
         self._world = None
         self._params = None
         self._fauna_spawn_zones = []
+        self._save_path = kwargs.get("save_path")
         self._perf_logs_enabled = bool(self.app.settings.get("debug.perf_logs", True))
 
         def worker():
@@ -458,6 +460,7 @@ class LoadingState:
                 world=self._world,
                 params=self._params,
                 fauna_spawn_zones=self._fauna_spawn_zones,
+                save_path=self._save_path,
             )
             if self._perf_logs_enabled:
                 print("[Perf][Loading] Transition vers PHASE1 (fin)")

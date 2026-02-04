@@ -14,8 +14,7 @@ class BottomHUD:
 
     - Barre d'XP de l'espèce
     - Niveau d'espèce (cercle)
-    - Placeholder horloge jour/nuit
-    - Stats de base de l'espèce
+    - Horloge jour/nuit
     - Zone de quick craft avec boutons
     - Bouton pour plier / déplier le panneau
     """
@@ -29,7 +28,9 @@ class BottomHUD:
         self.crafts = phase.craft_system.crafts
         # Système jour/nuit
         self.day_night = day_night_cycle
-        self.clock_renderer = ClockRenderer(radius=18)
+        self.clock_renderer = ClockRenderer(radius=22)
+        self.level_frame_sprite = self.assets.images.get("CircleFrame")
+        self._scaled_level_frame: dict[int, pygame.Surface] = {}
 
         self.visible = True      # panneau déplié ou non
         self.height = 140        # hauteur du panneau
@@ -278,44 +279,50 @@ class BottomHUD:
         screen.blit(txt, (rect.x + 6, rect.y + 1))
 
     def _draw_level_and_clock(self, screen):
-        # Cercle de niveau
+        # Niveau (gauche) avec cadre sprite
         lvl = getattr(self.species, "species_level", 1)
-        cx = self.left_rect.x + 30
-        cy = self.left_rect.y + 50
-        pygame.draw.circle(screen, (50, 80, 50), (cx, cy), 24)
-        pygame.draw.circle(screen, (180, 230, 180), (cx, cy), 24, 2)
+        cx = self.left_rect.x + 32
+        cy = self.left_rect.y + 62
+        frame_size = 66
+
+        pygame.draw.circle(screen, (35, 55, 35), (cx, cy), frame_size // 2 - 5)
+        if self.level_frame_sprite:
+            if frame_size not in self._scaled_level_frame:
+                self._scaled_level_frame[frame_size] = pygame.transform.smoothscale(
+                    self.level_frame_sprite, (frame_size, frame_size)
+                )
+            frame = self._scaled_level_frame[frame_size]
+            frame_rect = frame.get_rect(center=(cx, cy))
+            screen.blit(frame, frame_rect)
+        else:
+            pygame.draw.circle(screen, (180, 230, 180), (cx, cy), frame_size // 2, 2)
+
         txt = self.font.render(str(lvl), True, (255, 255, 255))
         rect = txt.get_rect(center=(cx, cy))
         screen.blit(txt, rect)
 
-        cy2 = cy + 56
-        if hasattr(self, 'clock_renderer'):
-            self.clock_renderer.draw(screen, cx, cy2, self.day_night, self.small_font)
-        else:
-            # Fallback si clock_renderer n'existe pas
-            pygame.draw.circle(screen, (40, 40, 40), (cx, cy2), 18)
-            pygame.draw.circle(screen, (120, 120, 120), (cx, cy2), 18, 2)
-            pygame.draw.line(screen, (220, 220, 220), (cx, cy2), (cx, cy2 - 10), 2)
-            pygame.draw.line(screen, (220, 220, 220), (cx, cy2), (cx + 7, cy2), 2)
-
-    def _draw_stats(self, screen):
-        stats_rect = pygame.Rect(
+        # Horloge + heure (droite), à la place de l'ancienne zone de stats
+        clock_rect = pygame.Rect(
             self.left_rect.x + 70,
             self.left_rect.y + 26,
             self.left_rect.width - 80,
             self.left_rect.height - 26,
         )
-        pygame.draw.rect(screen, (25, 40, 25), stats_rect, border_radius=8)
-        pygame.draw.rect(screen, (80, 120, 80), stats_rect, 2, border_radius=8)
+        pygame.draw.rect(screen, (25, 40, 25), clock_rect, border_radius=8)
+        pygame.draw.rect(screen, (80, 120, 80), clock_rect, 2, border_radius=8)
 
-        lines = [
-            f"Population : {getattr(self.species, 'population', '?')}",
-        ]
-        y = stats_rect.y + 8
-        for line in lines:
-            surf = self.small_font.render(line, True, (230, 240, 230))
-            screen.blit(surf, (stats_rect.x + 8, y))
-            y += 18
+        clock_cx = clock_rect.x + 38
+        clock_cy = clock_rect.centery - 2
+        prev_radius = self.clock_renderer.radius
+        self.clock_renderer.radius = 22
+        self.clock_renderer.draw(screen, clock_cx, clock_cy, self.day_night, None)
+        self.clock_renderer.radius = prev_radius
+
+        time_str = self.day_night.get_time_string() if self.day_night else "--:--"
+        label = self.small_font.render("Heure", True, (185, 210, 185))
+        screen.blit(label, (clock_cx + 32, clock_rect.y + 10))
+        time_txt = self.font.render(time_str, True, (240, 240, 240))
+        screen.blit(time_txt, (clock_cx + 32, clock_rect.y + 26))
 
     def _draw_quickcraft(self, screen):
         # Titre "CRAFT"
@@ -358,10 +365,9 @@ class BottomHUD:
         pygame.draw.rect(screen, (20, 60, 20), self.panel_rect, border_radius=16)
         pygame.draw.rect(screen, (80, 140, 80), self.panel_rect, 2, border_radius=16)
 
-        # Partie gauche : XP + niveau + horloge + stats
+        # Partie gauche : XP + niveau + horloge
         self._draw_xp_bar(screen)
         self._draw_level_and_clock(screen)
-        self._draw_stats(screen)
 
         # Partie droite : quick craft
         self._draw_quickcraft(screen)

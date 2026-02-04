@@ -7,7 +7,14 @@
 import pygame
 import time
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
-from Game.ui.menu.menu_main import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
+from Game.ui.menu.menu_main import (
+    MainMenu,
+    OptionsMenu,
+    CreditMenu,
+    WorldCreationMenu,
+    SpeciesCreationMenu,
+    SaveSelectionMenu,
+)
 from Game.core.assets import Assets
 from Game.core.audio import AudioManager
 from Game.core.utils import Button, resource_path
@@ -78,6 +85,7 @@ class App:
     # Définis les "STATES"
     def _register_states(self):
         self.states["MENU"] = MainMenu(self)
+        self.states["SAVE_SELECT"] = SaveSelectionMenu(self)
         self.states["OPTIONS"] = OptionsMenu(self)
         self.states["CREDITS"] = CreditMenu(self)
         self.states["PHASE1"] = Phase1(self)

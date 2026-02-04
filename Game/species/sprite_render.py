@@ -1,5 +1,8 @@
 # Game/espece/renderer.py
+import colorsys
 import pygame
+
+DEFAULT_BLOB_COLOR = (70, 130, 220)
 
 OFFSETS = {
     "4_yeux_normaux": (0, 1),
@@ -47,7 +50,7 @@ class EspeceRenderer:
 
         # --- config base spritesheet ---
         # Pour ne rien casser : si tu ne renseignes rien dans espece, ça marche quand même.
-        self.sheet_key = getattr(espece, "sprite_sheet_key", "Sprite_main_blob")
+        self.sheet_key = getattr(espece, "sprite_sheet_key", "base_blob_idle")
         self.frame_w, self.frame_h = getattr(espece, "sprite_frame_size", (32, 32))
 
         # Échelle "interne" pour que le passage 20x24 -> 32x32 ne te fasse pas un monstre à l'écran.
@@ -99,12 +102,69 @@ class EspeceRenderer:
                 fallback_size = (self.frame_w, self.frame_h)
             return self._placeholder_surface(fallback_size, key)
 
+    def _resolve_species_color_rgb(self) -> tuple[int, int, int]:
+        # Cas preview: renderer branché directement sur une Espece.
+        color = getattr(self.espece, "color_rgb", None)
+        # Cas runtime: renderer branché sur un Individu -> self.espece.espece
+        if color is None and hasattr(self.espece, "espece"):
+            color = getattr(getattr(self.espece, "espece", None), "color_rgb", None)
+
+        if isinstance(color, (list, tuple)) and len(color) == 3:
+            try:
+                r = max(0, min(255, int(color[0])))
+                g = max(0, min(255, int(color[1])))
+                b = max(0, min(255, int(color[2])))
+                return (r, g, b)
+            except Exception:
+                pass
+        return DEFAULT_BLOB_COLOR
+
+    def _recolor_base_blob_sheet(self, sheet: pygame.Surface, target_rgb: tuple[int, int, int]) -> pygame.Surface:
+        # On garde le sprite original si on reste sur la couleur de base.
+        if tuple(target_rgb) == tuple(DEFAULT_BLOB_COLOR):
+            return sheet
+
+        out = sheet.copy()
+        w, h = out.get_size()
+        tr, tg, tb = target_rgb
+
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = out.get_at((x, y))
+                if a <= 0:
+                    continue
+                # Ne pas toucher les contours noirs.
+                if r <= 20 and g <= 20 and b <= 20:
+                    continue
+                # Masque HSV : inclut bleu + cyan (haut de tete), mais exclut contours/details.
+                h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                hue = h * 360.0
+                if not (150.0 <= hue <= 255.0 and s >= 0.20 and v >= 0.12):
+                    continue
+
+                shade = max(r, g, b) / 255.0
+                # Les zones de highlight restent legerement plus claires que la base.
+                highlight = max(0.0, (shade - 0.75) / 0.25)
+                nr = max(0, min(255, int(tr * shade + (255 - tr) * highlight)))
+                ng = max(0, min(255, int(tg * shade + (255 - tg) * highlight)))
+                nb = max(0, min(255, int(tb * shade + (255 - tb) * highlight)))
+                out.set_at((x, y), (nr, ng, nb, a))
+        return out
+
     def _get_sheet(self, key: str) -> SpriteSheet:
-        if key in self._sheet_cache:
-            return self._sheet_cache[key]
+        cache_key = key
         sheet_img = self._get_img(key, fallback_size=(self.frame_w, self.frame_h))
+        if key == "base_blob_idle":
+            color_rgb = self._resolve_species_color_rgb()
+            cache_key = (key, color_rgb)
+            if cache_key in self._sheet_cache:
+                return self._sheet_cache[cache_key]
+            sheet_img = self._recolor_base_blob_sheet(sheet_img, color_rgb)
+        elif key in self._sheet_cache:
+            return self._sheet_cache[key]
+
         ss = SpriteSheet(sheet_img, self.frame_w, self.frame_h)
-        self._sheet_cache[key] = ss
+        self._sheet_cache[cache_key] = ss
         return ss
 
     # --------- animation ----------
@@ -147,7 +207,7 @@ class EspeceRenderer:
         # tu peux changer base_variant_key ici.
         # Exemple:
         # if "Carapace" in self.espece.mutations.actives:
-        #     self.base_variant_key = "Sprite_main_blob_carapace"
+        #     self.base_variant_key = "base_blob_idle_carapace"
 
         for m in getattr(self.espece.mutations, "actives", []):
             if m == "Carapace": self.overlay_keys.append("carapace")

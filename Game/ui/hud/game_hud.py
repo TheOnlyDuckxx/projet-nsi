@@ -1,4 +1,107 @@
 import pygame
+from Game.ui.hud.notification import add_notification
+
+
+_AI_BUTTON_SPECS = (
+    ("harvest", "IA Recolte"),
+    ("builder", "IA Build"),
+    ("guard", "IA Garde"),
+)
+
+
+def _get_inspected_entity(self):
+    ent = None
+    if getattr(self, "selected_entities", None):
+        if self.selected_entities:
+            ent = self.selected_entities[0]
+    if ent is None:
+        if not self.selected or self.selected[0] != "entity":
+            return None
+        ent = self.selected[1]
+    return ent
+
+
+def _inspection_panel_layout(self, screen):
+    ent = _get_inspected_entity(self)
+    if ent is None:
+        return None
+
+    panel_width = 350
+    panel_height = int(screen.get_height() * 0.35)
+    panel_x = screen.get_width() - panel_width
+    panel_y = 0
+    panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+    buttons = []
+    if not getattr(ent, "is_egg", False):
+        gap = 8
+        btn_h = 24
+        btn_w = (panel_width - 20 - gap * 2) // 3
+        btn_y = panel_y + panel_height - btn_h - 10
+        for idx, (mode, label) in enumerate(_AI_BUTTON_SPECS):
+            btn_x = panel_x + 10 + idx * (btn_w + gap)
+            buttons.append(
+                {
+                    "mode": mode,
+                    "label": label,
+                    "rect": pygame.Rect(btn_x, btn_y, btn_w, btn_h),
+                }
+            )
+
+    return {
+        "entity": ent,
+        "panel_rect": panel_rect,
+        "buttons": buttons,
+    }
+
+
+def inspection_panel_contains_point(self, pos, screen=None):
+    surface = screen or self.screen
+    if not surface:
+        return False
+    layout = _inspection_panel_layout(self, surface)
+    if not layout:
+        return False
+    return layout["panel_rect"].collidepoint(pos)
+
+
+def handle_inspection_panel_click(self, pos, screen=None):
+    surface = screen or self.screen
+    if not surface:
+        return False
+    layout = _inspection_panel_layout(self, surface)
+    if not layout:
+        return False
+    if not layout["panel_rect"].collidepoint(pos):
+        return False
+
+    ent = layout["entity"]
+    if getattr(ent, "is_egg", False):
+        return True
+
+    for button in layout["buttons"]:
+        if not button["rect"].collidepoint(pos):
+            continue
+        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
+            return True
+
+        mode = button["mode"]
+        if mode == "harvest":
+            active = ent.ia.get("auto_mode") == "harvest"
+            if active:
+                ent.ia["auto_mode"] = None
+                add_notification(f"{ent.nom} : IA recolte desactivee.")
+            else:
+                ent.ia["auto_mode"] = "harvest"
+                ent.ia["auto_next_decision_in"] = 0.0
+                add_notification(f"{ent.nom} : IA recolte activee.")
+            return True
+
+        ent.ia["auto_mode"] = mode
+        add_notification(f"{button['label']} : mode pas encore implemente.")
+        return True
+
+    return True
 
 
 def draw_work_bar(self, screen, ent):
@@ -27,20 +130,14 @@ def draw_work_bar(self, screen, ent):
 
 def draw_inspection_panel(self, screen):
     """Panneau d'inspection détaillé pour l'entité sélectionnée"""
-    ent = None
-    if getattr(self, "selected_entities", None):
-        if self.selected_entities:
-            ent = self.selected_entities[0]
-    if ent is None:
-        if not self.selected or self.selected[0] != "entity":
-            return
-        ent = self.selected[1]
-
-    # Configuration du panneau
-    panel_width = 350
-    panel_height = int(screen.get_height() * 0.70)
-    panel_x = screen.get_width() - panel_width
-    panel_y = 0
+    layout = _inspection_panel_layout(self, screen)
+    if not layout:
+        return
+    ent = layout["entity"]
+    panel_rect = layout["panel_rect"]
+    panel_x, panel_y = panel_rect.x, panel_rect.y
+    panel_width, panel_height = panel_rect.width, panel_rect.height
+    ai_buttons = layout["buttons"]
 
     # Fond semi-transparent
     panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -110,11 +207,6 @@ def draw_inspection_panel(self, screen):
     pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
     y_offset += 10
 
-    # === POSITION ===
-    pos_text = text_font.render(f"Position: ({int(ent.x)}, {int(ent.y)})", True, (200, 200, 200))
-    panel_surf.blit(pos_text, (10, y_offset))
-    y_offset += 20
-
     # === JAUGES VITALES ===
     header = header_font.render("Jauges", True, (255, 220, 100))
     panel_surf.blit(header, (10, y_offset))
@@ -156,44 +248,6 @@ def draw_inspection_panel(self, screen):
         y_offset += 18
 
     y_offset += 5
-
-    # === STATS PHYSIQUES ===
-    header = header_font.render("Physique", True, (255, 180, 100))
-    panel_surf.blit(header, (10, y_offset))
-    y_offset += 20
-
-    stats_physiques = [
-        ("Force", ent.physique.get("force", 0)),
-        ("Endurance", ent.physique.get("endurance", 0)),
-        ("Vitesse", ent.physique.get("vitesse", 0)),
-        ("Taille", ent.physique.get("taille", 0)),
-    ]
-
-    for label, value in stats_physiques:
-        stat_text = text_font.render(f"  {label}: {value}", True, (200, 200, 200))
-        panel_surf.blit(stat_text, (15, y_offset))
-        y_offset += 16
-
-    y_offset += 5
-
-    # === STATS MENTALES ===
-    header = header_font.render("Mental", True, (150, 200, 255))
-    panel_surf.blit(header, (10, y_offset))
-    y_offset += 20
-
-    stats_mentales = [
-        ("Intelligence", ent.mental.get("intelligence", 0)),
-        ("Dextérité", ent.mental.get("dexterité", 0)),
-        ("Courage", ent.mental.get("courage", 0)),
-        ("Sociabilité", ent.mental.get("sociabilite", 0)),
-    ]
-
-    for label, value in stats_mentales:
-        stat_text = text_font.render(f"  {label}: {value}", True, (200, 200, 200))
-        panel_surf.blit(stat_text, (15, y_offset))
-        y_offset += 16
-
-    y_offset += 10
 
     # === INVENTAIRE ===
     pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
@@ -263,19 +317,30 @@ def draw_inspection_panel(self, screen):
             panel_surf.blit(more_text, (15, y_offset))
             y_offset += 16
 
-    # === ÉTAT IA ===
-    if y_offset < panel_height - 50:
-        y_offset += 10
-        pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
-        y_offset += 10
-
-        header = header_font.render("État", True, (150, 255, 150))
-        panel_surf.blit(header, (10, y_offset))
-        y_offset += 20
-
-        etat = ent.ia.get("etat", "idle")
-        etat_text = text_font.render(f"  Activité: {etat}", True, (200, 200, 200))
-        panel_surf.blit(etat_text, (15, y_offset))
-
     # Afficher le panneau sur l'écran
+    if ai_buttons:
+        auto_mode = ent.ia.get("auto_mode") if hasattr(ent, "ia") else None
+        pygame.draw.line(panel_surf, (80, 120, 160), (10, panel_height - 44), (panel_width - 10, panel_height - 44), 1)
+        title = text_font.render("Auto IA", True, (185, 205, 235))
+        panel_surf.blit(title, (10, panel_height - 40))
+
+        mouse_pos = pygame.mouse.get_pos()
+        for button in ai_buttons:
+            abs_rect = button["rect"]
+            rect = abs_rect.move(-panel_x, -panel_y)
+            is_hovered = abs_rect.collidepoint(mouse_pos)
+            is_active = auto_mode == button["mode"]
+            is_placeholder = button["mode"] != "harvest"
+
+            bg = (45, 95, 55) if is_active else ((56, 74, 98) if is_hovered else (42, 54, 72))
+            border = (130, 210, 140) if is_active else (90, 130, 170)
+            if is_placeholder and not is_active:
+                bg = (38, 44, 58)
+                border = (70, 90, 120)
+
+            pygame.draw.rect(panel_surf, bg, rect, border_radius=5)
+            pygame.draw.rect(panel_surf, border, rect, 1, border_radius=5)
+            label = text_font.render(button["label"], True, (235, 240, 245))
+            panel_surf.blit(label, label.get_rect(center=rect.center))
+
     screen.blit(panel_surf, (panel_x, panel_y))

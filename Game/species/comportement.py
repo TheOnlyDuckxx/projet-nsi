@@ -229,6 +229,110 @@ class Comportement:
         except Exception:
             return None
 
+    def _harvest_key(self, i, j, pid):
+        return (int(i), int(j), str(pid))
+
+    def _phase_harvest_jobs(self):
+        phase = getattr(self.e, "phase", None)
+        if not phase:
+            return None
+        jobs = getattr(phase, "shared_harvest_jobs", None)
+        if jobs is None:
+            phase.shared_harvest_jobs = {}
+            jobs = phase.shared_harvest_jobs
+        return jobs
+
+    def _detach_from_shared_harvest(self):
+        w = getattr(self.e, "work", None)
+        if not w or w.get("type") != "harvest":
+            return
+        key = w.get("shared_key")
+        if not key:
+            return
+        jobs = self._phase_harvest_jobs()
+        if jobs is None:
+            return
+        job = jobs.get(key)
+        if not job:
+            return
+        workers = job.get("workers")
+        if isinstance(workers, set):
+            workers.discard(self.e)
+            if not workers:
+                jobs.pop(key, None)
+                return
+            if job.get("leader") not in workers:
+                job["leader"] = next(iter(workers))
+
+    def _set_worker_idle(self, worker):
+        worker.work = None
+        if hasattr(worker, "ia") and isinstance(worker.ia, dict):
+            worker.ia["etat"] = "idle"
+            worker.ia["objectif"] = None
+            worker.ia["order_action"] = None
+            worker.ia["target_craft_id"] = None
+
+    def _resolve_shared_harvest(self, key, world):
+        jobs = self._phase_harvest_jobs()
+        if jobs is None:
+            return
+        job = jobs.get(key)
+        if not job:
+            return
+
+        workers = set(job.get("workers") or set())
+        if not workers:
+            jobs.pop(key, None)
+            return
+
+        leader = job.get("leader")
+        if leader not in workers:
+            leader = next(iter(workers))
+            job["leader"] = leader
+
+        i = int(job.get("i", 0))
+        j = int(job.get("j", 0))
+        pid = job.get("pid", 0)
+
+        # Si le prop n'existe plus (déjà récolté/détruit), on arrête tous les workers.
+        cell = self._construction_cell(world, i, j)
+        cell_pid = cell.get("pid") if isinstance(cell, dict) else cell
+        if not cell_pid or str(cell_pid) != str(pid):
+            for worker in workers:
+                self._set_worker_idle(worker)
+            jobs.pop(key, None)
+            return
+
+        taken_total = 0
+        drops = job.get("drops", []) or []
+        leader_behavior = getattr(leader, "comportement", None)
+        if leader_behavior:
+            for item_id, qty in drops:
+                took = leader_behavior._add_to_inventory(item_id, int(qty))
+                taken_total += took
+
+        if taken_total <= 0:
+            add_notification(f"{leader.nom} : inventaire plein !")
+            if isinstance(getattr(leader, "ia", None), dict):
+                leader.ia["auto_failed_prop"] = (i, j, str(pid))
+                leader.ia["auto_need_deposit"] = True
+            for worker in workers:
+                self._set_worker_idle(worker)
+            jobs.pop(key, None)
+            return
+
+        leader.add_xp(taken_total * 10)
+        try:
+            if world and getattr(world, "overlay", None):
+                if 0 <= j < len(world.overlay) and 0 <= i < len(world.overlay[0]):
+                    world.overlay[j][i] = 0
+        except Exception:
+            pass
+
+        for worker in workers:
+            self._set_worker_idle(worker)
+        jobs.pop(key, None)
+
     def build_construction(self, objectif, world):
         if not objectif or objectif[0] != "construction":
             self.e.ia["etat"] = "idle"
@@ -256,15 +360,16 @@ class Comportement:
             return
 
         i, j, pid = objectif[1]
-        new_key = self._prop_key(i, j, pid)
+        new_key = self._harvest_key(i, j, pid)
 
         w = getattr(self.e, "work", None)
         if w and w.get("type") == "harvest":
-            cur_key = self._prop_key(w["i"], w["j"], w["pid"])
+            cur_key = self._harvest_key(w["i"], w["j"], w["pid"])
             if cur_key == new_key:
                 # on force juste l'état si besoin et on sort
                 self.e.ia["etat"] = "recolte"
                 return
+            self._detach_from_shared_harvest()
 
         # Durée de base (s) + accélération par stats (force/dex/endurance)
         base = 2.5
@@ -276,6 +381,38 @@ class Comportement:
         accel = (0.6 + 0.08 * force + 0.06 * dex + 0.04 * endu) / 5.0
         accel = max(0.3, min(3.0, accel))
         duration = max(0.4, base / accel)
+
+        jobs = self._phase_harvest_jobs()
+        if jobs is not None:
+            job = jobs.get(new_key)
+            if not job:
+                job = {
+                    "i": int(i),
+                    "j": int(j),
+                    "pid": pid,
+                    "t": 0.0,
+                    "t_need": float(duration),
+                    "progress": 0.0,
+                    "drops": self._drops_for_prop(pid),
+                    "workers": set(),
+                    "leader": self.e,
+                    "last_frame": -1,
+                }
+                jobs[new_key] = job
+            workers = job.setdefault("workers", set())
+            workers.add(self.e)
+            if job.get("leader") not in workers:
+                job["leader"] = self.e
+            self.e.work = {
+                "type": "harvest",
+                "i": int(i),
+                "j": int(j),
+                "pid": pid,
+                "shared_key": new_key,
+                "progress": float(job.get("progress", 0.0)),
+            }
+            self.e.ia["etat"] = "recolte"
+            return
 
         self.e.work = {
             "type": "harvest",
@@ -291,6 +428,8 @@ class Comportement:
         Annule immédiatement toute récolte en cours : stoppe la barre,
         nettoie l'objectif, et remet l'IA au neutre.
         """
+        self._detach_from_shared_harvest()
+
         # stoppe la progression + barre
         if getattr(self.e, "work", None):
             self.e.work = None
@@ -383,6 +522,10 @@ class Comportement:
             phase = getattr(self.e, "phase", None)
             if interaction_type == "warehouse" and phase:
                 moved = phase.deposit_to_warehouse(self.e.carrying)
+                if moved > 0 or not self.e.carrying:
+                    self.e.ia.pop("auto_failed_prop", None)
+                    self.e.ia.pop("auto_failed_prop_until", None)
+                    self.e.ia.pop("auto_need_deposit", None)
                 if moved > 0:
                     add_notification(f"{self.e.nom} a stocké {moved} ressources.")
             elif callable(interaction_conf.get("on_complete")):
@@ -434,6 +577,71 @@ class Comportement:
         if self.e.ia.get("etat") != "recolte":
             return
 
+        shared_key = w.get("shared_key")
+        if shared_key is not None:
+            jobs = self._phase_harvest_jobs()
+            if jobs is None:
+                self.e.work = None
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+                self.e.ia["order_action"] = None
+                self.e.ia["target_craft_id"] = None
+                return
+
+            job = jobs.get(shared_key)
+            if not job:
+                self.e.work = None
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+                self.e.ia["order_action"] = None
+                self.e.ia["target_craft_id"] = None
+                return
+
+            workers = set(job.get("workers") or set())
+            phase = getattr(self.e, "phase", None)
+            active_workers = set()
+            for worker in workers:
+                if phase and worker not in getattr(phase, "entities", []):
+                    continue
+                ww = getattr(worker, "work", None)
+                if not ww or ww.get("type") != "harvest":
+                    continue
+                if ww.get("shared_key") != shared_key:
+                    continue
+                if getattr(worker, "ia", {}).get("etat") != "recolte":
+                    continue
+                active_workers.add(worker)
+            active_workers.add(self.e)
+            job["workers"] = active_workers
+
+            if not active_workers:
+                jobs.pop(shared_key, None)
+                self.e.work = None
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+                self.e.ia["order_action"] = None
+                self.e.ia["target_craft_id"] = None
+                return
+
+            if job.get("leader") not in active_workers:
+                job["leader"] = next(iter(active_workers))
+
+            frame_id = int(getattr(phase, "_update_frame_id", 0))
+            if int(job.get("last_frame", -1)) != frame_id:
+                worker_mult = max(1, len(active_workers))
+                job["t"] = float(job.get("t", 0.0)) + dt * worker_mult
+                t_need = max(1e-6, float(job.get("t_need", 1.0)))
+                job["progress"] = min(1.0, float(job["t"]) / t_need)
+                job["last_frame"] = frame_id
+
+            w["progress"] = float(job.get("progress", 0.0))
+            if w["progress"] < 1.0:
+                return
+
+            if self.e is job.get("leader"):
+                self._resolve_shared_harvest(shared_key, world)
+            return
+
         w["t"] += dt
         w["progress"] = min(1.0, w["t"] / w["t_need"])
 
@@ -452,8 +660,12 @@ class Comportement:
                 pass
         if taken_total <= 0:
             add_notification(f"{self.e.nom} : inventaire plein !")
+            if isinstance(getattr(self.e, "ia", None), dict):
+                self.e.ia["auto_failed_prop"] = (int(w["i"]), int(w["j"]), str(w["pid"]))
+                self.e.ia["auto_need_deposit"] = True
             self.e.work = None
             self.e.ia["etat"] = "idle"
+            self.e.ia["objectif"] = None
             self.e.ia["order_action"] = None
             self.e.ia["target_craft_id"] = None
             return
