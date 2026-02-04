@@ -832,6 +832,68 @@ class ChunkedWorld:
         y = _clamp_lat_y(int(y), self.height)
         return self._get_chunk(x, y)
 
+    def _peek_chunk(self, cx: int, cy: int) -> Optional[_Chunk]:
+        key = (int(cx), int(cy))
+        ch = self._chunks.get(key)
+        if ch is not None:
+            self._chunks.move_to_end(key)
+        return ch
+
+    def get_tile_snapshot(self, x: int, y: int, generate: bool = True):
+        """
+        Retourne un snapshot compact d'une tuile:
+          (level:int, ground_id:int, overlay:any, biome_id:int)
+        Si generate=False et que le chunk n'est pas en cache, renvoie None.
+        """
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+
+        cs = self.chunk_size
+        cx = x // cs
+        cy = y // cs
+        lx = x - cx * cs
+        ly = y - cy * cs
+
+        ch = self._peek_chunk(cx, cy) if not generate else None
+        if ch is None:
+            if not generate:
+                return None
+            ch, _, _ = self._get_chunk(x, y)
+
+        k = ch.idx(lx, ly)
+        ov = self._overlay_overrides.get((x, y), self._NO)
+        if ov is self._NO:
+            pid = int(ch.overlay_obj[k])
+            overlay = None if pid == 0 else pid
+        else:
+            overlay = ov
+        return (
+            int(ch.levels_u8[k]),
+            int(ch.ground_u16[k]),
+            overlay,
+            int(ch.biome_u8[k]),
+        )
+
+    def ensure_chunk_at(self, x: int, y: int) -> None:
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        self._get_chunk(x, y)
+
+    def prewarm_chunk_coords(
+        self,
+        chunk_coords: list[tuple[int, int]],
+        progress: ProgressCb = None,
+        phase_label: str = "Préchargement rendu…",
+    ) -> None:
+        total = max(1, len(chunk_coords))
+        for idx, (cx_raw, cy) in enumerate(chunk_coords):
+            if cy < 0 or cy * self.chunk_size >= self.height:
+                continue
+            cx = (int(cx_raw) * self.chunk_size) % self.width // self.chunk_size
+            self._get_chunk(cx * self.chunk_size, int(cy) * self.chunk_size)
+            if progress:
+                progress((idx + 1) / total, f"{phase_label} ({idx + 1}/{total})")
+
     def _get_chunk(self, x: int, y: int):
         cs = self.chunk_size
         cx = x // cs
@@ -1201,92 +1263,196 @@ class ChunkedWorld:
 
     # ------------------- spawn -------------------
 
+    def _estimate_spawn_score(self, wx: int, wy: int) -> Optional[float]:
+        """
+        Estimation rapide de qualité de spawn, sans génération de chunk.
+        Retourne None si case probablement non adaptée (eau/props denses).
+        """
+        base = int(self.seed)
+        knobs = self._knobs()
+        rugged = float(knobs.get("rugged", 1.0))
+        temp_bias = float(knobs.get("temp_bias", 0.0))
+        water_bias = float(knobs.get("water_bias", 0.0))
+        biodiv_mul = float(knobs.get("biodiv_mul", 1.0))
+        res_mul = float(knobs.get("res_mul", 1.0))
+
+        cont_scale = 0.0011 * rugged
+        detail_scale = 0.0100 * rugged
+        macro_scale = 0.00035 * rugged
+        macro_amp = 0.55 * rugged
+        warp_amp = 140.0 * rugged
+        warp_scale = 0.0009
+        coast_var_scale = 0.0035
+        coast_var_amp = 0.030
+
+        gx = float(wx)
+        gy = float(wy)
+
+        wxp = gx + warp_amp * _fbm_perlin(gx * warp_scale, gy * warp_scale, base + 90001, octaves=2)
+        wyp = gy + warp_amp * _fbm_perlin((gx + 1337.0) * warp_scale, (gy - 7331.0) * warp_scale, base + 90002, octaves=2)
+
+        h1 = _fbm_perlin(wxp * cont_scale, wyp * cont_scale, base + 11, octaves=5)
+        h2 = _fbm_perlin(wxp * detail_scale, wyp * detail_scale, base + 97, octaves=4)
+        macro = _fbm_perlin(wxp * macro_scale, wyp * macro_scale, base + 4001, octaves=3)
+
+        height = (0.72 * h1 + 0.28 * h2 + macro * macro_amp) / (1.0 + macro_amp)
+        height -= self.sea_level
+        height += coast_var_amp * _fbm_perlin(wxp * coast_var_scale, wyp * coast_var_scale, base + 9991, octaves=2)
+
+        # montagnes + micro-relief (meme logique que _generate_chunk)
+        ridged = 1.0 - abs(_fbm_perlin(wxp * (0.0045 * rugged), wyp * (0.0045 * rugged), base + 7777, octaves=4))
+        ridged = _clamp01(ridged) ** 2
+        mount_mask = _clamp01((_clamp01((height + 1.0) * 0.5) - 0.50) / 0.50)
+        height += (0.38 * rugged) * ridged * (mount_mask ** 2)
+        micro = _fbm_perlin(wxp * 0.025, wyp * 0.025, base + 4242, octaves=3)
+        height += 0.05 * micro
+        height -= 0.06 * water_bias
+        h01 = _clamp01((height + 1.0) * 0.5)
+
+        lake_level = 0.08 + 0.04 * water_bias
+        lake_level = max(0.02, min(0.22, lake_level))
+        lake_noise = _fbm(wxp * 0.0022, wyp * 0.0022, base + 6060, octaves=3)
+        lake_cut = 0.32 - 0.18 * water_bias
+        is_lake = (lake_noise > lake_cut) and (height < lake_level) and (height >= 0.0)
+
+        river_noise = abs(_fbm(wxp * 0.008, wyp * 0.008, base + 7070, octaves=3))
+        river_th = 0.032 + 0.014 * max(0.0, water_bias)
+        is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
+        is_ocean = height < 0.0
+        coast_band = 0.06
+        coast = (not (is_ocean or is_lake or is_river)) and (
+            height < coast_band
+            or (lake_noise > lake_cut - 0.06 and height < lake_level + 0.03)
+            or (river_noise < river_th * 1.8 and height < 0.62)
+        )
+
+        if is_ocean or is_lake or is_river or coast:
+            return None
+
+        lat = (wy / max(1, self.height - 1)) * 2.0 - 1.0
+        lat_abs = abs(lat)
+        tnoise = _fbm(wxp * 0.003, wyp * 0.003, base + 201, octaves=3)
+        t01 = _clamp01((1.0 - lat_abs) + 0.25 * tnoise + temp_bias)
+        mnoise = _fbm(wxp * 0.004, wyp * 0.004, base + 333, octaves=4)
+        m01 = _clamp01((mnoise + 1.0) * 0.5 - 0.45 * max(0.0, height))
+
+        if t01 < 0.18:
+            bid = BIOME_SNOW
+        elif t01 < 0.32:
+            bid = BIOME_TAIGA if m01 > 0.35 else BIOME_TUNDRA
+        else:
+            if m01 < 0.22:
+                bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
+            elif m01 < 0.42:
+                bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
+            elif m01 < 0.58:
+                bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
+            else:
+                bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
+
+        base_p = 0.02 * biodiv_mul
+        if bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
+            base_p *= 2.2
+        elif bid == BIOME_SAVANNA:
+            base_p *= 1.2
+        elif bid == BIOME_PLAINS:
+            base_p *= 0.9
+        elif bid in (BIOME_SNOW, BIOME_TUNDRA):
+            base_p *= 0.35
+        elif bid == BIOME_DESERT:
+            base_p *= 0.25
+        ore_p = 0.0045 * res_mul
+
+        tile_seed = _hash_u32(base ^ _hash_u32(wx * 912367) ^ _hash_u32(wy * 972541))
+        r0 = _rand01_from_u32(tile_seed)
+        if r0 < (ore_p + base_p):
+            return None
+
+        score = 0.0
+        if bid in (BIOME_PLAINS, BIOME_FOREST):
+            score += 3.0
+        elif bid == BIOME_SAVANNA:
+            score += 1.0
+        if bid in (BIOME_DESERT, BIOME_SNOW, BIOME_TUNDRA):
+            score -= 4.0
+        score -= abs(h01 - 0.62) * 6.0
+        return score
+
     def _find_spawn(self, progress: ProgressCb = None) -> Tuple[int, int]:
         """
-        Spawn rapide et non bloquant :
-        - ne génère qu'un petit voisinage de chunks (évite les scans énormes)
-        - scoring simple pour choisir une zone "confortable"
-        - yield du GIL pour laisser l’UI respirer (sinon "ne répond plus")
+        Recherche rapide de spawn sans générer de chunk.
+        Évite le gros pic CPU avant l'écran de chargement complet.
         """
         mid_x = self.width // 2
         mid_y = self.height // 2
-        cs = self.chunk_size
-        cx0 = mid_x // cs
-        cy0 = mid_y // cs
 
-        best = None
+        best = (mid_x, mid_y)
         best_score = -1e9
-
-        def is_blocked(wx: int, wy: int, ch: _Chunk, lx: int, ly: int) -> bool:
-            ov = self._overlay_overrides.get((wx, wy), self._NO)
-            if ov is not self._NO:
-                return ov not in (None, 0)
-            return int(ch.overlay_obj[ch.idx(lx, ly)]) != 0
-
-        def score_tile(bid: int, h01: float) -> float:
-            score = 0.0
-            if bid in (BIOME_PLAINS, BIOME_FOREST):
-                score += 3.0
-            elif bid == BIOME_SAVANNA:
-                score += 1.0
-            if bid in (BIOME_DESERT, BIOME_SNOW, BIOME_TUNDRA):
-                score -= 4.0
-            score -= abs(h01 - 0.62) * 6.0
-            return score
 
         if progress:
             progress(0.0, "Spawn…")
 
-        # Génère le chunk central, puis (si besoin) les 8 voisins
-        chunk_coords = [(cx0, cy0)]
-        for dy in (-1, 0, 1):
-            for dx in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                chunk_coords.append((cx0 + dx, cy0 + dy))
+        span_x = min(max(128, self.width // 12), 640)
+        span_y = min(max(96, self.height // 12), 480)
 
-        total_chunks = len(chunk_coords)
-        for i, (cx, cy) in enumerate(chunk_coords):
-            # clamp vertical
-            if cy < 0 or cy * cs >= self.height:
-                continue
-            # wrap horizontal
-            cx = (cx * cs) % self.width // cs
+        coarse_step = max(10, self.chunk_size // 2)
+        x0 = max(0, mid_x - span_x)
+        x1 = min(self.width - 1, mid_x + span_x)
+        y0 = max(0, mid_y - span_y)
+        y1 = min(self.height - 1, mid_y + span_y)
 
-            # force génération du chunk (cache)
-            ch, _, _ = self._get_chunk(cx * cs, cy * cs)
-            actual_w = min(cs, max(0, self.width - cx * cs))
-            actual_h = min(cs, max(0, self.height - cy * cs))
+        xs = list(range(x0, x1 + 1, coarse_step))
+        ys = list(range(y0, y1 + 1, coarse_step))
+        total_samples = max(1, len(xs) * len(ys))
+        sample_idx = 0
 
-            for ly in range(actual_h):
-                wy = cy * cs + ly
-                for lx in range(actual_w):
-                    wx = cx * cs + lx
-                    bid = int(ch.biome_u8[ch.idx(lx, ly)])
-                    if bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
-                        continue
-                    if is_blocked(wx, wy, ch, lx, ly):
-                        continue
-                    h01 = ch.height_u8[ch.idx(lx, ly)] / 255.0
-                    score = score_tile(bid, h01)
-                    if score > best_score:
-                        best_score = score
-                        best = (wx, wy)
-
+        for wy in ys:
+            for wx in xs:
+                score = self._estimate_spawn_score(wx, wy)
+                if score is not None and score > best_score:
+                    best_score = score
+                    best = (wx, wy)
+                sample_idx += 1
             if progress:
-                progress((i + 1) / max(1, total_chunks), f"Recherche du point de départ… ({i+1}/{total_chunks})")
-            time.sleep(0)  # yield GIL
+                progress(
+                    0.15 + 0.65 * (sample_idx / total_samples),
+                    f"Recherche du point de départ… ({sample_idx}/{total_samples})",
+                )
 
-            # si on a déjà trouvé une position dans le chunk central, on s'arrête
-            if i == 0 and best:
-                return best
+        # passe de raffinement locale autour du meilleur candidat
+        bx, by = best
+        refine_radius = max(24, coarse_step * 2)
+        refine_step = max(3, coarse_step // 4)
+        rx0 = max(0, bx - refine_radius)
+        rx1 = min(self.width - 1, bx + refine_radius)
+        ry0 = max(0, by - refine_radius)
+        ry1 = min(self.height - 1, by + refine_radius)
 
-        if best:
-            return best
+        rxs = list(range(rx0, rx1 + 1, refine_step))
+        rys = list(range(ry0, ry1 + 1, refine_step))
+        total_refine = max(1, len(rxs) * len(rys))
+        refine_idx = 0
+        for wy in rys:
+            for wx in rxs:
+                score = self._estimate_spawn_score(wx, wy)
+                if score is None:
+                    refine_idx += 1
+                    continue
+                dist_penalty = 0.002 * (abs(wx - mid_x) + abs(wy - mid_y))
+                final_score = score - dist_penalty
+                if final_score > best_score:
+                    best_score = final_score
+                    best = (wx, wy)
+                refine_idx += 1
+            if progress:
+                progress(
+                    0.80 + 0.20 * (refine_idx / total_refine),
+                    f"Recherche du point de départ… (raffinage {refine_idx}/{total_refine})",
+                )
 
         if progress:
-            progress(1.0, "Fallback spawn…")
-        return (mid_x, mid_y)
+            progress(1.0, "Spawn validé")
+        return best
 
 
     # ------------------- save helpers (optionnel) -------------------

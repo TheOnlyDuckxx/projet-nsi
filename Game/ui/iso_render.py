@@ -387,7 +387,15 @@ class IsoMapView:
                 
                 
 
-                z = self.world.levels[j][i] if self.world.levels else 0
+                if hasattr(self.world, "get_tile_snapshot"):
+                    tile_snap = self.world.get_tile_snapshot(i, j, generate=True)
+                    if tile_snap is None:
+                        continue
+                    z, gid, cell, _bid = tile_snap
+                else:
+                    z = self.world.levels[j][i] if self.world.levels else 0
+                    gid = self.world.ground_id[j][i]
+                    cell = self.world.overlay[j][i]
                 sx, sy = self._world_to_screen(i, j, z, dx, dy, wall_h)
 
                 if sx < -200 or sx > self.screen_w + 200 or sy < -300 or sy > self.screen_h + 300:
@@ -396,7 +404,6 @@ class IsoMapView:
                 # sol
                 # sol
                 gray = (not visible)
-                gid = self.world.ground_id[j][i]
                 gimg = self._get_scaled_ground(gid, gray=gray)
                 
                 if gimg:
@@ -420,7 +427,6 @@ class IsoMapView:
 
                 # --- PROP DE LA TUILE ---
                 if draw_props:
-                    cell = self.world.overlay[j][i]
                     pid = cell.get("pid") if isinstance(cell, dict) else cell
                     if pid:
                         gray = (not visible)

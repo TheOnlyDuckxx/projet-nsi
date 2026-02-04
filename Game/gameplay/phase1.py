@@ -26,6 +26,9 @@ from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
 from Game.gameplay.tech_tree import TechTreeManager
+
+_WATER_BIOME_IDS = {1, 2, 3, 4}
+
 class Phase1:
     def __init__(self, app):
         self.app = app
@@ -854,8 +857,9 @@ class Phase1:
             center_x = getattr(self.world, "width", 1) // 2
             center_y = getattr(self.world, "height", 1) // 2
 
-        x_span = min(max(96, getattr(self.world, "width", 1) // 12), 640)
-        y_span = min(max(96, getattr(self.world, "height", 1) // 10), 480)
+        # Zone plus locale pour éviter de générer de nombreux chunks hors écran.
+        x_span = min(max(96, getattr(self.world, "width", 1) // 20), 240)
+        y_span = min(max(96, getattr(self.world, "height", 1) // 22), 200)
 
         self._fauna_spawn_job = {
             "count": int(count),
@@ -867,7 +871,7 @@ class Phase1:
             "y_span": int(y_span),
             "zones": [],
             "attempts": 0,
-            "max_attempts": int(count) * 50,
+            "max_attempts": int(count) * 40,
             "forbidden": self._occupied_tiles(),
         }
 
@@ -894,7 +898,7 @@ class Phase1:
             j = int(center_y + rng.randrange(-y_span, y_span + 1))
             if i < 0 or j < 0 or i >= getattr(self.world, "width", 1) or j >= getattr(self.world, "height", 1):
                 continue
-            if not self._is_walkable(i, j):
+            if not self._is_walkable(i, j, generate=False):
                 continue
             if (i, j) in forbidden:
                 continue
@@ -1047,6 +1051,10 @@ class Phase1:
                     sx, sy = self.world.spawn
                 except Exception:
                     sx, sy = 0, 0
+                if not self._is_walkable(int(sx), int(sy), generate=False):
+                    fallback_spawn = self._find_nearest_walkable((int(sx), int(sy)), max_radius=16)
+                    if fallback_spawn:
+                        sx, sy = fallback_spawn
                 self._perf_enter_mark(perf, f"Point de spawn resolu ({sx}, {sy})")
                 from Game.species.species import Espece
                 self.espece = Espece("Hominidé")
@@ -1081,7 +1089,12 @@ class Phase1:
             else:
                 self.bottom_hud.species = self.espece
                 self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
-            if not self.fauna_spawn_zones:
+            pre_fauna_zones = kwargs.get("fauna_spawn_zones", None)
+            if pre_fauna_zones:
+                self.fauna_spawn_zones = list(pre_fauna_zones)
+                self._fauna_spawn_job = None
+                self._perf_enter_mark(perf, f"Zones de spawn faune prechargees ({len(self.fauna_spawn_zones)})")
+            elif not self.fauna_spawn_zones:
                 self._start_fauna_spawn_job()
                 self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
             self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")            
@@ -1134,6 +1147,10 @@ class Phase1:
             sx, sy = self.world.spawn
         except Exception:
             sx, sy = 0, 0
+        if not self._is_walkable(int(sx), int(sy), generate=False):
+            fallback_spawn = self._find_nearest_walkable((int(sx), int(sy)), max_radius=16)
+            if fallback_spawn:
+                sx, sy = fallback_spawn
         self._perf_enter_mark(perf, f"Point de spawn resolu ({sx}, {sy})")
         if not self.joueur:
             from Game.species.species import Espece
@@ -1841,36 +1858,41 @@ class Phase1:
             return True
 
     # ---------- PATHFINDING & COLLISIONS ----------
-    def _is_walkable(self, i: int, j: int) -> bool:
+    def _is_walkable(self, i: int, j: int, generate: bool = True) -> bool:
         w = self.world
         if not w: return False
         if i < 0 or j < 0 or i >= w.width or j >= w.height:
             return False
-        # props bloquent
+
+        if hasattr(w, "get_tile_snapshot"):
+            snap = w.get_tile_snapshot(i, j, generate=generate)
+            if snap is None:
+                return False
+            _lvl, gid, overlay, bid = snap
+            if overlay:
+                return False
+            if int(bid) in _WATER_BIOME_IDS:
+                return False
+            # Fallback ultra conservateur pour anciens IDs/tiles.
+            name = get_ground_sprite_name(gid) if gid is not None else None
+            if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake")):
+                return False
+            return True
+
+        # Fallback pour mondes qui n'exposent pas get_tile_snapshot.
         try:
             pid = w.overlay[j][i]
-            if pid:  # tout prop considéré solide
+            if pid:
                 return False
         except Exception:
             pass
-        # eau bloque
-        # cas 1: carte eau dédiée
-        if hasattr(w, "is_water") and w.is_water:
-            try:
-                if w.is_water[j][i]:
-                    return False
-            except Exception:
-                pass
-        # cas 2: heuristique sur le nom de sol
         try:
             gid = w.ground_id[j][i]
         except Exception:
             gid = None
         name = get_ground_sprite_name(gid) if gid is not None else None
-        if name:
-            lname = name.lower()
-            if "water" in lname or "ocean" in lname or "sea" in lname or "lake" in lname:
-                return False
+        if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake")):
+            return False
         return True
 
     def _occupied_tiles(self, exclude: list | None = None) -> set[tuple[int, int]]:

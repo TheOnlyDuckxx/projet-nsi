@@ -14,7 +14,7 @@
     "language": "fr"
   },
   "debug": {
-    "perf_logs": true,
+    "perf_logs": false,
     "perf_slow_frame_ms": 120
   },
   "species": {
