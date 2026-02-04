@@ -1,5 +1,6 @@
 import os
 import pickle
+import time
 from typing import Any, Dict
 from Game.world.fog_of_war import FogOfWar
 
@@ -221,27 +222,41 @@ class SaveManager:
     # CHARGEMENT
     # ------------------------------------------------------------------
     def load_phase1(self, phase1) -> bool:
+        start_t = time.perf_counter()
+        last_t = start_t
+        perf_enabled = bool(getattr(getattr(phase1, "app", None), "settings", None).get("debug.perf_logs", True)) if getattr(getattr(phase1, "app", None), "settings", None) else True
+
+        def log_step(label: str):
+            nonlocal last_t
+            if not perf_enabled:
+                return
+            now_t = time.perf_counter()
+            print(f"[Perf][SaveLoad] {label} | +{now_t - last_t:.3f}s | total {now_t - start_t:.3f}s")
+            last_t = now_t
+
         try:
+            log_step(f"Debut load_phase1 path={self.path}")
             if not self.save_exists():
-                print("✗ Aucune sauvegarde trouvée")
+                print("[Save] Aucune sauvegarde trouvee")
                 return False
+            log_step("Fichier de sauvegarde detecte")
 
             with open(self.path, "rb") as f:
                 header = f.read(len(SAVE_HEADER))
                 if header != SAVE_HEADER:
-                    # Anciennes sauvegardes sans header : on abandonne
-                    print("✗ Format de sauvegarde inconnu (header invalide)")
+                    print("[Save] Format de sauvegarde inconnu (header invalide)")
                     return False
-
                 data = pickle.load(f)
+            log_step("Header valide + payload deserialize")
 
             version = data.get("version", "1.0")
-            print(f"→ Chargement sauvegarde version {version}")
+            print(f"[Save] Chargement sauvegarde version {version}")
 
             # ----------------- Monde + params -----------------
             phase1.world = data.get("world")
             phase1.params = data.get("params")
             phase1.view.set_world(phase1.world)
+            log_step("Monde + params injectes")
 
             fog_data = data.get("fog") or {}
             if phase1.world is not None:
@@ -249,7 +264,9 @@ class SaveManager:
                 wrap_x = bool(fog_data.get("wrap_x", False))
                 phase1.fog = FogOfWar(phase1.world.width, phase1.world.height, chunk_size=cs, wrap_x=wrap_x)
                 phase1.view.fog = phase1.fog
-            # ----------------- Espèce + individus -----------------
+            log_step("Fog prepare")
+
+            # ----------------- Espece + individus -----------------
             species_registry_data = data.get("species_registry") or {}
             fauna_species_key = data.get("fauna_species_key")
             individus_data = data.get("individus", [])
@@ -267,6 +284,7 @@ class SaveManager:
                 phase1.espece = espece
                 if espece:
                     species_map["player"] = espece
+            log_step("Espece joueur restauree")
 
             for key, sdata in species_registry_data.items():
                 if key == "player" and species_map.get("player"):
@@ -274,6 +292,7 @@ class SaveManager:
                 restored = self._restore_species_from_data(sdata, phase1=phase1, assets=phase1.assets)
                 if restored:
                     species_map[key] = restored
+            log_step(f"Registry especes restaure ({len(species_map)})")
 
             if fauna_species_key and fauna_species_key in species_map:
                 phase1.fauna_species = species_map[fauna_species_key]
@@ -281,7 +300,8 @@ class SaveManager:
                 phase1.fauna_species = species_map["fauna"]
 
             # ---------- Reconstruction des individus ----------
-            for ind_data in individus_data:
+            total_individus = len(individus_data)
+            for idx, ind_data in enumerate(individus_data, start=1):
                 pos = ind_data.get("pos", (0.0, 0.0))
                 x, y = float(pos[0]), float(pos[1])
 
@@ -306,7 +326,6 @@ class SaveManager:
                 else:
                     ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
 
-                # Stats individuelles
                 for attr_name in [
                     "physique", "sens", "mental", "social",
                     "environnement", "combat", "genetique"
@@ -315,43 +334,41 @@ class SaveManager:
                     if val is not None:
                         setattr(ent, attr_name, val)
 
-                # Jauges & IA
                 if ind_data.get("jauges") is not None:
                     ent.jauges = ind_data["jauges"]
                 if ind_data.get("ia") is not None:
                     ent.ia = ind_data["ia"]
-
-                # Inventaire
                 if ind_data.get("inventaire") is not None:
                     ent.carrying = ind_data["inventaire"]
-
-                # Effets spéciaux
                 if ind_data.get("effets_speciaux") is not None:
                     ent.effets_speciaux = ind_data["effets_speciaux"]
 
                 if is_fauna:
                     ent.is_fauna = True
 
-                # Joueur ?
                 if ind_data.get("is_player"):
                     phase1.joueur = ent
 
                 phase1.entities.append(ent)
 
-            # Si aucun individu n'est marqué joueur, on prend le premier
+                if idx % 100 == 0 or idx == total_individus:
+                    log_step(f"Reconstruction individus {idx}/{total_individus}")
+
             if phase1.joueur is None and phase1.entities:
                 phase1.joueur = phase1.entities[0]
+            log_step(f"Individus restaures ({len(phase1.entities)}), joueur={'ok' if phase1.joueur else 'absent'}")
 
-            # ----------------- Caméra + zoom -----------------
+            # ----------------- Camera + zoom -----------------
             camx, camy = data.get("camera", (0, 0))
             phase1.view.cam_x = camx
             phase1.view.cam_y = camy
             phase1.view.zoom = data.get("zoom", 1.0)
+            log_step("Camera + zoom restaures")
 
-            # Re-lie la phase aux entités pour les interactions personnalisées
             attach_fn = getattr(phase1, "_attach_phase_to_entities", None)
             if callable(attach_fn):
                 attach_fn()
+            log_step("Entites rattachees a la phase")
 
             phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
             if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
@@ -364,7 +381,6 @@ class SaveManager:
                     phase1._generate_fauna_spawn_zones()
                 except Exception:
                     pass
-            # phase1.view.clamp_camera() si tu as ça
 
             phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
             if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
@@ -388,26 +404,27 @@ class SaveManager:
                     phase1._generate_fauna_spawn_zones()
                 except Exception:
                     pass
-            # ----------------- Brouillard de guerre -----------------
+            log_step("Faune et zones de spawn restaurees")
+
             fog_data = data.get("fog")
             if fog_data is not None:
                 fog = getattr(phase1, "fog", None)
                 if fog is not None and hasattr(fog, "import_state"):
                     fog.import_state(fog_data)
-            
-            # ----------------- Évènements -----------------
+            log_step("Etat fog importe")
+
             events_state = data.get("events")
             if events_state is not None:
                 mgr = getattr(phase1, "event_manager", None)
                 if mgr is not None:
                     mgr.load_state(events_state)
-            
-            # ----------------- Entrepôt partagé -----------------
+            log_step("Events restaures")
+
             warehouse_data = data.get("warehouse")
             if warehouse_data is not None:
                 phase1.warehouse = dict(warehouse_data)
+            log_step("Entrepot restaure")
 
-            # ----------------- Jour / Nuit -----------------
             dn_data = data.get("day_night")
             if dn_data is not None:
                 from Game.world.day_night import DayNightCycle
@@ -417,14 +434,13 @@ class SaveManager:
                     dn = DayNightCycle(cycle_duration=dn_data.get("cycle_duration", 600))
                     phase1.day_night = dn
 
-                # On ne remplace pas forcément l'objet, on le met à jour
                 dn.cycle_duration = dn_data.get("cycle_duration", getattr(dn, "cycle_duration", 600))
                 dn.time_elapsed = float(dn_data.get("time_elapsed", 0.0)) % max(1e-6, dn.cycle_duration)
                 dn.time_speed = float(dn_data.get("time_speed", getattr(dn, "time_speed", 1.0)))
                 dn.paused = bool(dn_data.get("paused", False))
                 dn.jour = int(dn_data.get("jour", 0))
+            log_step("Jour/Nuit restaure")
 
-            # ----------------- Bonheur / décès / crafts -----------------
             phase1.happiness = data.get("happiness", getattr(phase1, "happiness", 10.0))
             phase1.death_response_mode = data.get("death_response_mode")
             phase1.death_event_ready = data.get("death_event_ready", False)
@@ -446,16 +462,17 @@ class SaveManager:
                         phase1.unlock_craft(craft_id)
                 if phase1.bottom_hud:
                     phase1.bottom_hud.refresh_craft_buttons()
-
+            log_step("Stats globales + tech tree restaures")
 
             phase1.save_message = "✓ Partie chargée !"
             phase1.save_message_timer = 3.0
-            print(f"✓ Partie chargée depuis {self.path}")
+            print(f"[Save] Partie chargee depuis {self.path}")
+            log_step("Chargement termine")
             return True
 
         except Exception as e:
             import traceback
-            print(f"✗ Erreur lors du chargement: {e}")
+            print(f"[Save] Erreur lors du chargement: {e}")
             traceback.print_exc()
             phase1.save_message = "✗ Erreur de chargement"
             phase1.save_message_timer = 3.0

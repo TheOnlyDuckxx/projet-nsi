@@ -147,6 +147,14 @@ class OptionsMenu(BaseMenu):
             min_v=30, max_v=240, step=5
         ))
 
+        self.toggle_perf_logs = self.add(Toggle(
+            "Logs performance",
+            (x, 0),
+            get_value=lambda: bool(app.settings.get("debug.perf_logs", True)),
+            set_value=lambda v: app.settings.set("debug.perf_logs", bool(v)),
+            font=self.btn_font
+        ))
+
         ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
         self.btn_back = Button(
             "← Retour",
@@ -181,6 +189,7 @@ class OptionsMenu(BaseMenu):
             self.slider_music,
             self.slider_sfx,
             self.slider_fps,
+            self.toggle_perf_logs,
         ]
 
         def item_block_h(w):

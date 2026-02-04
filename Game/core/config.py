@@ -22,7 +22,11 @@ DEFAULTS = {
         "sfx_volume": 0.9
     },
     "video":   {"fullscreen": False, "fps_cap": 60, "vsync": False},
-    "gameplay":{"language": "fr"}
+    "gameplay":{"language": "fr"},
+    "debug": {
+        "perf_logs": True,
+        "perf_slow_frame_ms": 120
+    }
 }
 # --------------- CLASSE QUI GERE LES PARAMETRES PRINCIPAUX ---------------
 class Settings:

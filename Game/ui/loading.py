@@ -1,6 +1,7 @@
 # Game/ui/loading.py
 import pygame
 import threading
+import time
 from Game.core.config import WIDTH, HEIGHT
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 
@@ -28,6 +29,7 @@ class LoadingState:
         # pour passer au state suivant
         self._world = None
         self._params = None
+        self._perf_logs_enabled = True
 
     def enter(self, **kwargs):
         # kwargs possibles: preset, seed
@@ -37,22 +39,53 @@ class LoadingState:
         self.failed = None
         self._world = None
         self._params = None
+        self._perf_logs_enabled = bool(self.app.settings.get("debug.perf_logs", True))
 
         def worker():
             try:
+                start_t = time.perf_counter()
+                last_t = start_t
+
+                def log_step(label: str):
+                    nonlocal last_t
+                    if not self._perf_logs_enabled:
+                        return
+                    now_t = time.perf_counter()
+                    print(f"[Perf][Loading] {label} | +{now_t - last_t:.3f}s | total {now_t - start_t:.3f}s")
+                    last_t = now_t
+
                 preset = kwargs.get("preset", "Custom")
                 seed   = kwargs.get("seed", None)
+                log_step(f"Debut generation world (preset={preset}, seed={seed})")
                 overrides = {"seed": seed} if seed is not None else None
                 self._params = load_world_params_from_preset(preset, overrides=overrides)
+                log_step("Parametres de monde charges")
                 gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=256)
+                log_step("WorldGenerator initialise")
+
+                phase_label = None
+                phase_time = time.perf_counter()
 
                 def on_progress(p, label):
+                    nonlocal phase_label, phase_time
                     self.progress = max(0.0, min(1.0, float(p)))
-                    self.phase_txt = str(label)
+                    current_label = str(label)
+                    self.phase_txt = current_label
+                    if self._perf_logs_enabled and current_label != phase_label:
+                        now_t = time.perf_counter()
+                        print(
+                            f"[Perf][Loading] Phase '{current_label}' ({self.progress * 100:.1f}%)"
+                            f" | +{now_t - phase_time:.3f}s | total {now_t - start_t:.3f}s"
+                        )
+                        phase_label = current_label
+                        phase_time = now_t
 
                 rng_seed = seed if seed is not None else self._params.seed
+                log_step(f"Lancement generate_planet (rng_seed={rng_seed})")
                 self._world = gen.generate_planet(self._params, rng_seed=rng_seed, progress=on_progress)
+                log_step("Monde genere")
                 self.done = True
+                log_step("Etat LOADING termine")
             except Exception as e:
                 self.failed = e
 
@@ -72,7 +105,11 @@ class LoadingState:
             return
         if self.done and self._world:
             # Passe à PHASE1 avec le world déjà prêt
+            if self._perf_logs_enabled:
+                print("[Perf][Loading] Transition vers PHASE1 (debut)")
             self.app.change_state("PHASE1", world=self._world, params=self._params)
+            if self._perf_logs_enabled:
+                print("[Perf][Loading] Transition vers PHASE1 (fin)")
 
     def render(self, screen):
         screen.blit(self.bg, (0,0))

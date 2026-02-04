@@ -5,6 +5,7 @@
 # --------------- IMPORTATION DES MODULES ---------------
 
 import pygame
+import time
 from Game.core.config import WIDTH, HEIGHT, FPS, TITLE, Settings
 from Game.ui.menu.menu_main import MainMenu, OptionsMenu, CreditMenu, WorldCreationMenu, SpeciesCreationMenu
 from Game.core.assets import Assets
@@ -35,6 +36,7 @@ class App:
         self.states = {}
         self.state = None
         self.state_key = None
+        self._perf_phase1_trace_frames = 0
 
         self.settings = Settings()
         self.progression = ProgressionManager()
@@ -110,6 +112,10 @@ class App:
     # Permet de changer de "STATES"
     def change_state(self, key, **kwargs):
         prev_key = self.state_key
+        perf_enabled = bool(self.settings.get("debug.perf_logs", True))
+        if perf_enabled:
+            print(f"[Perf][App] change_state {prev_key} -> {key} (debut)")
+        t0 = time.perf_counter()
         Button.reset_cursor_state(restore=True)
         if self.state and hasattr(self.state, "leave"):
             self.state.leave()
@@ -117,6 +123,8 @@ class App:
         self.state_key = key
         if hasattr(self.state, "enter"):
             self.state.enter(**kwargs)
+        if key == "PHASE1":
+            self._perf_phase1_trace_frames = 120 if perf_enabled else 0
         if key != "PHASE1":
             self.set_cursor_image(self.default_cursor_path)
         if getattr(self, "progression", None):
@@ -124,28 +132,60 @@ class App:
                 self.progression.flush(force=True)
             if key == "PHASE1" and prev_key != "PHASE1":
                 self.progression.on_game_start()
+        if perf_enabled:
+            print(f"[Perf][App] change_state {prev_key} -> {key} (fin) | total {time.perf_counter() - t0:.3f}s")
 
     # Boucle principale pygame
     def run(self):
         print(WIDTH,HEIGHT)
         while self.running:
+            perf_enabled = bool(self.settings.get("debug.perf_logs", True))
+            slow_frame_sec = max(0.01, float(self.settings.get("debug.perf_slow_frame_ms", 120)) / 1000.0)
+            trace_frame = perf_enabled and self.state_key == "PHASE1" and self._perf_phase1_trace_frames > 0
+            frame_t0 = time.perf_counter()
             fps_cap = int(self.settings.get("video.fps_cap", FPS))
             dt = self.clock.tick(fps_cap) / 1000.0
+            after_tick = time.perf_counter()
             events = pygame.event.get()
+            after_events = time.perf_counter()
             Button.reset_cursor_state(restore=True)
             for e in events:
                 if e.type == pygame.QUIT:
                     self.running = False
             if hasattr(self.state, "handle_input"):
                 self.state.handle_input(events)
+            after_input = time.perf_counter()
             if getattr(self, "progression", None):
                 self.progression.tick(dt, active=self.state_key == "PHASE1")
+            after_progression = time.perf_counter()
             if hasattr(self.state, "update"):
+                if trace_frame:
+                    print(f"[Perf][App][Frame] update start state={self.state_key}")
                 self.state.update(dt)
+                if trace_frame:
+                    print(f"[Perf][App][Frame] update end state={self.state_key}")
+            after_update = time.perf_counter()
             if hasattr(self.state, "render"):
+                if trace_frame:
+                    print(f"[Perf][App][Frame] render start state={self.state_key}")
                 self.state.render(self.screen)
+                if trace_frame:
+                    print(f"[Perf][App][Frame] render end state={self.state_key}")
+            after_render = time.perf_counter()
             draw_notifications(self.screen)
             pygame.display.flip()
+            after_flip = time.perf_counter()
+            frame_total = after_flip - frame_t0
+            if perf_enabled and (trace_frame or frame_total >= slow_frame_sec):
+                print(
+                    f"[Perf][App][Frame] state={self.state_key} dt={dt:.3f}s total={frame_total:.3f}s | "
+                    f"tick={after_tick - frame_t0:.3f}s events={after_events - after_tick:.3f}s "
+                    f"input={after_input - after_events:.3f}s progression={after_progression - after_input:.3f}s "
+                    f"update={after_update - after_progression:.3f}s render={after_render - after_update:.3f}s "
+                    f"flip+notif={after_flip - after_render:.3f}s"
+                )
+            if self._perf_phase1_trace_frames > 0 and self.state_key == "PHASE1":
+                self._perf_phase1_trace_frames -= 1
         if getattr(self, "progression", None):
             self.progression.flush(force=True)
         pygame.quit()

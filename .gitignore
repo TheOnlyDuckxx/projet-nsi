@@ -9,6 +9,5 @@ __pycache__/
 
 .DS_Store
 
-Game/data/settings.json
 Game/save/progression.json
 Game/save/savegame.evosave

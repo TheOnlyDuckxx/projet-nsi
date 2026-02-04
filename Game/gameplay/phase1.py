@@ -3,6 +3,7 @@ import pygame
 import random
 import heapq
 import json
+import time
 from typing import Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
@@ -101,6 +102,37 @@ class Phase1:
         self._dragging_selection = False
         self._drag_threshold = 6
         self._ui_click_blocked = False
+        self._perf_logs_enabled = True
+        self._perf_slow_frame_sec = 0.12
+        self._perf_trace_frames = 0
+
+    def _perf_enter_start(self, source: str):
+        now = time.perf_counter()
+        if self._perf_logs_enabled:
+            print(f"[Perf][Phase1] Enter source={source} | +0.000s | total 0.000s")
+        return {"start": now, "last": now}
+
+    def _perf_enter_mark(self, perf: dict, label: str):
+        if not self._perf_logs_enabled:
+            return
+        now = time.perf_counter()
+        delta = now - perf["last"]
+        total = now - perf["start"]
+        perf["last"] = now
+        print(f"[Perf][Phase1] {label} | +{delta:.3f}s | total {total:.3f}s")
+
+    def _perf_update_settings(self):
+        settings = getattr(self.app, "settings", None)
+        if settings is None:
+            self._perf_logs_enabled = True
+            self._perf_slow_frame_sec = 0.12
+            return
+        self._perf_logs_enabled = bool(settings.get("debug.perf_logs", True))
+        slow_ms = settings.get("debug.perf_slow_frame_ms", 120)
+        try:
+            self._perf_slow_frame_sec = max(0.01, float(slow_ms) / 1000.0)
+        except Exception:
+            self._perf_slow_frame_sec = 0.12
 
     def _reset_session_state(self):
         """
@@ -684,136 +716,190 @@ class Phase1:
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
-        # Toujours repartir sur un état propre avant d'appliquer une sauvegarde
-        # ou de générer un nouveau monde.
+        self._perf_update_settings()
+        self._perf_trace_frames = 120 if self._perf_logs_enabled else 0
+        source = "new_world"
+        if kwargs.get("load_save", False):
+            source = "load_save"
+        elif kwargs.get("world", None) is not None:
+            source = "loading_state_world"
+        perf = self._perf_enter_start(source)
+
+        # Toujours repartir sur un etat propre avant d'appliquer une sauvegarde
+        # ou de generer un nouveau monde.
         self._reset_session_state()
+        self._perf_enter_mark(perf, "Etat de session reset")
 
         # 1) Si on demande explicitement de charger une sauvegarde et qu'elle existe
         if kwargs.get("load_save", False) and self.save_exists():
+            self._perf_enter_mark(perf, "Sauvegarde detectee, tentative de chargement")
             if self.load():
+                self._perf_enter_mark(perf, "Sauvegarde chargee")
                 if self.espece and not self.bottom_hud:
-                    self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+                    self.bottom_hud = BottomHUD(self, self.espece, self.day_night)
+                    self._perf_enter_mark(perf, "BottomHUD cree depuis sauvegarde")
                 if not self.fauna_species:
                     self._init_fauna_species()
+                    self._perf_enter_mark(perf, "Espece faune initialisee depuis sauvegarde")
                 if not self.fauna_spawn_zones:
                     self._start_fauna_spawn_job()
+                    self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
                 self._attach_phase_to_entities()
+                self._perf_enter_mark(perf, "Entites rattachees a la phase")
                 self._set_cursor(self.default_cursor_path)
+                self._perf_enter_mark(perf, "Curseur initialise, entree terminee (save)")
                 return
+            self._perf_enter_mark(perf, "Echec chargement sauvegarde, fallback creation")
 
-        # 2) Si le loader nous a déjà donné un monde et des params → on les utilise
+        # 2) Si le loader nous a deja donne un monde et des params -> on les utilise
         pre_world = kwargs.get("world", None)
         pre_params = kwargs.get("params", None)
 
         if pre_world is not None:
             self.world = pre_world
-            # si params non fournis, tente d'hériter depuis le world, sinon on garde self.params tel quel
+            self._perf_enter_mark(perf, "Monde pre-genere recu")
+            # si params non fournis, tente d'heriter depuis le world, sinon on garde self.params tel quel
             self.params = pre_params or getattr(pre_world, "params", None) or self.params
+            self._perf_enter_mark(perf, "Params associes au monde")
             self.view.set_world(self.world)
+            self._perf_enter_mark(perf, "World injecte dans la vue")
 
-            # s'assurer qu'on a un joueur (si on n'a pas chargé une save)
+            # s'assurer qu'on a un joueur (si on n'a pas charge une save)
             if not self.joueur:
                 try:
                     sx, sy = self.world.spawn
                 except Exception:
                     sx, sy = 0, 0
+                self._perf_enter_mark(perf, f"Point de spawn resolu ({sx}, {sy})")
                 from Game.species.species import Espece
                 self.espece = Espece("Hominidé")
+                self._perf_enter_mark(perf, "Espece joueur creee")
                 self._apply_species_creation_to_espece()
+                self._perf_enter_mark(perf, "Parametres de creation espece appliques")
                 self._apply_base_mutations_to_species()
+                self._perf_enter_mark(perf, "Mutations de base appliquees a l'espece")
                 self.joueur = self.espece.create_individu(
                     x=float(sx),
                     y=float(sy),
                     assets=self.assets,
                 )
+                self._perf_enter_mark(perf, "Joueur principal cree")
 
                 self.joueur2 = self.espece.create_individu(
-                    x=float(sx+1),
-                    y=float(sy+1),
+                    x=float(sx + 1),
+                    y=float(sy + 1),
                     assets=self.assets,
                 )
+                self._perf_enter_mark(perf, "Joueur secondaire cree")
                 self._apply_base_mutations_to_individus()
-                self.entities = [self.joueur,self.joueur2]
+                self._perf_enter_mark(perf, "Mutations appliquees aux individus")
+                self.entities = [self.joueur, self.joueur2]
                 self._init_fauna_species()
+                self._perf_enter_mark(perf, "Espece faune initialisee")
                 self._attach_phase_to_entities()
+                self._perf_enter_mark(perf, "Entites rattachees a la phase")
             if self.bottom_hud is None:
-                self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+                self.bottom_hud = BottomHUD(self, self.espece, self.day_night)
+                self._perf_enter_mark(perf, "BottomHUD cree")
             else:
                 self.bottom_hud.species = self.espece
+                self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
             if not self.fauna_spawn_zones:
                 self._start_fauna_spawn_job()
-            return  # IMPORTANT: on ne tente pas de regénérer ni de charger un preset
+                self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
+            self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")
+            return  # IMPORTANT: on ne tente pas de regenerer ni de charger un preset
 
-        # 3) Sinon, génération classique depuis un preset (avec fallback)
-        # Par défaut on part sur "Custom" (tu n'utilises plus les presets historiques).
+        # 3) Sinon, generation classique depuis un preset (avec fallback)
+        # Par defaut on part sur "Custom".
         preset = kwargs.get("preset") or "Custom"
         seed_override = kwargs.get("seed", None)
         progress_cb = kwargs.get("progress", None)
+        self._perf_enter_mark(perf, f"Generation locale via preset={preset}, seed={seed_override}")
         try:
             self.params = load_world_params_from_preset(preset)
+            self._perf_enter_mark(perf, "Preset charge")
         except KeyError as ke:
-            print(f"[Phase1] {ke} → tentative de fallback de preset…")
-            # Petits fallbacks possibles (au cas où ton JSON n'aurait pas 'Tropical')
-            for candidate in ("Custom", "custom", "Default", "default", "Tempéré", "Neutre", "Temperate"):
+            print(f"[Phase1] {ke} -> tentative de fallback de preset...")
+            self._perf_enter_mark(perf, "Preset introuvable, fallback en cours")
+            for candidate in ("Custom", "custom", "Default", "default", "Tempere", "Neutre", "Temperate"):
                 try:
                     self.params = load_world_params_from_preset(candidate)
                     print(f"[Phase1] Fallback preset = {candidate}")
+                    self._perf_enter_mark(perf, f"Fallback preset charge ({candidate})")
                     break
                 except Exception:
                     pass
             if self.params is None:
-                raise  # rien trouvé, on re-propage l'erreur
+                raise
 
         import traceback
 
         try:
             world = self.gen.generate_planet(self.params, rng_seed=seed_override, progress=progress_cb)
+            self._perf_enter_mark(perf, "Monde genere en local")
         except Exception:
             traceback.print_exc()
             raise
         self.world = world
         self.view.set_world(self.world)
+        self._perf_enter_mark(perf, "Monde affecte a la vue")
         if self.fog is None:
-    # chunk_size à synchroniser avec ton world_gen (64 chez toi)
             self.fog = FogOfWar(self.world.width, self.world.height, chunk_size=64)
+            self._perf_enter_mark(perf, "FogOfWar initialise")
         self.view.fog = self.fog
 
         self.view.set_world(self.world)
+        self._perf_enter_mark(perf, "Vue rafraichie avec fog")
 
         try:
             sx, sy = self.world.spawn
         except Exception:
             sx, sy = 0, 0
+        self._perf_enter_mark(perf, f"Point de spawn resolu ({sx}, {sy})")
         if not self.joueur:
             from Game.species.species import Espece
             self.espece = Espece("Hominidé")
+            self._perf_enter_mark(perf, "Espece joueur creee")
             self._apply_species_creation_to_espece()
+            self._perf_enter_mark(perf, "Parametres de creation espece appliques")
             self._apply_base_mutations_to_species()
+            self._perf_enter_mark(perf, "Mutations de base appliquees a l'espece")
             self.joueur = self.espece.create_individu(
                 x=float(sx),
                 y=float(sy),
                 assets=self.assets,
             )
+            self._perf_enter_mark(perf, "Joueur principal cree")
             self.joueur2 = self.espece.create_individu(
-                x=float(sx+1),
-                y=float(sy+1),
+                x=float(sx + 1),
+                y=float(sy + 1),
                 assets=self.assets,
             )
+            self._perf_enter_mark(perf, "Joueur secondaire cree")
             self._apply_base_mutations_to_individus()
-            self.entities = [self.joueur,self.joueur2]
+            self._perf_enter_mark(perf, "Mutations appliquees aux individus")
+            self.entities = [self.joueur, self.joueur2]
             self._init_fauna_species()
+            self._perf_enter_mark(perf, "Espece faune initialisee")
             self._attach_phase_to_entities()
+            self._perf_enter_mark(perf, "Entites rattachees a la phase")
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
             for e in self.entities:
                 self._ensure_move_runtime(e)
+            self._perf_enter_mark(perf, "Runtime de mouvement initialise")
         if self.bottom_hud is None:
-            self.bottom_hud = BottomHUD(self, self.espece,self.day_night)
+            self.bottom_hud = BottomHUD(self, self.espece, self.day_night)
+            self._perf_enter_mark(perf, "BottomHUD cree")
         else:
             self.bottom_hud.species = self.espece
+            self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
         if not self.fauna_spawn_zones:
             self._start_fauna_spawn_job()
+            self._perf_enter_mark(perf, "Job de zones de spawn faune lance")
         self._set_cursor(self.default_cursor_path)
+        self._perf_enter_mark(perf, "Curseur initialise")
         if self.weather_system is None and self.world:
             try:
                 seed = getattr(self.params, "seed", 0) or 0
@@ -822,8 +908,10 @@ class Phase1:
                     day_night_cycle=self.day_night,
                     seed=int(seed)
                 )
+                self._perf_enter_mark(perf, "WeatherSystem initialise")
             except Exception as e:
                 print(f"[Weather] Erreur initialisation: {e}")
+        self._perf_enter_mark(perf, "Entree terminee (generation locale)")
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -997,32 +1085,63 @@ class Phase1:
 
     # ---------- UPDATE ----------
     def update(self, dt: float):
+        t0 = time.perf_counter()
+        t_last = t0
+        should_trace = self._perf_logs_enabled and self._perf_trace_frames > 0
+
+        def mark(label: str):
+            nonlocal t_last
+            if not should_trace:
+                return
+            now_t = time.perf_counter()
+            print(f"[Perf][Phase1][Update] {label} | +{now_t - t_last:.3f}s | total {now_t - t0:.3f}s")
+            t_last = now_t
+
+        mark("Debut frame update")
         if self.espece and self.espece.lvl_up.active:
+            mark("Sortie rapide lvl_up actif")
+            if self._perf_trace_frames > 0:
+                self._perf_trace_frames -= 1
             return
         if self.paused or self.ui_menu_open:
-            # Même en pause on continue les timers d'évènements
+            # Meme en pause on continue les timers d'evenements
             self.event_manager.update(dt, self)
+            mark("Sortie rapide pause/menu")
+            if self._perf_trace_frames > 0:
+                self._perf_trace_frames -= 1
             return
 
         self.event_manager.update(dt, self)
-        #mettre a jour le cycle jour/nuit
+        mark("Event manager update")
+
+        # Mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
+        mark("Day/night update")
+
         if self.tech_tree:
             current_day = self.day_night.jour
             if current_day > self._last_innovation_day:
                 for _ in range(current_day - self._last_innovation_day):
                     self.tech_tree.add_innovation(1)
                 self._last_innovation_day = current_day
+        mark("Tech tree update")
+
         if self.espece and getattr(self.espece, "reproduction_system", None):
             try:
                 self.espece.reproduction_system.update(dt)
             except Exception as e:
                 print(f"[Reproduction] update error: {e}")
-        
+        mark("Reproduction update")
+
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+        mark("Vue update")
+
         self._step_fauna_spawn_job()
+        mark("Step fauna spawn job")
+
         self._update_fauna_spawning()
+        mark("Update fauna spawning")
 
         def get_radius(ent):
             if getattr(ent, "is_egg", False):
@@ -1032,12 +1151,12 @@ class Phase1:
 
         if self.fog:
             light_level = self.day_night.get_light_level()
-    
-            # Réduction de visibilité par la météo
+
+            # Reduction de visibilite par la meteo
             if self.weather_system:
                 visibility_mult = self.weather_system.get_visibility_multiplier()
                 light_level *= visibility_mult
-            
+
             observers = [
                 e
                 for e in self.entities
@@ -1045,10 +1164,11 @@ class Phase1:
                 and not getattr(e, "is_fauna", False)
             ]
             self.fog.recompute(observers, get_radius, light_level)
+            mark(f"Fog recompute (observers={len(observers)})")
         else:
             self.fog = FogOfWar(self.world.width, self.world.height, chunk_size=64)
+            mark("Fog recreate")
         self.view.fog = self.fog
-
 
         dead_entities: list = []
         for e in list(self.entities):
@@ -1056,27 +1176,35 @@ class Phase1:
                 continue
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
-            e.faim_timer+=dt
-            if e.faim_timer>=5.0:
-                e.faim_timer=0
-                e.jauges["faim"]-=1
-                if e.jauges["faim"]<20:
+            e.faim_timer += dt
+            if e.faim_timer >= 5.0:
+                e.faim_timer = 0
+                e.jauges["faim"] -= 1
+                if e.jauges["faim"] < 20:
                     e.comportement.try_eating()
-            # → progression de la récolte (barre, timer, loot…)
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
             if e.jauges.get("sante", 0) <= 0:
                 dead_entities.append(e)
+        mark(f"Entities update loop (count={len(self.entities)})")
 
         for ent in dead_entities:
             self._handle_entity_death(ent)
+        mark(f"Entity deaths handled (count={len(dead_entities)})")
 
         self._update_construction_sites()
+        mark("Construction sites update")
 
         if self.save_message_timer > 0:
             self.save_message_timer -= dt
             if self.save_message_timer <= 0:
                 self.save_message = ""
+
+        total = time.perf_counter() - t0
+        if self._perf_logs_enabled and (should_trace or total >= self._perf_slow_frame_sec):
+            print(f"[Perf][Phase1][Update] Fin frame | total {total:.3f}s | entities={len(self.entities)}")
+        if self._perf_trace_frames > 0:
+            self._perf_trace_frames -= 1
 
     def draw_pause_screen(self, screen):
             """Affiche l'écran de pause avec le bouton de retour au menu"""
