@@ -103,7 +103,7 @@ class LoadingState:
         _lvl, _gid, overlay, biome_id = snap
         if overlay:
             return False
-        return int(biome_id) not in (1, 2, 3, 4)
+        return int(biome_id) not in (1, 3, 4)
 
     def _refine_spawn_from_loaded(self, world, max_radius: int = 36) -> tuple[int, int]:
         sx, sy = getattr(world, "spawn", (world.width // 2, world.height // 2))

@@ -518,7 +518,7 @@ def _fbm_perlin(x: float, y: float, seed: int, octaves: int = 5) -> float:
 # --------------------------------------------------------------------------------------
 
 BIOME_OCEAN = 1
-BIOME_COAST = 2
+BIOME_COAST = 2  # legacy: ancien biome plage (plus généré)
 BIOME_LAKE = 3
 BIOME_RIVER = 4
 
@@ -541,7 +541,7 @@ BIOME_MYSTIC = 23
 
 BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_OCEAN: "ocean",
-    BIOME_COAST: "coast",
+    BIOME_COAST: "plains",
     BIOME_LAKE: "lake",
     BIOME_RIVER: "river",
     BIOME_PLAINS: "plains",
@@ -823,7 +823,7 @@ class ChunkedWorld:
 
     def get_is_water(self, x: int, y: int) -> bool:
         bid = self.get_biome_id(x, y)
-        return bid in (BIOME_OCEAN, BIOME_COAST, BIOME_LAKE, BIOME_RIVER)
+        return bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER)
 
     # ------------------- chunk management -------------------
 
@@ -1042,13 +1042,6 @@ class ChunkedWorld:
                 is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
 
                 is_ocean = height < 0.0
-                is_water = is_ocean or is_lake or is_river
-                coast_band = 0.06
-                coast = (not is_water) and (
-                    height < coast_band
-                    or (lake_noise > lake_cut - 0.06 and height < lake_level + 0.03)
-                    or (river_noise < river_th * 1.8 and height < 0.62)
-                )
                 self._report_phase("water", 0.50, "Eau…")
 
                 # --- biome (inchangé dans l’idée) ---
@@ -1058,8 +1051,6 @@ class ChunkedWorld:
                     bid = BIOME_LAKE
                 elif is_river:
                     bid = BIOME_RIVER
-                elif coast:
-                    bid = BIOME_COAST
                 else:
                     if t01 < 0.18:
                         bid = BIOME_SNOW
@@ -1086,12 +1077,9 @@ class ChunkedWorld:
                 elif bid == BIOME_RIVER:
                     level = 0
                     gname = "river"
-                elif bid == BIOME_COAST:
-                    level = 1
-                    gname = "beach"
                 else:
-                    # normalise hauteur de terre au-dessus côte
-                    base0 = coast_band
+                    # normalise hauteur de terre au-dessus du niveau de la mer
+                    base0 = 0.0
                     land01 = (height - base0) / max(1e-6, (1.0 - base0))
                     land01 = _clamp01(land01)
 
@@ -1099,14 +1087,14 @@ class ChunkedWorld:
                     jitter = _fbm_perlin(wx * 0.07, wy * 0.07, base + 5151, octaves=2)
                     land01 = _clamp01(land01 + 0.03 * jitter)
 
-                    inner = max(1, self.tiles_levels - 2)
-                    level = 2 + int(round(land01 * inner))
+                    inner = max(1, self.tiles_levels - 1)
+                    level = 1 + int(round(land01 * inner))
 
                     # boost pics montagneux
                     if r > 0.78 and level < self.tiles_levels:
                         level += 1
 
-                    level = max(2, min(self.tiles_levels, level))
+                    level = max(1, min(self.tiles_levels, level))
 
                     # ground par biome
                     biome_to_ground = {
@@ -1131,7 +1119,7 @@ class ChunkedWorld:
 
                 # --- props (IMPORTANT : seed par TUILE, pas par chunk) ---
                 prop = 0
-                if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER) and not coast:
+                if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
                     base_p = 0.02 * biodiv_mul
                     if bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
                         base_p *= 2.2
@@ -1319,14 +1307,8 @@ class ChunkedWorld:
         river_th = 0.032 + 0.014 * max(0.0, water_bias)
         is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
         is_ocean = height < 0.0
-        coast_band = 0.06
-        coast = (not (is_ocean or is_lake or is_river)) and (
-            height < coast_band
-            or (lake_noise > lake_cut - 0.06 and height < lake_level + 0.03)
-            or (river_noise < river_th * 1.8 and height < 0.62)
-        )
 
-        if is_ocean or is_lake or is_river or coast:
+        if is_ocean or is_lake or is_river:
             return None
 
         lat = (wy / max(1, self.height - 1)) * 2.0 - 1.0

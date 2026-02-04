@@ -6,7 +6,7 @@
     "sfx_volume": 0.9
   },
   "video": {
-    "fullscreen": false,
+    "fullscreen": true,
     "fps_cap": 115,
     "vsync": false
   },

@@ -50,7 +50,7 @@ class Espece:
             "taux_reproduction": 1.0, "mutation_rate": 0.10,
         }
         self.mutation_interval = 1  # intervalle actuel entre deux mutations gagnées
-        self.next_mutation_level = 5  # premier niveau où une mutation est proposée
+        self.next_mutation_level = 2  # premier niveau où une mutation est proposée
 
         self.arbre_phases3 = {
             "autorité": 5, "strategie": 5, "organisation": 5,

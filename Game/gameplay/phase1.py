@@ -27,7 +27,7 @@ from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
 from Game.gameplay.tech_tree import TechTreeManager
 
-_WATER_BIOME_IDS = {1, 2, 3, 4}
+_WATER_BIOME_IDS = {1, 3, 4}
 
 class Phase1:
     def __init__(self, app):
