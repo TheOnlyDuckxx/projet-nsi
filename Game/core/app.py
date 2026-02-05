@@ -22,6 +22,7 @@ from Game.gameplay.phase1 import Phase1
 from Game.ui.loading import LoadingState
 from Game.ui.hud.notification import draw_notifications
 from Game.save.progression import ProgressionManager
+from Game.ui.menu.menu_end import EndGameScreen
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
@@ -92,6 +93,7 @@ class App:
         self.states["LOADING"] = LoadingState(self)
         self.states["CREATION"] = WorldCreationMenu(self)
         self.states["SPECIES_CREATION"] = SpeciesCreationMenu(self)
+        self.states["END_SCREEN"] = EndGameScreen(self)
     
     def quit_game(self):
         if getattr(self, "progression", None):

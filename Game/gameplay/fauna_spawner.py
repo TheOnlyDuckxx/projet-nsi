@@ -5,7 +5,7 @@ import math
 import random
 from typing import Any
 
-from Game.species.fauna import PassiveFaunaFactory
+from Game.species.fauna import AggressiveFaunaFactory, PassiveFaunaFactory
 
 try:
     from world.world_gen import BIOME_ID_TO_NAME
@@ -174,7 +174,8 @@ class FaunaSpawner:
         if species is None:
             return None
 
-        factory = PassiveFaunaFactory(phase, phase.assets, definition)
+        factory_cls = AggressiveFaunaFactory if getattr(definition, "is_aggressive", False) else PassiveFaunaFactory
+        factory = factory_cls(phase, phase.assets, definition)
         ent = factory.create_creature(species, float(x), float(y))
         phase._ensure_move_runtime(ent)
         phase.entities.append(ent)
@@ -268,8 +269,11 @@ class FaunaSpawner:
             species = str(row.get("species", "")).strip().lower()
             if not species:
                 continue
+            raw_weight = row.get("weight", None)
+            if raw_weight is None:
+                raw_weight = row.get("probability", row.get("proba", row.get("chance", 1.0)))
             try:
-                weight = float(row.get("weight", 1.0))
+                weight = float(raw_weight)
             except Exception:
                 weight = 1.0
             if weight <= 0:
@@ -320,6 +324,8 @@ class FaunaSpawner:
         ]
 
     def _is_engaged_in_combat(self, phase, ent) -> bool:
+        if getattr(ent, "_combat_target", None) is not None:
+            return True
         for other in phase.entities:
             if other is ent:
                 continue

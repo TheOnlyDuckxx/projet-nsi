@@ -10,9 +10,8 @@ from typing import Optional
 from Game.ui.iso_render import IsoMapView
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
-from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
+from Game.species.fauna import AggressiveFaunaDefinition, PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.species.species import Espece
-from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud.bottom_hud import BottomHUD
@@ -77,14 +76,43 @@ class Phase1:
             on_unlock=self._on_tech_unlocked,
         )
         self._last_innovation_day = self.day_night.jour
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
+
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
         # entités
         self.espece = None
         self.fauna_species: Espece | None = None
         self.fauna_species_by_name = {}
         self.joueur: Optional[Espece] = None
         self.entities: list = []
-        self.fauna_spawn_zones: list[dict] = []
-        self._fauna_spawn_job = None
         self.fauna_spawner = FaunaSpawner(resource_path("Game/data/fauna_spawns.json"))
         self._save_path: str | None = None
 
@@ -93,6 +121,7 @@ class Phase1:
         self.font = pygame.font.SysFont("consolas", 16)
         self.small_font = pygame.font.SysFont("consolas", 12)
         self.menu_button_rect = None
+        self.end_run_button_rect = None
         self.ui_menu_open = False
         self.right_hud = LeftHUD(self)
 
@@ -137,6 +166,9 @@ class Phase1:
         self._perf_logs_enabled = True
         self._perf_slow_frame_sec = 0.12
         self._perf_trace_frames = 0
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
 
     def _perf_enter_start(self, source: str):
         now = time.perf_counter()
@@ -166,6 +198,13 @@ class Phase1:
         except Exception:
             self._perf_slow_frame_sec = 0.12
 
+    def _endgame_debug(self, msg: str):
+        settings = getattr(self.app, "settings", None)
+        enabled = True if settings is None else bool(settings.get("debug.endgame_logs", True))
+        if not enabled:
+            return
+        print(f"[EndGameDebug] {msg}")
+
     def _reset_session_state(self):
         """
         Réinitialise tout l'état de la phase afin d'éviter qu'une partie
@@ -184,8 +223,6 @@ class Phase1:
         self.joueur = None
         self.joueur2 = None
         self.entities = []
-        self.fauna_spawn_zones = []
-        self._fauna_spawn_job = None
         if hasattr(self, "fauna_spawner") and self.fauna_spawner is not None:
             self.fauna_spawner.reset()
         self._save_path = None
@@ -202,6 +239,7 @@ class Phase1:
         self.save_message = ""
         self.save_message_timer = 0.0
         self.menu_button_rect = None
+        self.end_run_button_rect = None
         self.inspect_mode_active = False
         self.props_transparency_active = False
         self._drag_select_start = None
@@ -237,6 +275,12 @@ class Phase1:
             on_unlock=self._on_tech_unlocked,
         )
         self._last_innovation_day = self.day_night.jour
+        self.session_time_seconds = 0.0
+        self._game_end_pending = False
+        self._game_end_reason = None
+        self._game_end_summary = None
+        self._game_end_xp = 0
+        self._gameplay_ready = False
     def _attach_phase_to_entities(self):
         for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
             if espece and hasattr(espece, "reproduction_system"):
@@ -583,14 +627,27 @@ class Phase1:
             return False
         if attacker not in self.entities or target not in self.entities:
             return False
-        if getattr(attacker, "is_fauna", False):
-            return False
         if getattr(attacker, "is_egg", False):
             return False
-        if not getattr(target, "is_fauna", False):
+        if getattr(target, "is_egg", False):
             return False
         if not hasattr(attacker, "ia") or not isinstance(attacker.ia, dict):
             return False
+        if getattr(target, "_dead_processed", False) or target.jauges.get("sante", 0) <= 0:
+            return False
+
+        attacker_is_fauna = bool(getattr(attacker, "is_fauna", False))
+        attacker_is_aggressive = bool(getattr(attacker, "is_aggressive", False))
+        target_is_fauna = bool(getattr(target, "is_fauna", False))
+
+        if attacker_is_fauna and not attacker_is_aggressive:
+            return False
+        if attacker_is_aggressive:
+            if target_is_fauna:
+                return False
+        else:
+            if not target_is_fauna:
+                return False
 
         self._ensure_move_runtime(attacker)
         if hasattr(attacker, "comportement"):
@@ -607,7 +664,16 @@ class Phase1:
     def _combat_attack_interval(self, attacker) -> float:
         speed = float(getattr(attacker, "physique", {}).get("vitesse", 3) or 3)
         agilite = float(getattr(attacker, "combat", {}).get("agilite", 0) or 0)
-        return max(0.35, 1.2 - speed * 0.05 - agilite * 0.01)
+        base = max(0.35, 1.2 - speed * 0.05 - agilite * 0.01)
+        combat = getattr(attacker, "combat", {}) or {}
+        atk_speed = combat.get("attaque_speed", combat.get("attack_speed", None))
+        try:
+            atk_speed = float(atk_speed) if atk_speed is not None else None
+        except Exception:
+            atk_speed = None
+        if atk_speed is not None and atk_speed > 0:
+            return max(0.2, base / atk_speed)
+        return base
 
     def _combat_attack_range(self, attacker) -> float:
         taille = float(getattr(attacker, "physique", {}).get("taille", 3) or 3)
@@ -618,10 +684,12 @@ class Phase1:
         force = float(physique.get("force", 1) or 1)
         speed = float(physique.get("vitesse", 1) or 1)
         taille = float(physique.get("taille", 1) or 1)
-        melee = float(getattr(attacker, "combat", {}).get("attaque_melee", 0) or 0)
+        combat = getattr(attacker, "combat", {}) or {}
+        melee = float(combat.get("attaque_melee", 0) or 0)
+        attack_bonus = float(combat.get("attaque", combat.get("attack", 0)) or 0)
         defense = float(getattr(target, "combat", {}).get("defense", 0) or 0)
 
-        raw = 1.0 + force * 1.4 + speed * 0.55 + taille * 0.2 + melee * 0.05
+        raw = 1.0 + force * 1.4 + speed * 0.55 + taille * 0.2 + melee * 0.05 + attack_bonus
         reduced = raw - defense * 0.2
         dmg = max(1.0, reduced)
         return dmg * random.uniform(0.9, 1.1)
@@ -673,7 +741,7 @@ class Phase1:
                 self._clear_entity_combat_refs(ent)
             return
 
-        if getattr(ent, "is_fauna", False):
+        if getattr(ent, "is_fauna", False) and not getattr(ent, "is_aggressive", False):
             self._stop_entity_combat(ent)
             return
 
@@ -682,10 +750,17 @@ class Phase1:
             target is None
             or target is ent
             or target not in self.entities
-            or not getattr(target, "is_fauna", False)
         ):
             self._stop_entity_combat(ent)
             return
+        if getattr(ent, "is_aggressive", False):
+            if getattr(target, "is_fauna", False) or getattr(target, "is_egg", False):
+                self._stop_entity_combat(ent)
+                return
+        else:
+            if not getattr(target, "is_fauna", False):
+                self._stop_entity_combat(ent)
+                return
         if getattr(target, "_dead_processed", False) or target.jauges.get("sante", 0) <= 0:
             self._stop_entity_combat(ent)
             return
@@ -708,9 +783,12 @@ class Phase1:
             target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
             target._last_attacker = ent
             ent._combat_attack_cd = self._combat_attack_interval(ent)
+            if hasattr(ent, "attack_anim_ms"):
+                ent._attack_anim_until_ms = pygame.time.get_ticks() + int(ent.attack_anim_ms)
 
             if target.jauges.get("sante", 0) <= 0:
-                self._grant_fauna_combat_rewards(ent, target)
+                if not getattr(ent, "is_fauna", False) and getattr(target, "is_fauna", False):
+                    self._grant_fauna_combat_rewards(ent, target)
                 self._stop_entity_combat(ent)
             return
 
@@ -762,6 +840,35 @@ class Phase1:
 
         if fg.width > 0:
             color = (220, 60, 60) if ratio < 0.35 else (235, 170, 60) if ratio < 0.7 else (90, 205, 105)
+            pygame.draw.rect(screen, color, fg, border_radius=2)
+
+    def _draw_species_health_bar(self, screen, ent):
+        if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+            return
+        if getattr(ent, "espece", None) != self.espece:
+            return
+        max_hp = float(getattr(ent, "max_sante", 100) or 100)
+        hp = float(ent.jauges.get("sante", 0) or 0)
+        if hp <= 0 or hp >= max_hp:
+            return
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return
+
+        ratio = max(0.0, min(1.0, hp / max(1.0, max_hp)))
+        cx = sum(p[0] for p in poly) / len(poly)
+        top = min(p[1] for p in poly) - 22
+        bar_w, bar_h = 48, 6
+        bg = pygame.Rect(int(cx - bar_w / 2), int(top - bar_h), bar_w, bar_h)
+        fg = bg.inflate(-2, -2)
+        fg.width = int(max(1, fg.width) * ratio)
+
+        surface = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
+        surface.fill((0, 0, 0, 165))
+        screen.blit(surface, (bg.x, bg.y))
+
+        if fg.width > 0:
+            color = (220, 80, 80) if ratio < 0.35 else (235, 170, 60) if ratio < 0.7 else (90, 205, 105)
             pygame.draw.rect(screen, color, fg, border_radius=2)
 
     def _load_mutations_data(self):
@@ -947,6 +1054,75 @@ class Phase1:
             count += 1
         return count
 
+    def _has_player_species_entities(self) -> bool:
+        if not self.espece:
+            return False
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False):
+                continue
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "espece", None) == self.espece:
+                return True
+        return False
+
+    def _build_endgame_summary(self, reason: str) -> dict:
+        espece_name = getattr(self.espece, "nom", "") if self.espece else ""
+        species_level = int(getattr(self.espece, "species_level", 1) or 1) if self.espece else 1
+        days = int(getattr(self.day_night, "jour", 0) or 0)
+        deaths = int(getattr(self, "species_death_count", 0) or 0)
+        play_time = int(self.session_time_seconds or 0)
+        return {
+            "species_name": espece_name,
+            "species_level": species_level,
+            "days_survived": days,
+            "deaths": deaths,
+            "play_time_sec": play_time,
+            "reason": reason,
+        }
+
+    def _compute_endgame_xp(self, summary: dict) -> int:
+        species_level = int(summary.get("species_level", 1) or 1)
+        days = int(summary.get("days_survived", 0) or 0)
+        deaths = int(summary.get("deaths", 0) or 0)
+        minutes = int(summary.get("play_time_sec", 0) or 0) // 60
+        xp = species_level * 10 + days * 15 + minutes * 2 + deaths * 3
+        return max(10, int(xp))
+
+    def _trigger_end_game(self, reason: str):
+        if self._game_end_pending:
+            # Si on est encore dans PHASE1 malgré le flag, forcer l'écran de fin.
+            if getattr(self.app, "state_key", None) == "PHASE1" and self._game_end_summary:
+                self._endgame_debug(
+                    f"trigger(reuse) reason={reason} pending={self._game_end_pending} "
+                    f"entities={len(self.entities)} living={self._count_living_species_members()}"
+                )
+                self.app.change_state(
+                    "END_SCREEN",
+                    summary=self._game_end_summary,
+                    reason=self._game_end_reason or reason,
+                    xp_gain=int(self._game_end_xp or 0),
+                    save_path=self._save_path,
+                )
+            return
+        self._game_end_pending = True
+        self._game_end_reason = reason
+        summary = self._build_endgame_summary(reason)
+        xp_gain = self._compute_endgame_xp(summary)
+        self._game_end_summary = summary
+        self._game_end_xp = int(xp_gain)
+        self._endgame_debug(
+            f"trigger(new) reason={reason} entities={len(self.entities)} "
+            f"living={self._count_living_species_members()} xp={xp_gain}"
+        )
+        self.app.change_state(
+            "END_SCREEN",
+            summary=summary,
+            reason=reason,
+            xp_gain=xp_gain,
+            save_path=self._save_path,
+        )
+
     def _handle_entity_death(self, ent):
         if getattr(ent, "_dead_processed", False):
             return
@@ -988,6 +1164,13 @@ class Phase1:
 
             if self.death_response_mode and self.species_death_count >= 2:
                 self._apply_death_morale_effects()
+            if survivors <= 0:
+                if self._gameplay_ready:
+                    self._endgame_debug(
+                        f"death(last) ent={getattr(ent,'nom',None)} deaths={self.species_death_count} "
+                        f"entities={len(self.entities)}"
+                    )
+                    self._trigger_end_game("Votre espece a disparu.")
 
     def is_craft_unlocked(self, craft_id: str | None) -> bool:
         if not craft_id:
@@ -1006,28 +1189,12 @@ class Phase1:
                 self.bottom_hud.refresh_craft_buttons()
 
     # ---------- FAUNE PASSIVE ----------
-    def _scale_stats_dict(self, source: dict, factor: float = 0.6, skip_keys: set[str] | None = None) -> dict:
-        skip_keys = skip_keys or set()
-        scaled = {}
-        for key, value in (source or {}).items():
-            if key in skip_keys:
-                scaled[key] = value
-                continue
-            if isinstance(value, (int, float)):
-                new_val = value * factor
-                if isinstance(value, int):
-                    scaled[key] = max(1, int(round(new_val)))
-                else:
-                    scaled[key] = round(new_val, 2)
-            else:
-                scaled[key] = value
-        return scaled
-
     def _rabbit_definition(self):
         return PassiveFaunaDefinition(
             species_name="Lapin",
             entity_name="Lapin",
             move_speed=2.1,
+            hp=100,
             vision_range=10.0,
             flee_distance=6.0,
             sprite_sheet_idle="rabbit_idle",
@@ -1041,22 +1208,51 @@ class Phase1:
             species_name="Capybara",
             entity_name="Capybara",
             move_speed=1.1,
+            hp=100,
             vision_range=4.0,
             flee_distance=1.0,
             sprite_sheet_idle="capybara_idle",
             sprite_sheet_frame_size=(32, 32),
             sprite_base_scale=0.75,
         )
-        
-    def _all_fauna_definitions(self):
-        catalog = self._fauna_definition_catalog()
-        return [catalog["lapin"], catalog["capybara"]]
+
+    def _scorpion_definition(self):
+        return AggressiveFaunaDefinition(
+            species_name="Scorpion",
+            entity_name="Scorpion",
+            move_speed=3.6,
+            hp=70,
+            vision_range=15.0,
+            flee_distance=0.0,
+            attack=3.0,
+            attack_speed=1.7,
+            sprite_sheet_idle="scorpion_idle",
+            sprite_sheet_frame_size=(32, 32),
+            sprite_base_scale=0.8,
+        )
+    
+    def _champi_definition(self):
+        return AggressiveFaunaDefinition(
+            species_name="Scorpion",
+            entity_name="Scorpion",
+            move_speed=1.6,
+            hp=200,
+            vision_range=6.0,
+            flee_distance=0.0,
+            attack=10.0,
+            attack_speed=0.6,
+            sprite_sheet_idle="champi_idle",
+            sprite_sheet_frame_size=(32, 32),
+            sprite_base_scale=0.8,
+        )
 
     def _fauna_definition_catalog(self) -> dict[str, PassiveFaunaDefinition]:
         return {
             "lapin": self._rabbit_definition(),
             "rabbit": self._rabbit_definition(),
             "capybara": self.capybara_definition(),
+            "scorpion": self._scorpion_definition(),
+            "champi": self._champi_definition(),
         }
 
     def get_fauna_definition(self, species_id: str | None) -> Optional[PassiveFaunaDefinition]:
@@ -1076,202 +1272,6 @@ class Phase1:
         if self.fauna_species is None:
             self.fauna_species = species
         return species
-
-    def _generate_fauna_spawn_zones(self, count: int = 10, radius: int = 8, force: bool = False):
-        if not self.world or (self.fauna_spawn_zones and not force):
-            return
-
-        base_seed = getattr(self.params, "seed", 0) or 0
-        try:
-            seed_int = int(base_seed)
-        except Exception:
-            seed_int = random.getrandbits(32)
-        rng = random.Random(seed_int + 4242)
-
-        try:
-            center_x, center_y = self.world.spawn
-        except Exception:
-            center_x = getattr(self.world, "width", 1) // 2
-            center_y = getattr(self.world, "height", 1) // 2
-
-        x_span = min(max(96, getattr(self.world, "width", 1) // 12), 640)
-        y_span = min(max(96, getattr(self.world, "height", 1) // 10), 480)
-
-        zones: list[dict] = []
-        attempts = 0
-        max_attempts = count * 50
-        forbidden = self._occupied_tiles()
-
-        while len(zones) < count and attempts < max_attempts:
-            attempts += 1
-            i = int(center_x + rng.randrange(-x_span, x_span + 1))
-            j = int(center_y + rng.randrange(-y_span, y_span + 1))
-            if i < 0 or j < 0 or i >= getattr(self.world, "width", 1) or j >= getattr(self.world, "height", 1):
-                continue
-            if not self._is_walkable(i, j):
-                continue
-            if (i, j) in forbidden:
-                continue
-            too_close = any(abs(i - zx) + abs(j - zy) < radius for zx, zy in (z["pos"] for z in zones))
-            if too_close:
-                continue
-            zones.append({"pos": (i, j), "radius": radius, "spawned": False})
-
-        self.fauna_spawn_zones = zones
-
-    def _start_fauna_spawn_job(self, count: int = 10, radius: int = 8):
-        if not self.world or self.fauna_spawn_zones or self._fauna_spawn_job is not None:
-            return
-
-        base_seed = getattr(self.params, "seed", 0) or 0
-        try:
-            seed_int = int(base_seed)
-        except Exception:
-            seed_int = random.getrandbits(32)
-        rng = random.Random(seed_int + 4242)
-
-        try:
-            center_x, center_y = self.world.spawn
-        except Exception:
-            center_x = getattr(self.world, "width", 1) // 2
-            center_y = getattr(self.world, "height", 1) // 2
-
-        # Zone plus locale pour éviter de générer de nombreux chunks hors écran.
-        x_span = min(max(96, getattr(self.world, "width", 1) // 20), 240)
-        y_span = min(max(96, getattr(self.world, "height", 1) // 22), 200)
-
-        self._fauna_spawn_job = {
-            "count": int(count),
-            "radius": int(radius),
-            "rng": rng,
-            "center_x": int(center_x),
-            "center_y": int(center_y),
-            "x_span": int(x_span),
-            "y_span": int(y_span),
-            "zones": [],
-            "attempts": 0,
-            "max_attempts": int(count) * 40,
-            "forbidden": self._occupied_tiles(),
-        }
-
-    def _step_fauna_spawn_job(self, budget: int = 40):
-        job = self._fauna_spawn_job
-        if not job or not self.world:
-            return
-
-        rng = job["rng"]
-        count = job["count"]
-        radius = job["radius"]
-        center_x = job["center_x"]
-        center_y = job["center_y"]
-        x_span = job["x_span"]
-        y_span = job["y_span"]
-        zones = job["zones"]
-        forbidden = job["forbidden"]
-
-        steps = 0
-        while len(zones) < count and job["attempts"] < job["max_attempts"] and steps < budget:
-            job["attempts"] += 1
-            steps += 1
-            i = int(center_x + rng.randrange(-x_span, x_span + 1))
-            j = int(center_y + rng.randrange(-y_span, y_span + 1))
-            if i < 0 or j < 0 or i >= getattr(self.world, "width", 1) or j >= getattr(self.world, "height", 1):
-                continue
-            if not self._is_walkable(i, j, generate=False):
-                continue
-            if (i, j) in forbidden:
-                continue
-            too_close = any(abs(i - zx) + abs(j - zy) < radius for zx, zy in (z["pos"] for z in zones))
-            if too_close:
-                continue
-            zones.append({"pos": (i, j), "radius": radius, "spawned": False})
-
-        if len(zones) >= count or job["attempts"] >= job["max_attempts"]:
-            self.fauna_spawn_zones = zones
-            self._fauna_spawn_job = None
-
-    def _update_fauna_spawning(self):
-        if not self.fauna_spawn_zones or not self.world:
-            return
-
-        players = [p for p in (getattr(self, "joueur", None), getattr(self, "joueur2", None)) if p]
-        if not players:
-            return
-
-        now_ms = pygame.time.get_ticks()
-        for zone in self.fauna_spawn_zones:
-            if zone.get("spawned"):
-                continue
-            zx, zy = zone.get("pos", (None, None))
-            if zx is None or zy is None:
-                continue
-            self._ensure_fauna_zone_state(zone)
-            radius = float(zone.get("radius", 8))
-            r2 = radius * radius
-            player_in_zone = False
-            for p in players:
-                dx = (p.x - zx)
-                dy = (p.y - zy)
-                if dx * dx + dy * dy <= r2:
-                    player_in_zone = True
-                    break
-            if not player_in_zone:
-                continue
-            if not zone.get("activated"):
-                zone["activated"] = True
-                zone["remaining"] = int(zone.get("spawn_count", 0))
-                zone["next_spawn_at"] = now_ms
-            if zone.get("remaining", 0) <= 0:
-                zone["spawned"] = True
-                continue
-            if now_ms < int(zone.get("next_spawn_at", 0)):
-                continue
-            forbidden = self._occupied_tiles()
-            self._spawn_fauna_from_zone(zone, (zx, zy), forbidden)
-            zone["remaining"] = int(zone.get("remaining", 0)) - 1
-            zone["spawn_index"] = int(zone.get("spawn_index", 0)) + 1
-            delay_rng = random.Random(int(zone.get("seed", 0)) + zone["spawn_index"] * 97)
-            zone["next_spawn_at"] = now_ms + delay_rng.randint(450, 900)
-            if zone.get("remaining", 0) <= 0:
-                zone["spawned"] = True
-
-    def _ensure_fauna_zone_state(self, zone: dict):
-        if zone.get("spawn_count") is None or zone.get("seed") is None:
-            base_seed = getattr(self.params, "seed", 0) or 0
-            try:
-                seed_int = int(base_seed)
-            except Exception:
-                seed_int = 0
-            zx, zy = zone.get("pos", (0, 0))
-            rng = random.Random(seed_int ^ (int(zx) * 73856093) ^ (int(zy) * 19349663))
-            zone["spawn_count"] = rng.randint(3, 5)
-            zone["seed"] = rng.getrandbits(32)
-        zone.setdefault("remaining", 0)
-        zone.setdefault("next_spawn_at", 0)
-        zone.setdefault("spawn_index", 0)
-        zone.setdefault("activated", False)
-
-    def _spawn_fauna_from_zone(self, zone: dict, center: tuple[int, int], forbidden: set):
-        defs = self._all_fauna_definitions()
-        spawn_index = int(zone.get("spawn_index", 0))
-        rng = random.Random(int(zone.get("seed", 0)) + spawn_index * 113)
-
-        definition = rng.choice(defs)  # lapin OU capybara
-        species = self._init_fauna_species(definition)
-        factory = PassiveFaunaFactory(self, self.assets, definition)
-        if not species:
-            return
-        cx, cy = int(center[0]), int(center[1])
-        ox = rng.uniform(-1.5, 1.5)
-        oy = rng.uniform(-1.5, 1.5)
-        target_tile = (int(round(cx + ox)), int(round(cy + oy)))
-        tile = self._find_nearest_walkable(target_tile, forbidden=forbidden)
-        if not tile:
-            return
-        forbidden.add(tile)
-        ent = factory.create_creature(species, float(tile[0]), float(tile[1]))
-        self._ensure_move_runtime(ent)
-        self.entities.append(ent)
 
     # ---------- WORLD LIFECYCLE ----------
     def enter(self, **kwargs):
@@ -1311,6 +1311,11 @@ class Phase1:
                     self._perf_enter_mark(perf, "Espece faune initialisee depuis sauvegarde")
                 self._attach_phase_to_entities()
                 self._ensure_weather_system()
+                self._gameplay_ready = True
+                self._endgame_debug(
+                    f"enter(load) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
+                    f"living={self._count_living_species_members()} pending={self._game_end_pending}"
+                )
                 self._perf_enter_mark(perf, "Entites rattachees a la phase")
                 self._set_cursor(self.default_cursor_path)
                 self._perf_enter_mark(perf, "Curseur initialise, entree terminee (save)")
@@ -1374,13 +1379,13 @@ class Phase1:
             else:
                 self.bottom_hud.species = self.espece
                 self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
-            pre_fauna_zones = kwargs.get("fauna_spawn_zones", None)
-            if pre_fauna_zones:
-                self.fauna_spawn_zones = list(pre_fauna_zones)
-                self._fauna_spawn_job = None
-                self._perf_enter_mark(perf, f"Zones legacy de spawn chargees ({len(self.fauna_spawn_zones)})")
             self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")            
             self._ensure_weather_system()
+            self._gameplay_ready = True
+            self._endgame_debug(
+                f"enter(pre_world) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
+                f"living={self._count_living_species_members()} pending={self._game_end_pending}"
+            )
             return  # IMPORTANT: on ne tente pas de regenerer ni de charger un preset
 
         # 3) Sinon, generation classique depuis un preset (avec fallback)
@@ -1475,6 +1480,11 @@ class Phase1:
         self._set_cursor(self.default_cursor_path)
         self._perf_enter_mark(perf, "Curseur initialise")
         self._ensure_weather_system()
+        self._gameplay_ready = True
+        self._endgame_debug(
+            f"enter(new) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
+            f"living={self._count_living_species_members()} pending={self._game_end_pending}"
+        )
 
     # ---------- INPUT ----------
     def handle_input(self, events):
@@ -1633,6 +1643,10 @@ class Phase1:
 
 
             if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if self.end_run_button_rect and self.end_run_button_rect.collidepoint(e.pos):
+                    self.paused = False
+                    self._trigger_end_game("Partie terminee par le joueur.")
+                    return
                 if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
                     self.paused = False  # pour éviter que le rendu de pause bloque tout
 
@@ -1683,6 +1697,8 @@ class Phase1:
             if self._perf_trace_frames > 0:
                 self._perf_trace_frames -= 1
             return
+
+        self.session_time_seconds += dt
 
         self._update_frame_id += 1
         self.event_manager.update(dt, self)
@@ -1773,6 +1789,10 @@ class Phase1:
             self._handle_entity_death(ent)
         mark(f"Entity deaths handled (count={len(dead_entities)})")
 
+        if self.espece and self._count_living_species_members() <= 0:
+            self._trigger_end_game("Votre espece a disparu.")
+            return
+
         self._update_construction_sites()
         mark("Construction sites update")
 
@@ -1800,29 +1820,33 @@ class Phase1:
             text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 100))
             screen.blit(text, text_rect)
             
-            # Bouton "Retour au menu"
-            button_width = 300
+            # Boutons
+            button_width = 320
             button_height = 60
             button_x = screen.get_width() / 2 - button_width / 2
-            button_y = screen.get_height() / 2 + 40
-            
-            self.menu_button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
-            
-            # Effet hover
+            end_button_y = screen.get_height() / 2 - 30
+            menu_button_y = screen.get_height() / 2 + 50
+
+            self.end_run_button_rect = pygame.Rect(button_x, end_button_y, button_width, button_height)
+            self.menu_button_rect = pygame.Rect(button_x, menu_button_y, button_width, button_height)
+
             mouse_pos = pygame.mouse.get_pos()
-            is_hover = self.menu_button_rect.collidepoint(mouse_pos)
-            button_color = (80, 80, 120) if is_hover else (60, 60, 90)
-            border_color = (150, 150, 200) if is_hover else (100, 100, 150)
-            
-            # Dessiner le bouton
-            pygame.draw.rect(screen, button_color, self.menu_button_rect, border_radius=10)
-            pygame.draw.rect(screen, border_color, self.menu_button_rect, 3, border_radius=10)
-            
-            # Texte du bouton
             font_button = pygame.font.SysFont(None, 36)
-            button_text = font_button.render("Retour au menu principal", True, (255, 255, 255))
-            button_text_rect = button_text.get_rect(center=self.menu_button_rect.center)
-            screen.blit(button_text, button_text_rect)
+
+            for rect, label in (
+                (self.end_run_button_rect, "Terminer la partie"),
+                (self.menu_button_rect, "Retour au menu principal"),
+            ):
+                is_hover = rect.collidepoint(mouse_pos)
+                button_color = (80, 80, 120) if is_hover else (60, 60, 90)
+                border_color = (150, 150, 200) if is_hover else (100, 100, 150)
+
+                pygame.draw.rect(screen, button_color, rect, border_radius=10)
+                pygame.draw.rect(screen, border_color, rect, 3, border_radius=10)
+
+                button_text = font_button.render(label, True, (255, 255, 255))
+                button_text_rect = button_text.get_rect(center=rect.center)
+                screen.blit(button_text, button_text_rect)
 
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
@@ -1836,6 +1860,7 @@ class Phase1:
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
             self._draw_fauna_health_bar(screen, ent)
+            self._draw_species_health_bar(screen, ent)
             draw_work_bar(self, screen, ent)
 
             renderer = getattr(ent, "renderer", None)

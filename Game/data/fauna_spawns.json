@@ -16,72 +16,95 @@
     "bucket_size_tiles": 16
   },
   "default": [
-    { "species": "lapin", "weight": 1 },
-    { "species": "capybara", "weight": 1 }
+    {
+        "species": "scorpion",
+        "proba": 1
+      }
   ],
   "biomes": {
     "ocean": [],
     "lake": [],
     "river": [],
     "plains": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "lapin",
+        "proba": 1
+      },
+      {
+        "species": "capybara",
+        "proba": 1
+      }
     ],
     "forest": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "lapin",
+        "proba": 1
+      },
+      {
+        "species": "capybara",
+        "proba": 1
+      },
+      {
+        "species": "champi",
+        "proba": 1
+      }
     ],
     "rainforest": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "lapin",
+        "proba": 1
+      },
+      {
+        "species": "capybara",
+        "proba": 1
+      },
+      {
+        "species": "champi",
+        "proba": 1
+      }
     ],
-    "savanna": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
+    "savanna": [],
     "desert": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "scorpion",
+        "proba": 1
+      }
     ],
     "taiga": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "lapin",
+        "proba": 1
+      },
+      {
+        "species": "capybara",
+        "proba": 1
+      },
+      {
+        "species": "champi",
+        "proba": 1
+      }
     ],
     "tundra": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
+      {
+        "species": "lapin",
+        "proba": 1
+      },
+      {
+        "species": "capybara",
+        "proba": 1
+      },
+      {
+        "species": "scorpion",
+        "proba": 1
+      }
     ],
-    "snow": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "swamp": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "mangrove": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "rocky": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "alpine": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "volcanic": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "mystic": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ],
-    "unknown": [
-      { "species": "lapin", "weight": 1 },
-      { "species": "capybara", "weight": 1 }
-    ]
+    "snow": [],
+    "swamp": [],
+    "mangrove": [],
+    "rocky": [],
+    "alpine": [],
+    "volcanic": [],
+    "mystic": [],
+    "unknown": []
   }
 }

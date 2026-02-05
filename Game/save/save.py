@@ -396,7 +396,6 @@ class SaveManager:
             "day_night": day_night_data,   # <-- NEW
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
             "warehouse": getattr(phase1, "warehouse", None),
-            "fauna_spawn_zones": getattr(phase1, "fauna_spawn_zones", []),
             "happiness": getattr(phase1, "happiness", None),
             "death_response_mode": getattr(phase1, "death_response_mode", None),
             "death_event_ready": getattr(phase1, "death_event_ready", False),
@@ -586,41 +585,12 @@ class SaveManager:
                 attach_fn()
             log_step("Entites rattachees a la phase")
 
-            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
             if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
                 try:
                     phase1._init_fauna_species()
                 except Exception:
                     pass
-            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
-                try:
-                    phase1._generate_fauna_spawn_zones()
-                except Exception:
-                    pass
-
-            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
-            if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
-                try:
-                    phase1._init_fauna_species()
-                except Exception:
-                    pass
-            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
-                try:
-                    phase1._generate_fauna_spawn_zones()
-                except Exception:
-                    pass
-            phase1.fauna_spawn_zones = data.get("fauna_spawn_zones", []) or []
-            if phase1.fauna_species is None and hasattr(phase1, "_init_fauna_species"):
-                try:
-                    phase1._init_fauna_species()
-                except Exception:
-                    pass
-            if not phase1.fauna_spawn_zones and hasattr(phase1, "_generate_fauna_spawn_zones"):
-                try:
-                    phase1._generate_fauna_spawn_zones()
-                except Exception:
-                    pass
-            log_step("Faune et zones de spawn restaurees")
+            log_step("Faune restauree")
 
             fog_data = data.get("fog")
             if fog_data is not None:

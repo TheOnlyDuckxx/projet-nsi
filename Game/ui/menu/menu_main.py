@@ -1193,7 +1193,13 @@ class SpeciesCreationMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="Creation d'espece")
 
-        self.base_points = 10
+        bonus = 0
+        if getattr(app, "progression", None):
+            try:
+                bonus = int(app.progression.get_player_progress().get("bonus_points", 0) or 0)
+            except Exception:
+                bonus = 0
+        self.base_points = 10 + max(0, bonus)
         self.active_tab = 0
         self.error_msg = ""
 

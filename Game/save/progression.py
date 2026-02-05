@@ -9,7 +9,13 @@ DEFAULT_PROGRESS_DATA = {
     "games_started": 0,
     "play_time_seconds": 0.0,
     "achievements": 0,
+    "player_level": 1,
+    "player_xp": 0,
+    "player_xp_to_next": 100,
 }
+
+PLAYER_POINTS_PER_LEVEL = 2
+PLAYER_XP_GROWTH = 1.35
 
 
 class ProgressionManager:
@@ -40,6 +46,18 @@ class ProgressionManager:
             merged["play_time_seconds"] = float(merged.get("play_time_seconds", 0.0) or 0.0)
         except Exception:
             merged["play_time_seconds"] = 0.0
+        try:
+            merged["player_level"] = max(1, int(merged.get("player_level", 1) or 1))
+        except Exception:
+            merged["player_level"] = 1
+        try:
+            merged["player_xp"] = max(0, int(merged.get("player_xp", 0) or 0))
+        except Exception:
+            merged["player_xp"] = 0
+        try:
+            merged["player_xp_to_next"] = max(25, int(merged.get("player_xp_to_next", 100) or 100))
+        except Exception:
+            merged["player_xp_to_next"] = 100
         return merged
 
     def load(self):
@@ -107,4 +125,57 @@ class ProgressionManager:
             "games_started": int(self.data.get("games_started", 0) or 0),
             "play_time_seconds": float(self.data.get("play_time_seconds", 0.0) or 0.0),
             "achievements": int(self.data.get("achievements", 0) or 0),
+        }
+
+    def get_player_progress(self) -> dict:
+        level = int(self.data.get("player_level", 1) or 1)
+        xp = int(self.data.get("player_xp", 0) or 0)
+        xp_to_next = int(self.data.get("player_xp_to_next", 100) or 100)
+        return {
+            "level": level,
+            "xp": xp,
+            "xp_to_next": xp_to_next,
+            "bonus_points": max(0, (level - 1) * PLAYER_POINTS_PER_LEVEL),
+        }
+
+    def next_player_xp_to_next(self, current: int) -> int:
+        try:
+            current = int(current)
+        except Exception:
+            current = 100
+        current = max(25, current)
+        return int(max(25, round(current * PLAYER_XP_GROWTH)))
+
+    def add_player_xp(self, amount: float) -> dict:
+        try:
+            amount = float(amount)
+        except Exception:
+            return {"gained": 0, "levels_gained": 0}
+        if amount <= 0:
+            return {"gained": 0, "levels_gained": 0}
+
+        before = self.get_player_progress()
+        gained = int(round(amount))
+        level = before["level"]
+        xp = before["xp"] + gained
+        xp_to_next = before["xp_to_next"]
+        levels_gained = 0
+
+        while xp >= xp_to_next:
+            xp -= xp_to_next
+            level += 1
+            levels_gained += 1
+            xp_to_next = self.next_player_xp_to_next(xp_to_next)
+
+        self.data["player_level"] = int(level)
+        self.data["player_xp"] = int(xp)
+        self.data["player_xp_to_next"] = int(xp_to_next)
+        self._dirty = True
+        self.flush(force=True)
+
+        return {
+            "gained": gained,
+            "levels_gained": levels_gained,
+            "before": before,
+            "after": self.get_player_progress(),
         }
