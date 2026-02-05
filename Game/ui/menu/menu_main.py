@@ -60,7 +60,7 @@ class BaseMenu:
         screen.blit(self.bg, (0, 0))
         screen.blit(self._overlay, (0, 0))
         title_surf = self.title_font.render(self.title, True, (230,230,230))
-        screen.blit(title_surf, (WIDTH//2 - title_surf.get_width()//2, 120))
+        screen.blit(title_surf, (WIDTH//2 - title_surf.get_width()//2, 50))
 
         # 1) corps des widgets
         for w in self.widgets:
@@ -108,6 +108,14 @@ class OptionsMenu(BaseMenu):
             font=self.btn_font
         ))
 
+        self.toggle_perf_logs = self.add(Toggle(
+            "Logs performance",
+            (x, 0),
+            get_value=lambda: bool(app.settings.get("debug.perf_logs", True)),
+            set_value=lambda v: app.settings.set("debug.perf_logs", bool(v)),
+            font=self.btn_font
+        ))
+
         self.slider_master = self.add(Slider(
             "Volume général",
             (x, 0),
@@ -148,14 +156,6 @@ class OptionsMenu(BaseMenu):
             min_v=30, max_v=240, step=5
         ))
 
-        self.toggle_perf_logs = self.add(Toggle(
-            "Logs performance",
-            (x, 0),
-            get_value=lambda: bool(app.settings.get("debug.perf_logs", True)),
-            set_value=lambda v: app.settings.set("debug.perf_logs", bool(v)),
-            font=self.btn_font
-        ))
-
         ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
         self.btn_back = Button(
             "← Retour",
@@ -179,18 +179,18 @@ class OptionsMenu(BaseMenu):
         title_surf = self.title_font.render(self.title, True, (230, 230, 230))
         title_h = title_surf.get_height()
 
-        title_gap = clamp(int(HEIGHT * 0.050), 18, 60)
-        item_gap  = clamp(int(HEIGHT * 0.030), 10, 30)
-        back_gap  = clamp(int(HEIGHT * 0.040), 16, 46)
+        title_gap = clamp(int(HEIGHT * 0.030), 18, 60)
+        item_gap  = clamp(int(HEIGHT * 0.020), 10, 30)
+        back_gap  = clamp(int(HEIGHT * 0.030), 16, 46)
 
         items = [
             self.toggle_fullscreen,
             self.toggle_vsync,
+            self.toggle_perf_logs,
             self.slider_master,
             self.slider_music,
             self.slider_sfx,
             self.slider_fps,
-            self.toggle_perf_logs,
         ]
 
         def item_block_h(w):
@@ -459,7 +459,7 @@ class SaveSelectionMenu(BaseMenu):
         panel_w = int(WIDTH * 0.56)
         btn_h = max(48, int(HEIGHT * 0.075))
         gap = max(8, int(HEIGHT * 0.015))
-        top = int(HEIGHT * 0.23)
+        top = int(HEIGHT * 0.25)
         bottom_reserved = int(HEIGHT * 0.22)
         usable_h = max(btn_h, HEIGHT - top - bottom_reserved)
         self._per_page = max(1, usable_h // (btn_h + gap))

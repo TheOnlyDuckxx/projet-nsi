@@ -8,6 +8,11 @@ _AI_BUTTON_SPECS = (
     ("guard", "IA Garde"),
 )
 
+_INSPECTION_PANEL_DEFAULT_RATIO = 0.35
+_INSPECTION_PANEL_MIN_HEIGHT = 190
+_INSPECTION_PANEL_RESIZE_HANDLE_HEIGHT = 12
+_INSPECTION_PANEL_RESIZE_SAFE_BOTTOM = 18
+
 
 def _get_inspected_entity(self):
     ent = None
@@ -21,23 +26,69 @@ def _get_inspected_entity(self):
     return ent
 
 
+def _clamp_inspection_panel_height(screen, height):
+    max_height = max(_INSPECTION_PANEL_MIN_HEIGHT, screen.get_height() - 20)
+    return max(_INSPECTION_PANEL_MIN_HEIGHT, min(int(height), max_height))
+
+
+def _get_inspection_panel_height(self, screen):
+    default_height = int(screen.get_height() * _INSPECTION_PANEL_DEFAULT_RATIO)
+    raw_height = getattr(self, "_inspection_panel_height", default_height)
+    clamped = _clamp_inspection_panel_height(screen, raw_height)
+    self._inspection_panel_height = clamped
+    return clamped
+
+
+def _update_inspection_panel_resize_drag(self, screen):
+    if not getattr(self, "_inspection_panel_resizing", False):
+        return
+    if not pygame.mouse.get_pressed(3)[0]:
+        self._inspection_panel_resizing = False
+        return
+
+    mouse_y = pygame.mouse.get_pos()[1]
+    grab_offset = int(getattr(self, "_inspection_panel_resize_grab_offset", 0))
+    target_height = mouse_y + grab_offset
+    self._inspection_panel_height = _clamp_inspection_panel_height(screen, target_height)
+
+
+def _draw_inspection_resize_handle(self, panel_surf, layout, panel_x, panel_y, panel_width):
+    handle_rect = layout["resize_handle_rect"].move(-panel_x, -panel_y)
+    handle_hover = layout["resize_handle_rect"].collidepoint(pygame.mouse.get_pos())
+    handle_active = getattr(self, "_inspection_panel_resizing", False)
+    handle_color = (140, 190, 230) if (handle_hover or handle_active) else (95, 135, 170)
+    grip_y = max(2, handle_rect.y + 1)
+    pygame.draw.line(panel_surf, handle_color, (12, grip_y), (panel_width - 12, grip_y), 2)
+    grip_w = 74
+    grip_x = (panel_width - grip_w) // 2
+    pygame.draw.line(panel_surf, handle_color, (grip_x, grip_y - 3), (grip_x + grip_w, grip_y - 3), 1)
+
+
 def _inspection_panel_layout(self, screen):
+    _update_inspection_panel_resize_drag(self, screen)
     ent = _get_inspected_entity(self)
     if ent is None:
+        self._inspection_panel_resizing = False
         return None
 
     panel_width = 350
-    panel_height = int(screen.get_height() * 0.35)
+    panel_height = _get_inspection_panel_height(self, screen)
     panel_x = screen.get_width() - panel_width
     panel_y = 0
     panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+    resize_handle_rect = pygame.Rect(
+        panel_x,
+        panel_y + panel_height - _INSPECTION_PANEL_RESIZE_HANDLE_HEIGHT,
+        panel_width,
+        _INSPECTION_PANEL_RESIZE_HANDLE_HEIGHT,
+    )
 
     buttons = []
     if not getattr(ent, "is_egg", False):
         gap = 8
         btn_h = 24
         btn_w = (panel_width - 20 - gap * 2) // 3
-        btn_y = panel_y + panel_height - btn_h - 10
+        btn_y = panel_y + panel_height - btn_h - _INSPECTION_PANEL_RESIZE_SAFE_BOTTOM
         for idx, (mode, label) in enumerate(_AI_BUTTON_SPECS):
             btn_x = panel_x + 10 + idx * (btn_w + gap)
             buttons.append(
@@ -51,6 +102,7 @@ def _inspection_panel_layout(self, screen):
     return {
         "entity": ent,
         "panel_rect": panel_rect,
+        "resize_handle_rect": resize_handle_rect,
         "buttons": buttons,
     }
 
@@ -74,6 +126,12 @@ def handle_inspection_panel_click(self, pos, screen=None):
         return False
     if not layout["panel_rect"].collidepoint(pos):
         return False
+
+    resize_handle_rect = layout["resize_handle_rect"]
+    if resize_handle_rect.collidepoint(pos):
+        self._inspection_panel_resizing = True
+        self._inspection_panel_resize_grab_offset = layout["panel_rect"].bottom - pos[1]
+        return True
 
     ent = layout["entity"]
     if getattr(ent, "is_egg", False):
@@ -195,6 +253,7 @@ def draw_inspection_panel(self, screen):
         hint_text = text_font.render("Protégez l'œuf jusqu'à l'éclosion.", True, (180, 180, 200))
         panel_surf.blit(hint_text, (10, y_offset))
 
+        _draw_inspection_resize_handle(self, panel_surf, layout, panel_x, panel_y, panel_width)
         screen.blit(panel_surf, (panel_x, panel_y))
         return
 
@@ -281,7 +340,7 @@ def draw_inspection_panel(self, screen):
             item_qty = item.get("quantity", 1)
             item_weight = item.get("weight", 0) * item.get("quantity", 1)
 
-            # Icône selon le type
+            # Icone selon le type
             item_type = item.get("type", "misc")
             icon = {"food": "🍖", "tool": "🔧", "resource": "📦", "weapon": "⚔️"}.get(item_type, "📦")
 
@@ -320,9 +379,10 @@ def draw_inspection_panel(self, screen):
     # Afficher le panneau sur l'écran
     if ai_buttons:
         auto_mode = ent.ia.get("auto_mode") if hasattr(ent, "ia") else None
-        pygame.draw.line(panel_surf, (80, 120, 160), (10, panel_height - 44), (panel_width - 10, panel_height - 44), 1)
+        separator_y = ai_buttons[0]["rect"].y - panel_y - 8
+        pygame.draw.line(panel_surf, (80, 120, 160), (10, separator_y), (panel_width - 10, separator_y), 1)
         title = text_font.render("Auto IA", True, (185, 205, 235))
-        panel_surf.blit(title, (10, panel_height - 40))
+        panel_surf.blit(title, (10, max(0, separator_y - 14)))
 
         mouse_pos = pygame.mouse.get_pos()
         for button in ai_buttons:
@@ -342,5 +402,8 @@ def draw_inspection_panel(self, screen):
             pygame.draw.rect(panel_surf, border, rect, 1, border_radius=5)
             label = text_font.render(button["label"], True, (235, 240, 245))
             panel_surf.blit(label, label.get_rect(center=rect.center))
+
+    # Poignee de redimensionnement (tirer vers le bas)
+    _draw_inspection_resize_handle(self, panel_surf, layout, panel_x, panel_y, panel_width)
 
     screen.blit(panel_surf, (panel_x, panel_y))
