@@ -325,6 +325,7 @@ class SaveManager:
                 "pos": (float(getattr(ent, "x", 0.0)),
                         float(getattr(ent, "y", 0.0))),
                 "nom": getattr(ent, "nom", None),
+                "name_locked": getattr(ent, "name_locked", False),
                 "is_player": (ent is joueur),
 
                 # Stats individuelles
@@ -540,6 +541,11 @@ class SaveManager:
                     ent = factory.create_creature(fauna_species, x, y)
                 else:
                     ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
+
+                if ind_data.get("nom") is not None:
+                    ent.nom = ind_data.get("nom")
+                if ind_data.get("name_locked") is not None:
+                    ent.name_locked = bool(ind_data.get("name_locked"))
 
                 for attr_name in [
                     "physique", "sens", "mental", "social",

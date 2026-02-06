@@ -1,0 +1,709 @@
+{
+  "quetes": [
+    {
+      "id": "fou_du_bus",
+      "title": "Fou du bus",
+      "unique": true,
+      "trigger": {
+        "type": "day_range",
+        "start_day": 7,
+        "end_day": 15,
+        "chance": 1.0
+      },
+      "event": {
+        "id": "fou_du_bus_start",
+        "text": "Un homme perd la tête et agit bizarrement.",
+        "choices": [
+          {
+            "id": "aider",
+            "label": "L’aider",
+            "initial_cost": {
+              "resource": "food",
+              "amount": 5
+            },
+            "outcomes": [
+              {
+                "id": "bizarre_inoffensif",
+                "chance": 0.4,
+                "title": "Bizarre mais inoffensif",
+                "effects": [
+                  {
+                    "type": "set_random_inhabitant_state",
+                    "state": "useless"
+                  },
+                  {
+                    "type": "note",
+                    "description": "Aucun gain."
+                  }
+                ]
+              },
+              {
+                "id": "il_se_calme",
+                "chance": 0.2,
+                "title": "Il se calme",
+                "effects": [
+                  {
+                    "type": "modify_resource",
+                    "resource": "food",
+                    "amount": -5
+                  },
+                  {
+                    "type": "set_inhabitant_state",
+                    "state": "useful"
+                  }
+                ]
+              },
+              {
+                "id": "agressif",
+                "chance": 0.3,
+                "title": "Il devient agressif",
+                "effects": [
+                  {
+                    "type": "start_attack_on_inhabitants",
+                    "risk": "losses"
+                  }
+                ]
+              },
+              {
+                "id": "euclide",
+                "chance": 0.1,
+                "title": "Génie incompris (Euclide)",
+                "effects": [
+                  {
+                    "type": "rename_inhabitant",
+                    "name": "Euclide"
+                  },
+                  {
+                    "type": "modify_innovation",
+                    "amount": 5,
+                    "duration": "until_death"
+                  },
+                  {
+                    "type": "unlock_random_technology",
+                    "timing": "instant"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "chasser",
+            "label": "Le chasser",
+            "outcomes": [
+              {
+                "id": "mort_habitant",
+                "chance": 0.8,
+                "title": "Mort de l’habitant",
+                "effects": [
+                  {
+                    "type": "note",
+                    "description": "Aucun gain. Fin définitive de l’événement."
+                  }
+                ]
+              },
+              {
+                "id": "rebelle",
+                "chance": 0.2,
+                "title": "Il se rebelle",
+                "effects": [
+                  {
+                    "type": "start_attack_on_inhabitants"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "ignorer",
+            "label": "L’ignorer",
+            "outcomes": [
+              {
+                "id": "meurt_seul",
+                "chance": 0.4,
+                "title": "Il meurt seul",
+                "effects": [
+                  {
+                    "type": "note",
+                    "description": "Aucun impact supplémentaire."
+                  }
+                ]
+              },
+              {
+                "id": "socrate",
+                "chance": 0.15,
+                "title": "Philosophe des rues (Socrate)",
+                "effects": [
+                  {
+                    "type": "rename_inhabitant",
+                    "name": "Socrate"
+                  },
+                  {
+                    "type": "modify_intelligence",
+                    "amount": 35
+                  },
+                  {
+                    "type": "set_work_restriction",
+                    "allowed": ["research_center"]
+                  },
+                  {
+                    "type": "modify_innovation",
+                    "amount": 5,
+                    "per": "day",
+                    "duration": "until_death"
+                  },
+                  {
+                    "type": "modify_happiness",
+                    "amount": -3
+                  }
+                ]
+              },
+              {
+                "id": "diogene",
+                "chance": 0.25,
+                "title": "Ermite incontrôlable (Diogène)",
+                "effects": [
+                  {
+                    "type": "rename_inhabitant",
+                    "name": "Diogène"
+                  },
+                  {
+                    "type": "modify_intelligence",
+                    "amount": 25
+                  },
+                  {
+                    "type": "modify_innovation",
+                    "amount": 3,
+                    "per": "day",
+                    "duration": "until_death"
+                  },
+                  {
+                    "type": "modify_happiness",
+                    "amount": -7
+                  },
+                  {
+                    "type": "set_food_consumption",
+                    "amount": 0
+                  },
+                  {
+                    "type": "set_controllable",
+                    "value": false
+                  }
+                ]
+              },
+              {
+                "id": "agressif_ignorer",
+                "chance": 0.2,
+                "title": "Il devient agressif",
+                "effects": [
+                  {
+                    "type": "start_attack_on_inhabitants"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "feu",
+      "title": "Feu",
+      "unique": true,
+      "trigger": {
+        "type": "first_natural_fire",
+        "chance": 1.0
+      },
+      "event": {
+        "id": "eclair_et_incendie",
+        "title": "L’Éclair et l’Incendie",
+        "effects_immediate": [
+          {
+            "type": "modify_happiness",
+            "amount": -3
+          }
+        ],
+        "choices": [
+          {
+            "id": "effrayes",
+            "label": "Effrayés",
+            "effects_immediate": [
+              {
+                "type": "modify_happiness",
+                "amount": -4
+              },
+              {
+                "type": "burn_random_building",
+                "amount": 1
+              }
+            ],
+            "next_event": "connaitre_pour_controler"
+          },
+          {
+            "id": "emerveilles",
+            "label": "Émerveillés",
+            "effects_immediate": [
+              {
+                "type": "modify_resource",
+                "resource": "wood",
+                "amount": -10,
+                "reason": "Offrande"
+              }
+            ],
+            "outcomes": [
+              {
+                "id": "offrande_moderee",
+                "chance": 0.5,
+                "effects": [
+                  {
+                    "type": "modify_happiness",
+                    "amount": 3
+                  },
+                  {
+                    "type": "burn_random_building",
+                    "amount": 1
+                  }
+                ]
+              },
+              {
+                "id": "offrande_intense",
+                "chance": 0.5,
+                "effects": [
+                  {
+                    "type": "modify_happiness",
+                    "amount": 6
+                  },
+                  {
+                    "type": "burn_random_building",
+                    "amount": 2
+                  }
+                ]
+              }
+            ],
+            "next_event": "amour_ou_puissance"
+          }
+        ]
+      },
+      "events": [
+        {
+          "id": "connaitre_pour_controler",
+          "title": "Le connaître pour le contrôler ?",
+          "text": "Un membre propose d’étudier le feu.",
+          "choices": [
+            {
+              "id": "refuser",
+              "label": "Refuser",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": -3
+                }
+              ],
+              "next_event": "catastrophe"
+            },
+            {
+              "id": "accepter",
+              "label": "Accepter",
+              "effects_immediate": [
+                {
+                  "type": "start_research",
+                  "research_id": "Etude_du_feu",
+                  "mode": "standard"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "catastrophe",
+          "title": "CATASTROPHE",
+          "text": "Un nouvel éclair tombe sur la forêt.",
+          "effects_immediate": [
+            {
+              "type": "kill_inhabitant",
+              "amount": 1,
+              "reason": "Incendie"
+            }
+          ],
+          "choices": [
+            {
+              "id": "decider_etudier",
+              "label": "Décider de l’étudier",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": -6
+                },
+                {
+                  "type": "start_research",
+                  "research_id": "Etude_du_feu",
+                  "mode": "standard"
+                }
+              ]
+            },
+            {
+              "id": "refuser",
+              "label": "Refuser",
+              "next_event": "incendie_degenere"
+            }
+          ]
+        },
+        {
+          "id": "incendie_degenere",
+          "title": "L’incendie dégénère",
+          "effects_immediate": [
+            {
+              "type": "game_over",
+              "reason": "Toute l’île brûle, tous meurent, espèce éteinte."
+            }
+          ]
+        },
+        {
+          "id": "amour_ou_puissance",
+          "title": "Amour ou Puissance ?",
+          "choices": [
+            {
+              "id": "feu_sacre",
+              "label": "Le feu est divin et sacré",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 4
+                },
+                {
+                  "type": "modify_stat",
+                  "stat": "spiritualite",
+                  "amount": "X"
+                },
+                {
+                  "type": "start_research",
+                  "research_id": "Etude_du_feu",
+                  "mode": "standard"
+                },
+                {
+                  "type": "unlock_branch",
+                  "branch_id": "feu_sacre"
+                }
+              ],
+              "branch_technologies": [
+                "Feu_Totem",
+                "Rites_de_la_flamme",
+                "Feu_de_transmission"
+              ]
+            },
+            {
+              "id": "feu_strategique",
+              "label": "Le feu sera notre force",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 1
+                },
+                {
+                  "type": "modify_stat",
+                  "stat": "strategie",
+                  "amount": "X"
+                },
+                {
+                  "type": "start_research",
+                  "research_id": "Etude_du_feu",
+                  "mode": "standard"
+                },
+                {
+                  "type": "unlock_branch",
+                  "branch_id": "feu_strategique"
+                }
+              ],
+              "branch_technologies": [
+                "Feux_d_intimidation",
+                "Chasse_au_feu",
+                "Barrieres_flamboyantes"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mieux_manger",
+          "title": "Mieux manger ?",
+          "trigger": {
+            "type": "tech_unlocked_delay",
+            "tech_id": "Feu",
+            "delay_hours": 10,
+            "chance": 1.0
+          },
+          "outcomes": [
+            {
+              "id": "adore",
+              "chance": 0.4,
+              "title": "Espèce adore",
+              "effects": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 2
+                },
+                {
+                  "type": "unlock_feature",
+                  "feature_id": "cuisson_nourriture"
+                }
+              ]
+            },
+            {
+              "id": "deteste",
+              "chance": 0.2,
+              "title": "Espèce déteste la nourriture cuite",
+              "effects": [
+                {
+                  "type": "lock_feature",
+                  "feature_id": "cuisson_nourriture",
+                  "duration": "permanent"
+                }
+              ]
+            },
+            {
+              "id": "brulee",
+              "chance": 0.4,
+              "title": "Nourriture brûlée",
+              "next_event": "maitrise_cuisson"
+            }
+          ]
+        },
+        {
+          "id": "maitrise_cuisson",
+          "title": "Maîtrise de la cuisson",
+          "outcomes": [
+            {
+              "id": "adore",
+              "chance": 0.67,
+              "title": "Espèce adore",
+              "effects": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 1
+                },
+                {
+                  "type": "unlock_feature",
+                  "feature_id": "cuisson_nourriture"
+                }
+              ]
+            },
+            {
+              "id": "deteste",
+              "chance": 0.33,
+              "title": "Espèce déteste",
+              "effects": [
+                {
+                  "type": "lock_feature",
+                  "feature_id": "cuisson_nourriture",
+                  "duration": "permanent"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "feu_nous_echappe",
+          "title": "Le feu nous échappe",
+          "trigger": {
+            "type": "tech_unlocked_delay",
+            "tech_id": "Feu",
+            "delay_hours": 38,
+            "chance": 0.35
+          },
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1
+            }
+          ],
+          "choices": [
+            {
+              "id": "imposer_regles",
+              "label": "Imposer des règles",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": -2
+                },
+                {
+                  "type": "set_flag",
+                  "flag": "REGLES_DU_FEU",
+                  "value": true
+                },
+                {
+                  "type": "modify_fire_risk",
+                  "amount": -0.5
+                }
+              ]
+            },
+            {
+              "id": "former_gardiens",
+              "label": "Former des gardiens du feu",
+              "initial_cost": {
+                "resource": "food",
+                "amount": 5
+              },
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 1
+                },
+                {
+                  "type": "unlock_role",
+                  "role_id": "garde_feu",
+                  "slots": 1
+                },
+                {
+                  "type": "modify_fire_risk",
+                  "amount": -0.7
+                },
+                {
+                  "type": "set_flag",
+                  "flag": "INTERVENTION_FEU_RAPIDE",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "id": "laisser_faire",
+              "label": "Laisser faire",
+              "outcomes": [
+                {
+                  "id": "rien",
+                  "chance": 0.3,
+                  "effects": [
+                    {
+                      "type": "note",
+                      "description": "Aucun effet supplémentaire."
+                    }
+                  ]
+                },
+                {
+                  "id": "accident",
+                  "chance": 0.7,
+                  "effects": [
+                    {
+                      "type": "burn_random_building",
+                      "amount": 1
+                    },
+                    {
+                      "type": "modify_happiness",
+                      "amount": -3
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "qui_possede_le_feu",
+          "title": "Qui possède le feu ?",
+          "trigger": {
+            "type": "tech_unlocked_delay",
+            "tech_id": "Feu",
+            "delay_hours": 38,
+            "chance": 1.0,
+            "if_not_triggered": "feu_nous_echappe"
+          },
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -2
+            }
+          ],
+          "choices": [
+            {
+              "id": "feu_public",
+              "label": "Feu public (tout le monde y a accès)",
+              "effects_immediate": [
+                {
+                  "type": "modify_happiness",
+                  "amount": 3
+                },
+                {
+                  "type": "set_flag",
+                  "flag": "FEU_PUBLIC",
+                  "value": true
+                },
+                {
+                  "type": "modify_fire_risk",
+                  "amount": 0.3
+                },
+                {
+                  "type": "modify_stat",
+                  "stat": "cohesion",
+                  "amount": "X"
+                }
+              ]
+            },
+            {
+              "id": "feu_reserve",
+              "label": "Feu réservé aux responsables",
+              "effects_immediate": [
+                {
+                  "type": "unlock_role",
+                  "role_id": "garde_feu",
+                  "slots": 1
+                },
+                {
+                  "type": "modify_happiness",
+                  "amount": -2
+                },
+                {
+                  "type": "set_flag",
+                  "flag": "FEU_RESERVE",
+                  "value": true
+                },
+                {
+                  "type": "modify_fire_risk",
+                  "amount": -0.4
+                },
+                {
+                  "type": "modify_stat",
+                  "stat": "strategie",
+                  "amount": "X"
+                }
+              ]
+            },
+            {
+              "id": "feu_sacre_reserve",
+              "label": "Seuls les gardiens du feu peuvent l’approcher",
+              "condition": {
+                "type": "tech_unlocked",
+                "tech_id": "Feu_Totem"
+              },
+              "effects_immediate": [
+                {
+                  "type": "unlock_role",
+                  "role_id": "garde_feu_sacre",
+                  "slots": 1
+                },
+                {
+                  "type": "modify_happiness",
+                  "amount": 1
+                },
+                {
+                  "type": "modify_stat",
+                  "stat": "spiritualite",
+                  "amount": "X"
+                },
+                {
+                  "type": "set_flag",
+                  "flag": "FEU_SACRE_RESERVE",
+                  "value": true
+                },
+                {
+                  "type": "unlock_action",
+                  "action_id": "ceremonie_du_feu"
+                },
+                {
+                  "type": "modify_fire_risk",
+                  "amount": -0.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

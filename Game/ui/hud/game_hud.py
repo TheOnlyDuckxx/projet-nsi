@@ -84,6 +84,7 @@ def _inspection_panel_layout(self, screen):
     )
 
     buttons = []
+    rename_button = None
     if not getattr(ent, "is_egg", False):
         gap = 8
         btn_h = 24
@@ -98,12 +99,14 @@ def _inspection_panel_layout(self, screen):
                     "rect": pygame.Rect(btn_x, btn_y, btn_w, btn_h),
                 }
             )
+        rename_button = pygame.Rect(panel_x + panel_width - 110, panel_y + 8, 96, 22)
 
     return {
         "entity": ent,
         "panel_rect": panel_rect,
         "resize_handle_rect": resize_handle_rect,
         "buttons": buttons,
+        "rename_button": rename_button,
     }
 
 
@@ -135,6 +138,15 @@ def handle_inspection_panel_click(self, pos, screen=None):
 
     ent = layout["entity"]
     if getattr(ent, "is_egg", False):
+        return True
+    rename_button = layout.get("rename_button")
+    if rename_button and rename_button.collidepoint(pos):
+        if getattr(ent, "name_locked", False):
+            add_notification(f"{ent.nom} : nom verrouillé.")
+            return True
+        start_rename = getattr(self, "start_rename_target", None)
+        if callable(start_rename):
+            start_rename(ent)
         return True
 
     for button in layout["buttons"]:
@@ -260,7 +272,33 @@ def draw_inspection_panel(self, screen):
     # === TITRE ===
     title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
     panel_surf.blit(title, (10, y_offset))
-    y_offset += 30
+    rename_button = layout.get("rename_button")
+    if rename_button:
+        btn_rect = rename_button.move(-panel_x, -panel_y)
+        locked = getattr(ent, "name_locked", False)
+        label = "Verrouillé" if locked else "Renommer"
+        bg = (60, 70, 90) if locked else (70, 90, 120)
+        border = (120, 140, 170)
+        pygame.draw.rect(panel_surf, bg, btn_rect, border_radius=6)
+        pygame.draw.rect(panel_surf, border, btn_rect, 1, border_radius=6)
+        text = text_font.render(label, True, (230, 230, 240))
+        panel_surf.blit(text, text.get_rect(center=btn_rect.center))
+    y_offset += 22
+    name_status = "verrouillé" if getattr(ent, "name_locked", False) else "modifiable"
+    name_line = text_font.render(f"Nom : {ent.nom} ({name_status})", True, (190, 200, 210))
+    panel_surf.blit(name_line, (10, y_offset))
+    y_offset += 18
+
+    if getattr(self, "rename_active", False) and getattr(self, "rename_target", None) is ent:
+        input_rect = pygame.Rect(10, y_offset, panel_width - 20, 24)
+        pygame.draw.rect(panel_surf, (235, 235, 235), input_rect, border_radius=6)
+        pygame.draw.rect(panel_surf, (120, 140, 170), input_rect, 1, border_radius=6)
+        value = getattr(self, "rename_value", "") or ""
+        text = text_font.render(value, True, (20, 20, 20))
+        panel_surf.blit(text, (input_rect.x + 6, input_rect.y + 4))
+        hint = text_font.render("Entrée: valider | Échap: annuler", True, (150, 150, 170))
+        panel_surf.blit(hint, (10, input_rect.bottom + 4))
+        y_offset += 42
 
     # Ligne de séparation
     pygame.draw.line(panel_surf, (80, 120, 160), (10, y_offset), (panel_width - 10, y_offset), 1)
