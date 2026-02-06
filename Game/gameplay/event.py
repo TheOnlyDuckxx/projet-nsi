@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 
 from Game.core.utils import resource_path
+from Game.gameplay.quest_effects import apply_quest_effect
 from Game.ui.hud.notification import add_notification
 
 
@@ -305,8 +306,9 @@ class EventManager:
                 if hasattr(phase, "set_death_policy"):
                     phase.set_death_policy(mode)
             else:
-                # Effet inconnu : pour extension future
-                print(f"[Events] Effet inconnu ignoré: {eff}")
+                if not apply_quest_effect(phase, eff):
+                    # Effet inconnu : pour extension future
+                    print(f"[Events] Effet inconnu ignoré: {eff}")
 
     # ---------- Lifecycle ----------
     def update(self, dt: float, phase):

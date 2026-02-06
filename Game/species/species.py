@@ -148,6 +148,7 @@ class Individu:
     def __init__(self, espece: Espece, x: float, y: float, assets):
         self.espece = espece          # Référence à l'espèce
         self.nom = espece.nom         # Pratique pour l'affichage
+        self.name_locked = False
 
         # --- Position dans le monde ---
         self.x = float(x)
@@ -216,6 +217,14 @@ class Individu:
         # Enregistrer l'individu dans l'espèce
         self.espece.individus.append(self)
         self.espece.population = len(self.espece.individus)
+
+    def set_name(self, name: str, *, locked: bool = False) -> None:
+        cleaned = (name or "").strip()
+        if not cleaned:
+            return
+        self.nom = cleaned
+        if locked:
+            self.name_locked = True
 
     # ---------- Boucle de jeu ----------
 

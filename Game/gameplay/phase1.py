@@ -132,6 +132,10 @@ class Phase1:
         # Sélection actuelle: ("tile",(i,j)) | ("prop",(i,j,pid)) | ("entity",ent)
         self.selected: Optional[tuple] = None
         self.selected_entities: list = []
+        self.rename_active = False
+        self.rename_value = ""
+        self.rename_target = None
+        self.rename_max_length = 20
         self.save_message = ""
         self.save_message_timer = 0.0
         self.craft_system = Craft()
@@ -1515,6 +1519,20 @@ class Phase1:
             if consumed:
                 continue
 
+            if self.rename_active:
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_RETURN:
+                        self._commit_rename()
+                    elif e.key == pygame.K_ESCAPE:
+                        self._cancel_rename()
+                    elif e.key == pygame.K_BACKSPACE:
+                        self.rename_value = self.rename_value[:-1]
+                    else:
+                        if e.unicode and len(self.rename_value) < self.rename_max_length:
+                            if e.unicode.isprintable():
+                                self.rename_value += e.unicode
+                continue
+
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
@@ -1529,6 +1547,14 @@ class Phase1:
                 elif e.key == pygame.K_i:
                     self.inspect_mode_active = True
                     self._set_cursor(self.inspect_cursor_path)
+                elif e.key == pygame.K_n:
+                    ent = None
+                    if self.selected_entities:
+                        ent = self.selected_entities[0]
+                    elif self.selected and self.selected[0] == "entity":
+                        ent = self.selected[1]
+                    if ent is not None:
+                        self.start_rename_target(ent)
 
             elif e.type == pygame.KEYUP and e.key == pygame.K_h:
                 self.props_transparency_active = False
@@ -1898,6 +1924,7 @@ class Phase1:
 
         # 3) Marqueur de sélection
         self._draw_selection_marker(screen)
+        self._draw_hover_entity_name(screen)
 
         # 4) HUD / pause / notifications
         if self.paused and not self.ui_menu_open:
@@ -1941,10 +1968,42 @@ class Phase1:
         self.selected_entities = valid
         if valid:
             self.selected = ("entity", valid[0])
+            if self.rename_active and self.rename_target is not valid[0]:
+                self._cancel_rename()
         elif self.selected and self.selected[0] == "entity":
             self.selected = None
         if not self.selected and not self.selected_entities:
             self.info_windows = []
+
+    def start_rename_target(self, ent) -> None:
+        if ent is None or getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+            return
+        if getattr(ent, "name_locked", False):
+            return
+        self.rename_active = True
+        self.rename_target = ent
+        self.rename_value = getattr(ent, "nom", "") or ""
+
+    def _commit_rename(self) -> None:
+        target = self.rename_target
+        if target is None:
+            self._cancel_rename()
+            return
+        new_name = (self.rename_value or "").strip()
+        if not new_name:
+            self._cancel_rename()
+            return
+        if hasattr(target, "set_name"):
+            target.set_name(new_name, locked=False)
+        else:
+            target.nom = new_name
+        add_notification(f"Nom mis à jour : {target.nom}")
+        self._cancel_rename()
+
+    def _cancel_rename(self) -> None:
+        self.rename_active = False
+        self.rename_target = None
+        self.rename_value = ""
 
     def _select_entities_in_rect(self, rect: pygame.Rect) -> None:
         selected = []
@@ -2390,6 +2449,33 @@ class Phase1:
 
             aura_rect = aura.get_rect(center=(center_x, center_y))
             screen.blit(aura, aura_rect)
+
+    def _draw_hover_entity_name(self, screen: pygame.Surface):
+        if self.ui_menu_open:
+            return
+        mx, my = pygame.mouse.get_pos()
+        hit = self.view.pick_at(mx, my)
+        if not hit or hit[0] != "entity":
+            return
+        ent = hit[1]
+        if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+            return
+        name = getattr(ent, "nom", "")
+        if not name:
+            return
+        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
+        if not poly:
+            return
+        center_x = int(sum(p[0] for p in poly) / len(poly))
+        top_y = int(min(p[1] for p in poly)) - 18
+        text = self.small_font.render(name, True, (245, 245, 245))
+        padding = 4
+        bg_rect = text.get_rect(center=(center_x, top_y))
+        bg_rect.inflate_ip(padding * 2, padding)
+        bg = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+        bg.fill((10, 10, 20, 160))
+        screen.blit(bg, bg_rect.topleft)
+        screen.blit(text, text.get_rect(center=bg_rect.center))
 
 
     # ---------- FALLBACK PICK (ancien beam) ----------
