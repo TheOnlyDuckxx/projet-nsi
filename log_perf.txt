@@ -1,0 +1,58 @@
+[Perf][Loading] Debut generation world (preset=Custom, seed=Aléatoire) | +0.000s | total 0.000s
+[Perf][App] change_state SPECIES_CREATION -> LOADING (fin) | total 0.000s
+[Perf][Loading] Parametres de monde charges | +0.003s | total 0.003s
+[Perf][Loading] WorldGenerator initialise | +0.000s | total 0.003s
+[Perf][Loading] Lancement generate_planet (rng_seed=Aléatoire) | +0.000s | total 0.003s
+[Perf][Loading] Phase 'Spawn…' (3.5%) | +0.000s | total 0.003s
+[Perf][Loading] Phase 'Recherche du point de départ… (10/70)' (18.8%) | +0.003s | total 0.007s
+[Perf][Loading] Phase 'Recherche du point de départ… (20/70)' (24.6%) | +0.004s | total 0.010s
+[Perf][Loading] Phase 'Recherche du point de départ… (30/70)' (30.5%) | +0.003s | total 0.013s
+[Perf][Loading] Phase 'Recherche du point de départ… (40/70)' (36.4%) | +0.003s | total 0.017s
+[Perf][Loading] Phase 'Recherche du point de départ… (50/70)' (42.2%) | +0.003s | total 0.020s
+[Perf][Loading] Phase 'Recherche du point de départ… (60/70)' (48.1%) | +0.004s | total 0.023s
+[Perf][Loading] Phase 'Recherche du point de départ… (70/70)' (53.9%) | +0.004s | total 0.027s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 17/289)' (54.6%) | +0.005s | total 0.032s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 34/289)' (55.4%) | +0.008s | total 0.040s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 51/289)' (56.1%) | +0.006s | total 0.046s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 68/289)' (56.9%) | +0.007s | total 0.054s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 85/289)' (57.6%) | +0.005s | total 0.059s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 102/289)' (58.3%) | +0.005s | total 0.064s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 119/289)' (59.1%) | +0.007s | total 0.071s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 136/289)' (59.8%) | +0.005s | total 0.076s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 153/289)' (60.6%) | +0.007s | total 0.084s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 170/289)' (61.3%) | +0.006s | total 0.089s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 187/289)' (62.1%) | +0.006s | total 0.095s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 204/289)' (62.8%) | +0.007s | total 0.102s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 221/289)' (63.5%) | +0.006s | total 0.108s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 238/289)' (64.3%) | +0.005s | total 0.113s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 255/289)' (65.0%) | +0.007s | total 0.120s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 272/289)' (65.8%) | +0.005s | total 0.125s
+[Perf][Loading] Phase 'Recherche du point de départ… (raffinage 289/289)' (66.5%) | +0.005s | total 0.130s
+[Perf][Loading] Phase 'Spawn validé' (66.5%) | +0.000s | total 0.131s
+[Perf][Loading] Phase 'Terminé !' (70.0%) | +0.000s | total 0.131s
+[Perf][Loading] Monde genere | +0.128s | total 0.131s
+[Perf][Loading] Prechargement rendu (chunks=3) | +0.002s | total 0.132s
+[Perf][Loading] Prechargement rendu termine | +5.234s | total 5.366s
+[Perf][Loading] Spawn raffine sur zone chargee (960, 567) | +3.466s | total 8.832s
+[Perf][Loading] Prechargement rendu ajuste (chunks=2) | +1.765s | total 10.597s
+[Perf][Loading] Etat LOADING termine | +0.000s | total 10.597s
+[Perf][Loading] Transition vers PHASE1 (debut)
+
+[Perf][Phase1][Update] Debut frame update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Event manager update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Day/night update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Tech tree update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Reproduction update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Vue update | +0.000s | total 0.000s
+[Perf][Phase1][Update] Fog recompute (observers=2) | +0.001s | total 0.001s
+[Perf][Phase1][Update] Fauna spawner update | +0.000s | total 0.001s
+[Perf][Phase1][Update] Entities update loop (count=6) | +0.000s | total 0.001s
+[Perf][Phase1][Update] Entity deaths handled (count=0) | +0.000s | total 0.001s
+[Perf][Phase1][Update] Construction sites update | +0.000s | total 0.001s
+[Perf][Phase1][Update] Fin frame | total 0.001s | entities=6
+[Perf][App][Frame] state=PHASE1 dt=0.034s total=1.550s | tick=0.000s events=0.000s input=1.517s progression=0.000s update=0.001s render=0.031s flip+notif=0.002s
+
+[Perf][Phase1][Update] Fin frame | total 1.567s | entities=11
+[Perf][App][Frame] state=PHASE1 dt=0.029s total=1.599s | tick=0.000s events=0.000s input=0.000s progression=0.000s update=1.567s render=0.029s flip+notif=0.002s
+
+[Perf][App][Frame] state=PHASE1 dt=0.035s total=61.042s | tick=0.000s events=0.000s input=61.008s progression=0.000s update=0.001s render=0.031s flip+notif=0.002s

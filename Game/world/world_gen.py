@@ -40,41 +40,43 @@ ProgressCb = Optional[Callable[[float, str], None]]
 # Props helpers (IDs)
 # --------------------------------------------------------------------------------------
 
+_PROP_ID_MAP = {
+    "tree_3": 8,
+    "tree_1": 9,
+    "tree_2": 10,
+    "tree_dead": 12,
+    "rock": 13,
+    "palm": 14,
+    "cactus": 15,
+    "bush": 16,
+    "berry_bush": 17,
+    "reeds": 18,
+    "driftwood": 19,
+    "flower": 20,
+    "stump": 21,
+    "log": 22,
+    "boulder": 23,
+    "flower2": 25,
+    "flower3": 26,
+    "entrepot": 102,
+    "blueberry_bush": 28,
+    "ore_copper": 29,
+    "ore_iron": 30,
+    "ore_gold": 31,
+    "clay_pit": 32,
+    "vine": 33,
+    "mushroom1": 34,
+    "mushroom2": 35,
+    "mushroom3": 36,
+    "bone_pile": 37,
+    "nest": 38,
+    "beehive": 39,
+    "freshwater_pool": 40,
+}
+
+
 def get_prop_id(name: str) -> int:
-    _MAP = {
-        "tree_3": 8,
-        "tree_1": 9,
-        "tree_2": 10,
-        "tree_dead": 12,
-        "rock": 13,
-        "palm": 14,
-        "cactus": 15,
-        "bush": 16,
-        "berry_bush": 17,
-        "reeds": 18,
-        "driftwood": 19,
-        "flower": 20,
-        "stump": 21,
-        "log": 22,
-        "boulder": 23,
-        "flower2": 25,
-        "flower3": 26,
-        "entrepot": 102,
-        "blueberry_bush": 28,
-        "ore_copper": 29,
-        "ore_iron": 30,
-        "ore_gold": 31,
-        "clay_pit": 32,
-        "vine": 33,
-        "mushroom1": 34,
-        "mushroom2": 35,
-        "mushroom3": 36,
-        "bone_pile": 37,
-        "nest": 38,
-        "beehive": 39,
-        "freshwater_pool": 40,
-    }
-    return _MAP.get(name, _MAP["tree_2"])
+    return _PROP_ID_MAP.get(name, _PROP_ID_MAP["tree_2"])
 
 ATMOSPHERE_MAP = {
     "Basse": 0.7,
@@ -113,6 +115,9 @@ class WorldParams:
     mystic_influence: str = "Nulle"
     dimensional_stability: str = "Stable"
 
+    # Perf/qualité : 1 = génération détaillée (lente), 16 = génération optimisée (recommandé)
+    chunk_noise_step: int = 16
+
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "WorldParams":
         raw = d.get("atmosphere_density", 1.0)
@@ -136,6 +141,7 @@ class WorldParams:
             cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
             mystic_influence=str(d.get("mystic_influence", "Nulle")),
             dimensional_stability=str(d.get("dimensional_stability", "Stable")),
+            chunk_noise_step=int(d.get("chunk_noise_step", 16) or 16),
         )
 
 
@@ -560,6 +566,40 @@ BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_MYSTIC: "mystic",
 }
 
+def _safe_ground_gid(name: str) -> int:
+    try:
+        return int(get_tile_id(name))
+    except Exception:
+        try:
+            return int(get_tile_id("grass"))
+        except Exception:
+            return 0
+
+
+_BIOME_TO_GROUND_NAME = {
+    BIOME_SNOW: "snow",
+    BIOME_TUNDRA: "taiga",
+    BIOME_DESERT: "desert",
+    BIOME_SAVANNA: "steppe",
+    BIOME_PLAINS: "grass",
+    BIOME_FOREST: "forest",
+    BIOME_TAIGA: "taiga",
+    BIOME_RAINFOREST: "rainforest",
+    BIOME_SWAMP: "swamp",
+    BIOME_MANGROVE: "mangrove",
+    BIOME_ROCKY: "rocky",
+    BIOME_ALPINE: "alpine",
+    BIOME_VOLCANIC: "volcanic",
+    BIOME_MYSTIC: "mystic",
+}
+
+_GID_OCEAN = _safe_ground_gid("ocean")
+_GID_LAKE = _safe_ground_gid("lake")
+_GID_RIVER = _safe_ground_gid("river")
+_GID_GRASS = _safe_ground_gid("grass")
+
+_BIOME_TO_GROUND_GID = {bid: _safe_ground_gid(name) for bid, name in _BIOME_TO_GROUND_NAME.items()}
+
 
 # --------------------------------------------------------------------------------------
 # Grid proxies (compat world.xxx[y][x])
@@ -643,7 +683,7 @@ class ChunkedWorld:
         params: WorldParams,
         tiles_levels: int = 6,
         chunk_size: int = 64,
-        cache_chunks: int = 256,
+        cache_chunks: int = 2048,
         progress: ProgressCb = None,   # <-- nouveau
     ):
 
@@ -920,6 +960,13 @@ class ChunkedWorld:
         cs = self.chunk_size
         ch = _Chunk(cx, cy, cs)
 
+        start_x = cx * cs
+        start_y = cy * cs
+        actual_w = min(cs, max(0, self.width - start_x))
+        actual_h = min(cs, max(0, self.height - start_y))
+        if actual_w <= 0 or actual_h <= 0:
+            return ch
+
         # -------- paramètres -> multiplicateurs (comme avant) --------
         temp_label = str(getattr(self.params, "Climat", "Tempéré"))
         temp_bias = {"Glaciaire": -0.35, "Froid": -0.20, "Tempéré": 0.0, "Chaud": 0.20, "Aride": 0.25, "Tropical": 0.18}.get(temp_label, 0.0)
@@ -938,18 +985,6 @@ class ChunkedWorld:
 
         base = int(self.seed)
 
-        # -------- helpers bruit (continus) --------
-        def ridged(x: float, y: float, seed: int, octaves: int = 4) -> float:
-            # _fbm_perlin -> [-1,1], ridged -> [0,1]
-            n = _fbm_perlin(x, y, seed, octaves=octaves)
-            r = 1.0 - abs(n)
-            return _clamp01(r)
-
-        def domain_warp(gx: float, gy: float, amp: float, scale: float, seed: int) -> tuple[float, float]:
-            wx = gx + amp * _fbm_perlin(gx * scale, gy * scale, seed + 1, octaves=3)
-            wy = gy + amp * _fbm_perlin((gx + 1337.0) * scale, (gy - 7331.0) * scale, seed + 2, octaves=3)
-            return wx, wy
-
         # échelles (IMPORTANT : ne plus dépendre de cx/cy)
         cont_scale   = 0.0011 * rugged
         detail_scale = 0.0100 * rugged
@@ -967,84 +1002,209 @@ class ChunkedWorld:
         coast_var_scale = 0.0035
         coast_var_amp   = 0.030  # +/- 0.03 sur la hauteur de mer
 
-        # boucle chunk
-        for ly in range(cs):
-            gy = cy * cs + ly
+        raw_step = getattr(self.params, "chunk_noise_step", 8)
+        try:
+            noise_step = int(raw_step) if raw_step is not None else 8
+        except Exception:
+            noise_step = 8
+        noise_step = max(1, min(cs, noise_step))
+
+        # Points d'échantillonnage (0..actual_w / 0..actual_h, + bord pour interpolation)
+        xs = list(range(0, actual_w + 1, noise_step))
+        if xs[-1] != actual_w:
+            xs.append(actual_w)
+        ys = list(range(0, actual_h + 1, noise_step))
+        if ys[-1] != actual_h:
+            ys.append(actual_h)
+        nx = len(xs)
+        ny = len(ys)
+
+        # LUT interpolation par coordonnée locale (évite divisions dans la boucle principale)
+        x0_idx = [0] * actual_w
+        x_frac = [0.0] * actual_w
+        xi = 0
+        for lx in range(actual_w):
+            while xi + 1 < nx - 1 and xs[xi + 1] <= lx:
+                xi += 1
+            x0_idx[lx] = xi
+            denom = xs[xi + 1] - xs[xi]
+            x_frac[lx] = 0.0 if denom <= 0 else (lx - xs[xi]) / denom
+
+        y0_idx = [0] * actual_h
+        y_frac = [0.0] * actual_h
+        yi = 0
+        for ly in range(actual_h):
+            while yi + 1 < ny - 1 and ys[yi + 1] <= ly:
+                yi += 1
+            y0_idx[ly] = yi
+            denom = ys[yi + 1] - ys[yi]
+            y_frac[ly] = 0.0 if denom <= 0 else (ly - ys[yi]) / denom
+
+        # Échantillons bruités (valeurs "brutes" interpolables)
+        n_samp = nx * ny
+        height_s = [0.0] * n_samp
+        peak_s = [0.0] * n_samp
+        tnoise_s = [0.0] * n_samp
+        mnoise_s = [0.0] * n_samp
+        lake_s = [0.0] * n_samp
+        lake_mod_s = [0.0] * n_samp
+        river_s = [0.0] * n_samp
+
+        clamp01 = _clamp01
+        fbm = _fbm
+        fbm_perlin = _fbm_perlin
+
+        # Pré-calcul : un bruit "cher" sur une grille grossière, puis interpolation.
+        for sy_i, lsy in enumerate(ys):
+            gy = start_y + int(lsy)
             if gy >= self.height:
-                break
-
-            lat = (gy / max(1, self.height - 1)) * 2.0 - 1.0  # -1..+1
-            lat_abs = abs(lat)
-
-            for lx in range(cs):
-                gx = cx * cs + lx
+                gy = self.height - 1
+            gyf = float(gy)
+            for sx_i, lsx in enumerate(xs):
+                gx = start_x + int(lsx)
                 if gx >= self.width:
-                    break
+                    gx = self.width - 1
+                gxf = float(gx)
 
                 # --- domain warp (rend formes + naturelles, casse l’alignement chunk/grid) ---
-                wx, wy = domain_warp(float(gx), float(gy), amp=warp_amp, scale=warp_scale, seed=base + 90000)
+                wx = gxf + warp_amp * fbm_perlin(gxf * warp_scale, gyf * warp_scale, base + 90001, octaves=3)
+                wy = gyf + warp_amp * fbm_perlin((gxf + 1337.0) * warp_scale, (gyf - 7331.0) * warp_scale, base + 90002, octaves=3)
 
                 # --- élévation (CONTINUE, Perlin gradient noise) ---
-                h1 = _fbm_perlin(wx * cont_scale,   wy * cont_scale,   base + 11,  octaves=5)
-                h2 = _fbm_perlin(wx * detail_scale, wy * detail_scale, base + 97,  octaves=4)
+                h1 = fbm_perlin(wx * cont_scale,   wy * cont_scale,   base + 11,  octaves=5)
+                h2 = fbm_perlin(wx * detail_scale, wy * detail_scale, base + 97,  octaves=4)
                 base_h = 0.72 * h1 + 0.28 * h2
 
-                # macro-relief : grandes zones hautes/basses
-                macro = _fbm_perlin(wx * macro_scale, wy * macro_scale, base + 4001, octaves=3)
+                macro = fbm_perlin(wx * macro_scale, wy * macro_scale, base + 4001, octaves=3)
 
-                # normalisation continue en hauteur signée
                 height = (base_h + macro * macro_amp) / (1.0 + macro_amp)
                 height -= self.sea_level
 
-                # variation locale du niveau de mer (continue) pour côtes + naturelles
-                height += coast_var_amp * _fbm_perlin(wx * coast_var_scale, wy * coast_var_scale, base + 9991, octaves=2)
+                height += coast_var_amp * fbm_perlin(wx * coast_var_scale, wy * coast_var_scale, base + 9991, octaves=2)
 
-                h01 = _clamp01((height + 1.0) * 0.5)
+                h01 = clamp01((height + 1.0) * 0.5)
 
-                # montagnes (ridged) seulement si altitude déjà un peu haute
-                r = ridged(wx * peak_scale, wy * peak_scale, base + 7777, octaves=4)
+                # montagnes (ridged)
+                n = fbm_perlin(wx * peak_scale, wy * peak_scale, base + 7777, octaves=4)
+                r = 1.0 - abs(n)
+                r = clamp01(r)
                 r = r * r  # sharpen
-                mount_mask = _clamp01((h01 - 0.50) / 0.50)
-                height += (0.38 * rugged) * r * (mount_mask ** 2)
+                mount_mask = clamp01((h01 - 0.50) / 0.50)
+                height += (0.38 * rugged) * r * (mount_mask * mount_mask)
 
-                # micro-relief (plaines moins plates)
-                micro = _fbm_perlin(wx * micro_scale, wy * micro_scale, base + 4242, octaves=3)  # [-1,1]
+                micro = fbm_perlin(wx * micro_scale, wy * micro_scale, base + 4242, octaves=3)
                 height += 0.05 * micro
 
-                # plus d'eau => baisse terre
                 height -= 0.06 * water_bias
 
-                # re-normalise 0..1
-                h01 = _clamp01((height + 1.0) * 0.5)
-                self._report_phase("height", 0.10, "Hauteur…")
+                idx = sy_i * nx + sx_i
+                height_s[idx] = height
+                peak_s[idx] = r
+                tnoise_s[idx] = fbm(wx * 0.003, wy * 0.003, base + 201, octaves=3)
+                mnoise_s[idx] = fbm(wx * 0.004, wy * 0.004, base + 333, octaves=4)
+                lake_base = fbm(wx * 0.0065, wy * 0.0065, base + 6060, octaves=3)
+                lake_s[idx] = 1.0 - abs(lake_base)
+                lake_mod_s[idx] = fbm(wx * 0.0016, wy * 0.0016, base + 6061, octaves=2)
+                river_s[idx] = abs(fbm(wx * 0.008, wy * 0.008, base + 7070, octaves=3))
+
+        # Constantes eau
+        lake_level = 0.07 + 0.04 * water_bias
+        lake_level = max(0.03, min(0.14, lake_level))
+        lake_cut_base = 0.62 - 0.10 * water_bias
+        lake_cut_base = max(0.45, min(0.85, lake_cut_base))
+        river_th = 0.032 + 0.014 * max(0.0, water_bias)
+
+        # Pré-calc latitude par ligne
+        inv_hm1 = 1.0 / max(1.0, float(self.height - 1))
+        lat_abs_row = [0.0] * actual_h
+        for ly in range(actual_h):
+            gy = start_y + ly
+            lat = (gy * inv_hm1) * 2.0 - 1.0
+            lat_abs_row[ly] = abs(lat)
+
+        inner = max(1, self.tiles_levels - 1)
+        biome_gid = _BIOME_TO_GROUND_GID
+        prop_ids = _PROP_ID_MAP
+        gid_grass = _GID_GRASS
+        gid_ocean = _GID_OCEAN
+        gid_lake = _GID_LAKE
+        gid_river = _GID_RIVER
+
+        for ly in range(actual_h):
+            sy0 = y0_idx[ly]
+            fy = y_frac[ly]
+            row0 = sy0 * nx
+            row1 = (sy0 + 1) * nx
+            lat_abs = lat_abs_row[ly]
+
+            for lx in range(actual_w):
+                sx0 = x0_idx[lx]
+                fx = x_frac[lx]
+                i00 = row0 + sx0
+                i10 = row0 + (sx0 + 1)
+                i01 = row1 + sx0
+                i11 = row1 + (sx0 + 1)
+
+                # --- interpolation bilinéaire ---
+                h00 = height_s[i00]; h10 = height_s[i10]; h01v = height_s[i01]; h11 = height_s[i11]
+                hx0 = h00 + (h10 - h00) * fx
+                hx1 = h01v + (h11 - h01v) * fx
+                height = hx0 + (hx1 - hx0) * fy
+
+                p00 = peak_s[i00]; p10 = peak_s[i10]; p01 = peak_s[i01]; p11 = peak_s[i11]
+                px0 = p00 + (p10 - p00) * fx
+                px1 = p01 + (p11 - p01) * fx
+                peak = px0 + (px1 - px0) * fy
+
+                tn00 = tnoise_s[i00]; tn10 = tnoise_s[i10]; tn01 = tnoise_s[i01]; tn11 = tnoise_s[i11]
+                tnx0 = tn00 + (tn10 - tn00) * fx
+                tnx1 = tn01 + (tn11 - tn01) * fx
+                tnoise = tnx0 + (tnx1 - tnx0) * fy
+
+                mn00 = mnoise_s[i00]; mn10 = mnoise_s[i10]; mn01 = mnoise_s[i01]; mn11 = mnoise_s[i11]
+                mnx0 = mn00 + (mn10 - mn00) * fx
+                mnx1 = mn01 + (mn11 - mn01) * fx
+                mnoise = mnx0 + (mnx1 - mnx0) * fy
+
+                lk00 = lake_s[i00]; lk10 = lake_s[i10]; lk01 = lake_s[i01]; lk11 = lake_s[i11]
+                lkx0 = lk00 + (lk10 - lk00) * fx
+                lkx1 = lk01 + (lk11 - lk01) * fx
+                lake_noise = lkx0 + (lkx1 - lkx0) * fy
+
+                lm00 = lake_mod_s[i00]; lm10 = lake_mod_s[i10]; lm01 = lake_mod_s[i01]; lm11 = lake_mod_s[i11]
+                lmx0 = lm00 + (lm10 - lm00) * fx
+                lmx1 = lm01 + (lm11 - lm01) * fx
+                lake_mod = lmx0 + (lmx1 - lmx0) * fy
+
+                rv00 = river_s[i00]; rv10 = river_s[i10]; rv01 = river_s[i01]; rv11 = river_s[i11]
+                rvx0 = rv00 + (rv10 - rv00) * fx
+                rvx1 = rv01 + (rv11 - rv01) * fx
+                river_noise = rvx0 + (rvx1 - rvx0) * fy
 
                 # --- température (CONTINUE) ---
-                tnoise = _fbm(wx * 0.003, wy * 0.003, base + 201, octaves=3)
-                t01 = 1.0 - lat_abs
-                t01 = _clamp01(t01 + 0.25 * tnoise + temp_bias)
+                t01 = clamp01((1.0 - lat_abs) + 0.25 * tnoise + temp_bias)
 
                 # --- humidité (CONTINUE) ---
-                mnoise = _fbm(wx * 0.004, wy * 0.004, base + 333, octaves=4)
-                m01 = _clamp01((mnoise + 1.0) * 0.5)
-                # plus haut => plus sec
-                m01 = _clamp01(m01 - 0.45 * max(0.0, height))
-                self._report_phase("climate", 0.30, "Climat…")
+                m01 = clamp01((mnoise + 1.0) * 0.5)
+                m01 = clamp01(m01 - 0.45 * max(0.0, height))
+
+                # RNG par tuile (utile pour biomes/props)
+                gx = start_x + lx
+                gy = start_y + ly
+                tile_seed = _hash_u32(base ^ _hash_u32(gx * 912367) ^ _hash_u32(gy * 972541))
+                r0 = _rand01_from_u32(tile_seed)
+                r1 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xA5A5A5A5))
+                r2 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xC3C3C3C3))
+
+                h01 = clamp01((height + 1.0) * 0.5)
 
                 # --- eau douce (pas d'océans/mer) ---
-                lake_level = 0.08 + 0.04 * water_bias
-                lake_level = max(0.02, min(0.22, lake_level))
-                lake_noise = _fbm(wx * 0.0022, wy * 0.0022, base + 6060, octaves=3)
-                lake_cut = 0.32 - 0.18 * water_bias
+                lake_cut = max(0.45, min(0.85, lake_cut_base + 0.08 * lake_mod))
                 is_lake = (lake_noise > lake_cut) and (height < lake_level) and (height >= 0.0)
-
-                river_noise = abs(_fbm(wx * 0.008, wy * 0.008, base + 7070, octaves=3))
-                river_th = 0.032 + 0.014 * max(0.0, water_bias)
                 is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
+                is_ocean = False
 
-                is_ocean = height < 0.0
-                self._report_phase("water", 0.50, "Eau…")
-
-                # --- biome (inchangé dans l’idée) ---
+                # --- biome ---
                 if is_ocean:
                     bid = BIOME_OCEAN
                 elif is_lake:
@@ -1052,72 +1212,64 @@ class ChunkedWorld:
                 elif is_river:
                     bid = BIOME_RIVER
                 else:
-                    if t01 < 0.18:
-                        bid = BIOME_SNOW
-                    elif t01 < 0.32:
-                        bid = BIOME_TAIGA if m01 > 0.35 else BIOME_TUNDRA
-                    else:
-                        if m01 < 0.22:
-                            bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
-                        elif m01 < 0.42:
-                            bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
-                        elif m01 < 0.58:
-                            bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
+                    # Hautes altitudes -> rocheux/alpin/volcanique
+                    if h01 > 0.84 or peak > 0.84:
+                        if t01 < 0.22:
+                            bid = BIOME_SNOW
+                        elif t01 < 0.32:
+                            bid = BIOME_ALPINE
+                        elif t01 > 0.62 and peak > 0.86 and r1 < 0.35:
+                            bid = BIOME_VOLCANIC
                         else:
-                            bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
-                self._report_phase("biomes", 0.70, "Biomes…")
+                            bid = BIOME_ROCKY
+                    # Bas-fonds humides -> marais/mangrove
+                    elif m01 > 0.74 and h01 < 0.42:
+                        if (lake_noise > (lake_cut - 0.04)) and h01 < 0.30 and r2 < 0.70:
+                            bid = BIOME_MANGROVE
+                        else:
+                            bid = BIOME_SWAMP
+                    # Biome mystique (rare)
+                    elif tnoise < -0.45 and mnoise > 0.55 and r0 < 0.03:
+                        bid = BIOME_MYSTIC
+                    else:
+                        # Neige plus fréquente + effet altitude
+                        if t01 < 0.22 or (h01 > 0.78 and t01 < 0.32):
+                            bid = BIOME_SNOW
+                        elif t01 < 0.34:
+                            bid = BIOME_TAIGA if m01 > 0.35 else BIOME_TUNDRA
+                        else:
+                            if m01 < 0.22:
+                                bid = BIOME_DESERT if t01 > 0.45 else BIOME_TUNDRA
+                            elif m01 < 0.42:
+                                bid = BIOME_SAVANNA if t01 > 0.45 else BIOME_PLAINS
+                            elif m01 < 0.58:
+                                bid = BIOME_PLAINS if t01 < 0.62 else BIOME_FOREST
+                            else:
+                                bid = BIOME_RAINFOREST if t01 > 0.62 else BIOME_FOREST
 
-                # --- niveau (anti-plateau : dithering + meilleure normalisation) ---
+                # --- niveau + sol ---
                 if bid == BIOME_OCEAN:
                     level = 0
-                    gname = "ocean"
+                    gid = gid_ocean
                 elif bid == BIOME_LAKE:
                     level = 0
-                    gname = "lake"
+                    gid = gid_lake
                 elif bid == BIOME_RIVER:
                     level = 0
-                    gname = "river"
+                    gid = gid_river
                 else:
-                    # normalise hauteur de terre au-dessus du niveau de la mer
-                    base0 = 0.0
-                    land01 = (height - base0) / max(1e-6, (1.0 - base0))
-                    land01 = _clamp01(land01)
+                    land01 = clamp01(height / 1.0)
+                    jitter = r2 * 2.0 - 1.0
+                    land01 = clamp01(land01 + 0.03 * jitter)
 
-                    # micro-variation continue (évite les aplats sans jitter discret)
-                    jitter = _fbm_perlin(wx * 0.07, wy * 0.07, base + 5151, octaves=2)
-                    land01 = _clamp01(land01 + 0.03 * jitter)
-
-                    inner = max(1, self.tiles_levels - 1)
                     level = 1 + int(round(land01 * inner))
-
-                    # boost pics montagneux
-                    if r > 0.78 and level < self.tiles_levels:
+                    if peak > 0.78 and level < self.tiles_levels:
                         level += 1
-
                     level = max(1, min(self.tiles_levels, level))
 
-                    # ground par biome
-                    biome_to_ground = {
-                        BIOME_SNOW: "snow",
-                        BIOME_TUNDRA: "taiga",
-                        BIOME_DESERT: "desert",
-                        BIOME_SAVANNA: "steppe",
-                        BIOME_PLAINS: "grass",
-                        BIOME_FOREST: "forest",
-                        BIOME_TAIGA: "taiga",
-                        BIOME_RAINFOREST: "rainforest",
-                        BIOME_SWAMP: "swamp",
-                        BIOME_MANGROVE: "swamp",
-                        BIOME_ROCKY: "rock",
-                        BIOME_ALPINE: "rock",
-                        BIOME_VOLCANIC: "volcanic_rock",
-                        BIOME_MYSTIC: "mystic_grass",
-                    }
-                    gname = biome_to_ground.get(bid, "grass")
+                    gid = biome_gid.get(bid, gid_grass)
 
-                gid = self._safe_tile_id(gname)
-
-                # --- props (IMPORTANT : seed par TUILE, pas par chunk) ---
+                # --- props (seed par tuile) ---
                 prop = 0
                 if bid not in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
                     base_p = 0.02 * biodiv_mul
@@ -1136,71 +1288,63 @@ class ChunkedWorld:
                     if level >= 4:
                         ore_p *= 1.25
 
-                    tile_seed = _hash_u32(base ^ _hash_u32(gx * 912367) ^ _hash_u32(gy * 972541))
-                    r0 = _rand01_from_u32(tile_seed)
-                    r1 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xA5A5A5A5))
-                    r2 = _rand01_from_u32(_hash_u32(tile_seed ^ 0xC3C3C3C3))
-
                     if r0 < ore_p:
                         if level >= 5 and r1 < 0.18:
-                            prop = get_prop_id("ore_gold")
+                            prop = prop_ids["ore_gold"]
                         elif r1 < 0.55:
-                            prop = get_prop_id("ore_iron")
+                            prop = prop_ids["ore_iron"]
                         else:
-                            prop = get_prop_id("ore_copper")
+                            prop = prop_ids["ore_copper"]
                     elif r0 < ore_p + base_p:
                         if bid == BIOME_DESERT:
                             if r1 < 0.55:
-                                prop = get_prop_id("cactus")
+                                prop = prop_ids["cactus"]
                             elif r1 < 0.8:
-                                prop = get_prop_id("boulder")
+                                prop = prop_ids["boulder"]
                             else:
-                                prop = get_prop_id("rock")
+                                prop = prop_ids["rock"]
                         elif bid in (BIOME_TUNDRA, BIOME_SNOW):
-                            prop = get_prop_id("rock") if r1 < 0.55 else get_prop_id("boulder")
+                            prop = prop_ids["rock"] if r1 < 0.55 else prop_ids["boulder"]
                         elif bid in (BIOME_FOREST, BIOME_RAINFOREST, BIOME_TAIGA):
                             if r1 < 0.55:
-                                prop = get_prop_id("tree_1") if r2 < 0.33 else (get_prop_id("tree_2") if r2 < 0.66 else get_prop_id("tree_3"))
+                                prop = prop_ids["tree_1"] if r2 < 0.33 else (prop_ids["tree_2"] if r2 < 0.66 else prop_ids["tree_3"])
                             elif r1 < 0.78:
-                                prop = get_prop_id("mushroom1") if r2 < 0.34 else (get_prop_id("mushroom2") if r2 < 0.67 else get_prop_id("mushroom3"))
+                                prop = prop_ids["mushroom1"] if r2 < 0.34 else (prop_ids["mushroom2"] if r2 < 0.67 else prop_ids["mushroom3"])
                             elif r1 < 0.9:
-                                prop = get_prop_id("log")
+                                prop = prop_ids["log"]
                             else:
-                                prop = get_prop_id("stump")
+                                prop = prop_ids["stump"]
                         elif bid == BIOME_SAVANNA:
                             if r1 < 0.45:
-                                prop = get_prop_id("cactus")
+                                prop = prop_ids["cactus"]
                             elif r1 < 0.8:
-                                prop = get_prop_id("bush")
+                                prop = prop_ids["bush"]
                             else:
-                                prop = get_prop_id("tree_dead")
+                                prop = prop_ids["tree_dead"]
                         elif bid == BIOME_PLAINS:
                             if r1 < 0.6:
-                                prop = get_prop_id("flower") if r2 < 0.34 else (get_prop_id("flower2") if r2 < 0.67 else get_prop_id("flower3"))
+                                prop = prop_ids["flower"] if r2 < 0.34 else (prop_ids["flower2"] if r2 < 0.67 else prop_ids["flower3"])
                             elif r1 < 0.85:
-                                prop = get_prop_id("bush")
+                                prop = prop_ids["bush"]
                             else:
-                                prop = get_prop_id("berry_bush") if r2 < 0.5 else get_prop_id("blueberry_bush")
+                                prop = prop_ids["berry_bush"] if r2 < 0.5 else prop_ids["blueberry_bush"]
                         elif bid in (BIOME_ROCKY, BIOME_ALPINE, BIOME_VOLCANIC):
-                            prop = get_prop_id("rock") if r1 < 0.65 else get_prop_id("boulder")
+                            prop = prop_ids["rock"] if r1 < 0.65 else prop_ids["boulder"]
                         elif bid in (BIOME_SWAMP, BIOME_MANGROVE):
-                            prop = get_prop_id("reeds") if r1 < 0.6 else get_prop_id("bush")
+                            prop = prop_ids["reeds"] if r1 < 0.6 else prop_ids["bush"]
                         else:
-                            prop = get_prop_id("bush") if r1 < 0.6 else get_prop_id("flower")
-                self._report_phase("props", 0.85, "Props…")
+                            prop = prop_ids["bush"] if r1 < 0.6 else prop_ids["flower"]
 
                 # écrit chunk
                 k = ch.idx(lx, ly)
-                ch.height_u8[k] = int(_clamp01(h01) * 255.0)
-                ch.temp_u8[k]   = int(_clamp01(t01) * 255.0)
-                ch.moist_u8[k]  = int(_clamp01(m01) * 255.0)
+                ch.height_u8[k] = int(clamp01((height + 1.0) * 0.5) * 255.0)
+                ch.temp_u8[k] = int(clamp01(t01) * 255.0)
+                ch.moist_u8[k] = int(clamp01(m01) * 255.0)
                 ch.levels_u8[k] = int(level)
-                ch.ground_u16[k]= int(gid)
+                ch.ground_u16[k] = int(gid)
                 ch.overlay_obj[k] = int(prop)
-                ch.biome_u8[k]  = int(bid)
+                ch.biome_u8[k] = int(bid)
 
-        actual_w = min(cs, max(0, self.width - cx * cs))
-        actual_h = min(cs, max(0, self.height - cy * cs))
         self._smooth_chunk_levels(ch.levels_u8, cs, actual_w, actual_h, iterations=3)
 
         return ch
@@ -1297,16 +1441,20 @@ class ChunkedWorld:
         height -= 0.06 * water_bias
         h01 = _clamp01((height + 1.0) * 0.5)
 
-        lake_level = 0.08 + 0.04 * water_bias
-        lake_level = max(0.02, min(0.22, lake_level))
-        lake_noise = _fbm(wxp * 0.0022, wyp * 0.0022, base + 6060, octaves=3)
-        lake_cut = 0.32 - 0.18 * water_bias
+        lake_level = 0.07 + 0.04 * water_bias
+        lake_level = max(0.03, min(0.14, lake_level))
+        lake_base = _fbm(wxp * 0.0065, wyp * 0.0065, base + 6060, octaves=3)
+        lake_noise = 1.0 - abs(lake_base)
+        lake_mod = _fbm(wxp * 0.0016, wyp * 0.0016, base + 6061, octaves=2)
+        lake_cut_base = 0.62 - 0.10 * water_bias
+        lake_cut_base = max(0.45, min(0.85, lake_cut_base))
+        lake_cut = max(0.45, min(0.85, lake_cut_base + 0.08 * lake_mod))
         is_lake = (lake_noise > lake_cut) and (height < lake_level) and (height >= 0.0)
 
         river_noise = abs(_fbm(wxp * 0.008, wyp * 0.008, base + 7070, octaves=3))
         river_th = 0.032 + 0.014 * max(0.0, water_bias)
         is_river = (river_noise < river_th) and (height < 0.55) and (height >= 0.0)
-        is_ocean = height < 0.0
+        is_ocean = False
 
         if is_ocean or is_lake or is_river:
             return None
@@ -1475,7 +1623,7 @@ class PlanetWorldGenerator:
     """
     Générateur de planète : ne crée pas toute la carte, il renvoie un ChunkedWorld.
     """
-    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 256):
+    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 2048):
         self.tiles_levels = int(tiles_levels)
         self.chunk_size = int(chunk_size)
         self.cache_chunks = int(cache_chunks)
@@ -1565,7 +1713,7 @@ class WorldGenerator:
 
     ⚠️ Paramètres conservés en **kwargs pour compat (si du code passe encore island_margin_frac, etc.).
     """
-    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 256, **_ignored):
+    def __init__(self, tiles_levels: int = 6, chunk_size: int = 64, cache_chunks: int = 2048, **_ignored):
         self.tiles_levels = int(tiles_levels)
         self.chunk_size = int(chunk_size)
         self.cache_chunks = int(cache_chunks)

@@ -82,6 +82,8 @@ class IsoMapView:
         self._prop_cache   = {}
         self._gray_ground_cache = {}
         self._gray_prop_cache = {}
+        self._missing_ground_ids: set[int] = set()
+        self._missing_ground_sprites: set[str] = set()
 
         self.pan_keys_speed = 600
         self.mouse_pan_active = False
@@ -502,8 +504,20 @@ class IsoMapView:
         if surf:
             return surf
 
-        name = get_ground_sprite_name(gid)
-        base = self.assets.get_image(name)
+        try:
+            name = get_ground_sprite_name(gid)
+        except Exception:
+            if gid not in self._missing_ground_ids:
+                print(f"[Tiles] ID sol inconnu: {gid} -> fallback tile_grass")
+                self._missing_ground_ids.add(gid)
+            name = "tile_grass"
+        try:
+            base = self.assets.get_image(name)
+        except Exception:
+            if name not in self._missing_ground_sprites:
+                print(f"[Tiles] Sprite sol manquant: {name} -> fallback tile_grass")
+                self._missing_ground_sprites.add(name)
+            base = self.assets.get_image("tile_grass")
         scale = (int(base.get_width()*self.zoom), int(base.get_height()*self.zoom))
         surf = pygame.transform.scale(base, scale).convert_alpha()
 

@@ -95,6 +95,27 @@ class LoadingState:
                 selected.append(c)
         return selected[:3]
 
+    def _all_chunk_coords(self, world) -> list[tuple[int, int]]:
+        if not world:
+            return []
+        cs = max(1, int(getattr(world, "chunk_size", 64) or 64))
+        max_cx = (int(world.width) + cs - 1) // cs
+        max_cy = (int(world.height) + cs - 1) // cs
+        coords: list[tuple[int, int]] = []
+        for cy in range(max_cy):
+            for cx in range(max_cx):
+                coords.append((cx, cy))
+        return coords
+
+    def _should_full_prewarm(self, world) -> bool:
+        if not world:
+            return False
+        cs = max(1, int(getattr(world, "chunk_size", 64) or 64))
+        max_cx = (int(world.width) + cs - 1) // cs
+        max_cy = (int(world.height) + cs - 1) // cs
+        total_chunks = max_cx * max_cy
+        return total_chunks <= 700
+
     def _is_walkable_snapshot(self, snap) -> bool:
         if snap is None:
             return False
@@ -191,7 +212,7 @@ class LoadingState:
                 overrides = {"seed": seed} if seed is not None else None
                 self._params = load_world_params_from_preset(preset, overrides=overrides)
                 log_step("Parametres de monde charges")
-                gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=256)
+                gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=2048)
                 log_step("WorldGenerator initialise")
 
                 phase_label = None
@@ -222,25 +243,38 @@ class LoadingState:
                 except Exception:
                     pass
 
-                # Stage 2: prechargement du premier rendu (chunks proches du spawn).
-                chunk_targets = self._initial_render_chunk_coords(self._world)
-                if chunk_targets:
-                    log_step(f"Prechargement rendu (chunks={len(chunk_targets)})")
-
-                    def on_render_progress(p, label):
-                        self._set_progress(
-                            self._WORLD_STAGE_SPAN + self._RENDER_STAGE_SPAN * max(0.0, min(1.0, float(p))),
-                            label,
-                        )
-
-                    self._world.prewarm_chunk_coords(
-                        chunk_targets,
-                        progress=on_render_progress,
-                        phase_label="Prechargement rendu...",
+                # Stage 2: prechargement (full monde pour petite taille, sinon juste le rendu initial).
+                def on_render_progress(p, label):
+                    self._set_progress(
+                        self._WORLD_STAGE_SPAN + self._RENDER_STAGE_SPAN * max(0.0, min(1.0, float(p))),
+                        label,
                     )
+
+                if self._should_full_prewarm(self._world):
+                    chunk_targets = self._all_chunk_coords(self._world)
+                    if chunk_targets:
+                        self._world.cache_chunks = max(int(getattr(self._world, "cache_chunks", 0) or 0), len(chunk_targets))
+                        log_step(f"Prechargement monde complet (chunks={len(chunk_targets)})")
+                        self._world.prewarm_chunk_coords(
+                            chunk_targets,
+                            progress=on_render_progress,
+                            phase_label="Prechargement monde complet...",
+                        )
+                    else:
+                        self._set_progress(self._WORLD_STAGE_SPAN + self._RENDER_STAGE_SPAN, "Prechargement monde complet...")
+                    log_step("Prechargement monde complet termine")
                 else:
-                    self._set_progress(self._WORLD_STAGE_SPAN + self._RENDER_STAGE_SPAN, "Prechargement rendu...")
-                log_step("Prechargement rendu termine")
+                    chunk_targets = self._initial_render_chunk_coords(self._world)
+                    if chunk_targets:
+                        log_step(f"Prechargement rendu (chunks={len(chunk_targets)})")
+                        self._world.prewarm_chunk_coords(
+                            chunk_targets,
+                            progress=on_render_progress,
+                            phase_label="Prechargement rendu...",
+                        )
+                    else:
+                        self._set_progress(self._WORLD_STAGE_SPAN + self._RENDER_STAGE_SPAN, "Prechargement rendu...")
+                    log_step("Prechargement rendu termine")
 
                 refined_spawn = self._refine_spawn_from_loaded(self._world, max_radius=36)
                 self._world.spawn = refined_spawn

@@ -120,10 +120,12 @@ class AggressiveFaunaDefinition(PassiveFaunaDefinition):
 
     attack: float = 8.0
     attack_speed: float = 1.1
+    chase_distance: float = 0.0
 
     def __post_init__(self):
         super().__post_init__()
         object.__setattr__(self, "is_aggressive", True)
+        object.__setattr__(self, "chase_distance", float(self.vision_range))
 
 class PassiveFaunaRenderer:
     """Rendu simple multi-frames (idle/run) avec zoom."""
@@ -522,6 +524,7 @@ class AggressiveFauna(PassiveFauna):
         self.is_aggressive = True
         self.combat["attaque"] = float(definition.attack)
         self.combat["attaque_speed"] = float(definition.attack_speed)
+        self.chase_distance = float(getattr(definition, "chase_distance", 0.0) or 0.0)
         self.comportement = AggressiveFaunaBehavior(
             self,
             phase,

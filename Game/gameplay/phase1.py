@@ -47,7 +47,8 @@ class Phase1:
         self.paused = False
 
         self.view = IsoMapView(self.assets, self.screen.get_size())
-        self.gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=256)
+        # Cache augmenté: évite de régénérer en boucle les chunks quand on explore beaucoup.
+        self.gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=2048)
         self.params = None
         self.world = None
         self.fog=None
@@ -286,6 +287,11 @@ class Phase1:
         self._game_end_xp = 0
         self._gameplay_ready = False
     def _attach_phase_to_entities(self):
+        if getattr(self, "espece", None):
+            try:
+                self.espece.is_player_species = True
+            except Exception:
+                pass
         for espece in (getattr(self, "espece", None), getattr(self, "fauna_species", None)):
             if espece and hasattr(espece, "reproduction_system"):
                 try:
@@ -594,20 +600,73 @@ class Phase1:
     def _ensure_move_runtime(self, ent):
         """S'assure que l'entité a tout le runtime nécessaire au déplacement."""
         if not hasattr(ent, "move_path"):   ent.move_path = []          # liste de (i,j)
-        if not hasattr(ent, "move_speed"):  ent.move_speed = 3.5        # tuiles/s
+        if not hasattr(ent, "move_speed"):  ent.move_speed = 3.5        # tuiles/s (base)
+        if not hasattr(ent, "base_move_speed"): ent.base_move_speed = float(getattr(ent, "move_speed", 3.5) or 3.5)
         if not hasattr(ent, "_move_from"):  ent._move_from = None       # (x,y) float
         if not hasattr(ent, "_move_to"):    ent._move_to = None         # (i,j) int
         if not hasattr(ent, "_move_t"):     ent._move_t = 0.0           # 0..1
         if not hasattr(ent, "_combat_target"): ent._combat_target = None
         if not hasattr(ent, "_combat_attack_cd"): ent._combat_attack_cd = 0.0
         if not hasattr(ent, "_combat_repath_cd"): ent._combat_repath_cd = 0.0
+        if not hasattr(ent, "_combat_anchor"): ent._combat_anchor = None
         # ---------- Mutations de base de l'espèce ----------
+
+    def _entity_can_walk_on_water(self, ent) -> bool:
+        if ent is None:
+            return False
+        if getattr(ent, "is_egg", False):
+            return False
+        espece = getattr(ent, "espece", None)
+        if espece is None:
+            return False
+        return bool(getattr(espece, "is_player_species", False))
+
+    def _tile_is_water(self, i: int, j: int, generate: bool = True) -> bool:
+        w = self.world
+        if not w:
+            return False
+        if i < 0 or j < 0 or i >= w.width or j >= w.height:
+            return False
+
+        if hasattr(w, "get_tile_snapshot"):
+            snap = w.get_tile_snapshot(i, j, generate=generate)
+            if snap is None:
+                return False
+            _lvl, gid, _overlay, bid = snap
+            if int(bid) in _WATER_BIOME_IDS:
+                return True
+            name = get_ground_sprite_name(gid) if gid is not None else None
+            if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake", "river")):
+                return True
+            return False
+
+        try:
+            if hasattr(w, "get_is_water"):
+                return bool(w.get_is_water(i, j))
+        except Exception:
+            pass
+        return False
+
+    def _compute_entity_move_speed(self, ent) -> float:
+        base = float(getattr(ent, "base_move_speed", getattr(ent, "move_speed", 3.5)) or 3.5)
+        physique = getattr(ent, "physique", {}) or {}
+        vitesse = float(physique.get("vitesse", 5) or 5)
+        speed_mult = max(0.4, min(2.0, 0.6 + 0.08 * vitesse))  # 5 -> ~1.0
+        speed = base * speed_mult
+
+        if self._entity_can_walk_on_water(ent) and self._tile_is_water(int(ent.x), int(ent.y), generate=False):
+            swim = float(physique.get("vitesse de nage", physique.get("vitesse_de_nage", 3)) or 3)
+            water_mult = max(0.35, min(0.9, 0.45 + 0.06 * swim))
+            speed *= water_mult
+
+        return speed
 
     def _clear_entity_combat_refs(self, ent):
         self._ensure_move_runtime(ent)
         ent._combat_target = None
         ent._combat_attack_cd = 0.0
         ent._combat_repath_cd = 0.0
+        ent._combat_anchor = None
 
     def _stop_entity_combat(self, ent, stop_motion: bool = True):
         self._clear_entity_combat_refs(ent)
@@ -663,6 +722,7 @@ class Phase1:
         attacker._combat_target = target
         attacker._combat_attack_cd = 0.0
         attacker._combat_repath_cd = 0.0
+        attacker._combat_anchor = (float(attacker.x), float(attacker.y))
         return True
 
     def _combat_attack_interval(self, attacker) -> float:
@@ -769,6 +829,22 @@ class Phase1:
             self._stop_entity_combat(ent)
             return
 
+        chase_limit = float(getattr(ent, "chase_distance", 0.0) or 0.0)
+        if chase_limit > 0.0 and getattr(ent, "is_aggressive", False):
+            anchor = getattr(ent, "_combat_anchor", None)
+            if anchor is None:
+                ent._combat_anchor = (float(ent.x), float(ent.y))
+                anchor = ent._combat_anchor
+            ax, ay = float(anchor[0]), float(anchor[1])
+            dx_e = float(ent.x) - ax
+            dy_e = float(ent.y) - ay
+            dx_t = float(target.x) - ax
+            dy_t = float(target.y) - ay
+            limit2 = chase_limit * chase_limit
+            if (dx_e * dx_e + dy_e * dy_e) > limit2 or (dx_t * dx_t + dy_t * dy_t) > limit2:
+                self._stop_entity_combat(ent)
+                return
+
         dist = math.hypot(float(target.x) - float(ent.x), float(target.y) - float(ent.y))
         attack_range = self._combat_attack_range(ent)
 
@@ -804,6 +880,7 @@ class Phase1:
             (int(target.x), int(target.y)),
             max_radius=2,
             forbidden=self._occupied_tiles(exclude=[ent, target]),
+            ent=ent,
         )
         if chase_tile is None:
             chase_tile = (int(target.x), int(target.y))
@@ -2176,7 +2253,7 @@ class Phase1:
 
     def _auto_order_harvest(self, ent, prop_target) -> bool:
         i, j, pid = prop_target
-        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]))
+        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]), ent=ent)
         if not target:
             return False
         objectif = ("prop", (i, j, pid))
@@ -2193,7 +2270,7 @@ class Phase1:
 
     def _auto_order_deposit(self, ent, warehouse_target) -> bool:
         i, j, pid, craft_id = warehouse_target
-        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]))
+        target = self._find_nearest_walkable((i, j), forbidden=self._occupied_tiles(exclude=[ent]), ent=ent)
         if not target:
             return False
         return self._apply_entity_order(
@@ -2217,11 +2294,11 @@ class Phase1:
             tile = (ex + dx, ey + dy)
             if tile in occupied:
                 continue
-            if self._is_walkable(*tile):
+            if self._is_walkable(*tile, ent=ent):
                 ent.ia["auto_walk_dir"] = idx
                 return tile
 
-        fallback = self._find_nearest_walkable((ex, ey), max_radius=2, forbidden=occupied)
+        fallback = self._find_nearest_walkable((ex, ey), max_radius=2, forbidden=occupied, ent=ent)
         if fallback and fallback != (ex, ey):
             return fallback
         return None
@@ -2498,7 +2575,7 @@ class Phase1:
             return True
 
     # ---------- PATHFINDING & COLLISIONS ----------
-    def _is_walkable(self, i: int, j: int, generate: bool = True) -> bool:
+    def _is_walkable(self, i: int, j: int, generate: bool = True, ent=None) -> bool:
         w = self.world
         if not w: return False
         if i < 0 or j < 0 or i >= w.width or j >= w.height:
@@ -2512,11 +2589,11 @@ class Phase1:
             if overlay:
                 return False
             if int(bid) in _WATER_BIOME_IDS:
-                return False
+                return self._entity_can_walk_on_water(ent)
             # Fallback ultra conservateur pour anciens IDs/tiles.
             name = get_ground_sprite_name(gid) if gid is not None else None
-            if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake")):
-                return False
+            if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake", "river")):
+                return self._entity_can_walk_on_water(ent)
             return True
 
         # Fallback pour mondes qui n'exposent pas get_tile_snapshot.
@@ -2531,8 +2608,8 @@ class Phase1:
         except Exception:
             gid = None
         name = get_ground_sprite_name(gid) if gid is not None else None
-        if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake")):
-            return False
+        if name and any(token in name.lower() for token in ("water", "ocean", "sea", "lake", "river")):
+            return self._entity_can_walk_on_water(ent)
         return True
 
     def _occupied_tiles(self, exclude: list | None = None) -> set[tuple[int, int]]:
@@ -2544,9 +2621,18 @@ class Phase1:
             occupied.add((int(ent.x), int(ent.y)))
         return occupied
 
-    def _get_construction_cell(self, i: int, j: int):
+    def _get_construction_cell(self, i: int, j: int, generate: bool = False):
+        w = self.world
+        if not w:
+            return None
+        if hasattr(w, "get_tile_snapshot"):
+            snap = w.get_tile_snapshot(i, j, generate=generate)
+            if snap is None:
+                return None
+            _lvl, _gid, overlay, _bid = snap
+            return overlay
         try:
-            return self.world.overlay[j][i] if self.world else None
+            return w.overlay[j][i]
         except Exception:
             return None
 
@@ -2554,51 +2640,100 @@ class Phase1:
         cell = self._get_construction_cell(i, j)
         return isinstance(cell, dict) and cell.get("state") == "building"
 
-    def _astar_path(self, start: tuple[int,int], goal: tuple[int,int]) -> list[tuple[int,int]]:
-        if not self._is_walkable(*goal):
+    def _astar_path(
+        self,
+        start: tuple[int, int],
+        goal: tuple[int, int],
+        *,
+        ent=None,
+        allow_partial: bool = False,
+        generate: bool = False,
+        max_nodes: int = 20000,
+        time_budget_sec: float | None = 0.02,
+    ) -> list[tuple[int, int]]:
+        if not self._is_walkable(*goal, generate=generate, ent=ent):
             return []
-        sx, sy = start; gx, gy = goal
+        sx, sy = start
+        gx, gy = goal
         if (sx, sy) == (gx, gy):
             return []
 
         # Heuristique octile (8-connexe, coût diag = sqrt(2))
         import math
-        def h(a, b):
-            dx = abs(a[0] - b[0]); dy = abs(a[1] - b[1])
-            return (dx + dy) + (math.sqrt(2) - 2.0) * min(dx, dy)
 
-        openh = []
+        sqrt2 = 1.41421356237
+        octile_k = sqrt2 - 2.0
+
+        def h(a, b):
+            dx = abs(a[0] - b[0])
+            dy = abs(a[1] - b[1])
+            return (dx + dy) + octile_k * min(dx, dy)
+
+        t0 = time.perf_counter()
+        openh: list[tuple[float, float, tuple[int, int]]] = []
         heapq.heappush(openh, (h(start, goal), 0.0, start))
-        came = {start: None}
-        gscore = {start: 0.0}
+        came: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+        gscore: dict[tuple[int, int], float] = {start: 0.0}
+
+        best = start
+        best_h = h(start, goal)
+        expanded = 0
 
         neigh = [
             (1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
         ]
+
         while openh:
-            _, gc, cur = heapq.heappop(openh)
+            if time_budget_sec is not None and (time.perf_counter() - t0) >= time_budget_sec:
+                break
+            if expanded >= max_nodes:
+                break
+
+            _f, gc, cur = heapq.heappop(openh)
+            if gc != gscore.get(cur):
+                continue
+
             if cur == goal:
                 path = []
                 while cur in came and cur is not None:
-                    path.append(cur); cur = came[cur]
+                    path.append(cur)
+                    cur = came[cur]
                 path.reverse()
                 return path
 
+            expanded += 1
+            cur_h = h(cur, goal)
+            if cur_h < best_h:
+                best_h = cur_h
+                best = cur
+
             for dx, dy in neigh:
                 nx, ny = cur[0] + dx, cur[1] + dy
-                if not self._is_walkable(nx, ny):
+                if not self._is_walkable(nx, ny, generate=generate, ent=ent):
                     continue
-                step_cost = math.sqrt(2.0) if dx != 0 and dy != 0 else 1.0
+                step_cost = sqrt2 if (dx != 0 and dy != 0) else 1.0
                 ng = gc + step_cost
                 if ng < gscore.get((nx, ny), 1e18):
                     gscore[(nx, ny)] = ng
                     came[(nx, ny)] = cur
-                    f = ng + h((nx, ny), goal)
-                    heapq.heappush(openh, (f, ng, (nx, ny)))
-        return []
+                    heapq.heappush(openh, (ng + h((nx, ny), goal), ng, (nx, ny)))
 
-    def _los_clear(self, a: tuple[float,float], b: tuple[float,float]) -> bool:
+        if not allow_partial:
+            return []
+
+        if best == start or best not in came:
+            return []
+
+        cur = best
+        path: list[tuple[int, int]] = []
+        while cur in came and cur is not None:
+            path.append(cur)
+            cur = came[cur]
+        path.reverse()
+        return path
+
+    def _los_clear(self, a: tuple[float,float], b: tuple[float,float], ent=None) -> bool:
         """
         Line-of-sight grossière : on échantillonne la droite AB et on vérifie
         que chaque sample tombe sur une case walkable. Suffisant pour lisser.
@@ -2614,11 +2749,11 @@ class Phase1:
             t = s / max(1, steps)
             x = ax + dx * t
             y = ay + dy * t
-            if not self._is_walkable(int(x), int(y)):
+            if not self._is_walkable(int(x), int(y), generate=False, ent=ent):
                 return False
         return True
 
-    def _smooth_path(self, nodes: list[tuple[int,int]]) -> list[tuple[float,float]]:
+    def _smooth_path(self, nodes: list[tuple[int,int]], ent=None) -> list[tuple[float,float]]:
         """
         String-pulling simple : on garde le point courant, on pousse aussi loin
         que possible en conservant la visibilité, puis on place un waypoint au
@@ -2626,6 +2761,9 @@ class Phase1:
         """
         if not nodes:
             return []
+        # Les chemins longs rendent le lissage (LOS) très coûteux -> on garde le tracé brut.
+        if len(nodes) > 90:
+            return [(i + 0.5, j + 0.5) for (i, j) in nodes]
         # Convertit nodes -> centres flottants
         pts = [(i + 0.5, j + 0.5) for (i, j) in nodes]
         smoothed = [pts[0]]
@@ -2633,7 +2771,7 @@ class Phase1:
         while i < len(pts) - 1:
             j = len(pts) - 1
             # recule tant que la LOS échoue
-            while j > i + 1 and not self._los_clear(pts[i], pts[j]):
+            while j > i + 1 and not self._los_clear(pts[i], pts[j], ent=ent):
                 j -= 1
             smoothed.append(pts[j])
             i = j
@@ -2685,7 +2823,8 @@ class Phase1:
         seg_len = max(1e-6, ((tx - fx)**2 + (ty - fy)**2) ** 0.5)
 
         # Vitesse monde = "tuiles par seconde" mais on l'applique en distance euclidienne
-        speed = max(0.2, float(getattr(ent, "move_speed", 3.5)))
+        speed = max(0.2, float(self._compute_entity_move_speed(ent)))
+        ent.move_speed = speed
         # t progresse à la bonne vitesse quelle que soit l'orientation
         ent._move_t += (dt * speed) / seg_len
 
@@ -2703,11 +2842,11 @@ class Phase1:
             ent.x = fx + (tx - fx) * ent._move_t
             ent.y = fy + (ty - fy) * ent._move_t
 
-    def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8, forbidden: set[tuple[int, int]] | None = None) -> Optional[tuple[int, int]]:
+    def _find_nearest_walkable(self, target: tuple[int, int], max_radius: int = 8, forbidden: set[tuple[int, int]] | None = None, ent=None) -> Optional[tuple[int, int]]:
         """Retourne la case libre la plus proche du point cible (si eau/obstacle), en évitant les cases interdites."""
         tx, ty = target
         forbidden = forbidden or set()
-        if self._is_walkable(tx, ty) and (tx, ty) not in forbidden:
+        if self._is_walkable(tx, ty, ent=ent) and (tx, ty) not in forbidden:
             return target
 
         best = None
@@ -2716,7 +2855,7 @@ class Phase1:
             for dx in range(-r, r + 1):
                 for dy in range(-r, r + 1):
                     nx, ny = tx + dx, ty + dy
-                    if not self._is_walkable(nx, ny):
+                    if not self._is_walkable(nx, ny, ent=ent):
                         continue
                     if (nx, ny) in forbidden:
                         continue
@@ -2729,6 +2868,18 @@ class Phase1:
         return best
 
     def _apply_entity_order(self, ent, target: tuple[int, int], etat: str, objectif, action_mode: str | None, craft_id: str | None):
+        start_pos = (int(ent.x), int(ent.y))
+        allow_partial = bool(etat == "se_deplace" and not objectif and not action_mode)
+        raw_path = self._astar_path(
+            start_pos,
+            target,
+            ent=ent,
+            allow_partial=allow_partial,
+            generate=False,
+        )
+        if not raw_path and start_pos != target:
+            return False
+
         if etat != "combat":
             self._clear_entity_combat_refs(ent)
 
@@ -2748,19 +2899,9 @@ class Phase1:
             ent.ia["order_action"] = None
             ent.ia["target_craft_id"] = None
 
-        start_pos = (int(ent.x), int(ent.y))
-        raw_path = self._astar_path(start_pos, target)
-        if not raw_path:
-            if start_pos == target:
-                ent.move_path = []
-                ent._move_from = (float(ent.x), float(ent.y))
-                ent._move_to = None
-                ent._move_t = 0.0
-                return True
-            return False
         if raw_path and raw_path[0] == start_pos:
             raw_path = raw_path[1:]
-        waypoints = self._smooth_path(raw_path)
+        waypoints = self._smooth_path(raw_path, ent=ent) if raw_path else []
         if waypoints is None:
             waypoints = []
         ent.move_path = waypoints
@@ -2830,8 +2971,8 @@ class Phase1:
                 continue
             desired = base_target
             forbidden = set(reserved)
-            if not self._is_walkable(*desired) or desired in forbidden:
-                desired = self._find_nearest_walkable(desired, forbidden=forbidden)
+            if not self._is_walkable(*desired, ent=ent) or desired in forbidden:
+                desired = self._find_nearest_walkable(desired, forbidden=forbidden, ent=ent)
             if not desired:
                 continue
             reserved.add(desired)
@@ -2916,11 +3057,11 @@ class Phase1:
             if dist2 > (self.construction_assign_radius ** 2):
                 continue
             self._ensure_move_runtime(ent)
-            target = self._find_nearest_walkable(tile, forbidden=reserved)
+            target = self._find_nearest_walkable(tile, forbidden=reserved, ent=ent)
             if not target:
                 continue
             reserved.add(target)
-            raw_path = self._astar_path((int(ent.x), int(ent.y)), target)
+            raw_path = self._astar_path((int(ent.x), int(ent.y)), target, ent=ent)
             if not raw_path:
                 if (int(ent.x), int(ent.y)) == target:
                     ent.move_path = []
@@ -2935,7 +3076,7 @@ class Phase1:
                 continue
             if raw_path and raw_path[0] == (int(ent.x), int(ent.y)):
                 raw_path = raw_path[1:]
-            waypoints = self._smooth_path(raw_path)
+            waypoints = self._smooth_path(raw_path, ent=ent)
             ent.move_path = waypoints
             ent._move_from = (float(ent.x), float(ent.y))
             ent._move_to = waypoints[0] if waypoints else None

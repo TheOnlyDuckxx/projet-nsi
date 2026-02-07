@@ -119,6 +119,24 @@ class EspeceRenderer:
                 pass
         return DEFAULT_BLOB_COLOR
 
+    def _resolve_size_scale(self) -> float:
+        phys = getattr(self.espece, "physique", None)
+        if phys is None and hasattr(self.espece, "espece"):
+            phys = getattr(getattr(self.espece, "espece", None), "base_physique", None)
+        if phys is None and hasattr(self.espece, "base_physique"):
+            phys = getattr(self.espece, "base_physique", None)
+        try:
+            taille = float((phys or {}).get("taille", 5) or 5)
+        except Exception:
+            taille = 5.0
+        # 5 -> 1.0 ; 1 -> ~0.68 ; 10 -> ~1.4
+        return max(0.55, min(1.6, 0.6 + 0.08 * taille))
+
+    def _is_player_species(self) -> bool:
+        if hasattr(self.espece, "espece"):
+            return bool(getattr(getattr(self.espece, "espece", None), "is_player_species", False))
+        return bool(getattr(self.espece, "is_player_species", False))
+
     def _recolor_base_blob_sheet(self, sheet: pygame.Surface, target_rgb: tuple[int, int, int]) -> pygame.Surface:
         # On garde le sprite original si on reste sur la couleur de base.
         if tuple(target_rgb) == tuple(DEFAULT_BLOB_COLOR):
@@ -286,7 +304,8 @@ class EspeceRenderer:
 
         # 2) zoom effectif = zoom caméra * échelle interne
         zoom = float(getattr(view, "zoom", 1.0) or 1.0)
-        zoom_eff = zoom * self.base_scale
+        size_scale = self._resolve_size_scale()
+        zoom_eff = zoom * self.base_scale * size_scale
         sprite = self._get_scaled(composed, zoom_eff)
 
         # 3) projection iso (identique à ton ancien code)
@@ -313,6 +332,22 @@ class EspeceRenderer:
         py = int(surface_y - ay)
 
         rect = pygame.Rect(px, py, sprite.get_width(), sprite.get_height())
+
+        # En eau: enfonce visuellement les individus de l'espèce joueur.
+        if self._is_player_species() and world is not None:
+            try:
+                is_water = False
+                if hasattr(world, "get_tile_snapshot"):
+                    snap = world.get_tile_snapshot(int(tx), int(ty), generate=False)
+                    if snap is not None:
+                        _lvl, _gid, _overlay, bid = snap
+                        is_water = int(bid) in (1, 3, 4)
+                elif hasattr(world, "get_is_water"):
+                    is_water = bool(world.get_is_water(int(tx), int(ty)))
+                if is_water:
+                    rect.y += int(sprite.get_height() * 0.28)
+            except Exception:
+                pass
         return sprite, rect
 
     def render(self, screen, view, world, tx: float, ty: float):

@@ -35,7 +35,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=1.0,
         movement_modifier=1.0,
         morale_per_minute=0.1,
-        sprites="placeholder"
+        sprites="sun"
     ),
     "cloudy": WeatherCondition(
         id="cloudy",
@@ -46,7 +46,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.95,
         movement_modifier=1.0,
         morale_per_minute=0.0,
-        sprites="placeholder"
+        sprites="cloud"
     ),
     "rain": WeatherCondition(
         id="rain",
@@ -68,7 +68,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.55,
         movement_modifier=0.65,
         morale_per_minute=-0.35,
-        sprites="placeholder"
+        sprites="rain"
     ),
     "storm": WeatherCondition(
         id="storm",
@@ -90,7 +90,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.70,
         movement_modifier=0.70,
         morale_per_minute=-0.25,
-        sprites="placeholder"
+        sprites="snow"
     ),
     "blizzard": WeatherCondition(
         id="blizzard",
@@ -101,7 +101,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.40,
         movement_modifier=0.50,
         morale_per_minute=-0.60,
-        sprites="placeholder"
+        sprites="snow"
     ),
     "fog": WeatherCondition(
         id="fog",
@@ -112,7 +112,7 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.50,
         movement_modifier=0.90,
         morale_per_minute=-0.10,
-        sprites="placeholder"
+        sprites="cloud"
     ),
     "sandstorm": WeatherCondition(
         id="sandstorm",
@@ -134,178 +134,81 @@ WEATHER_CONDITIONS = {
         visibility_modifier=0.90,
         movement_modifier=0.75,
         morale_per_minute=-0.20,
-        sprites="placeholder"
+        sprites="sun"
     ),
 }
 
 
-# Probabilités par biome 
-BIOME_WEATHER_PROBABILITIES = {
-    # Biomes aquatiques
-    "ocean": {
-        "clear": 0.35,
-        "cloudy": 0.25,
-        "rain": 0.20,
-        "heavy_rain": 0.10,
-        "storm": 0.08,
-        "fog": 0.02,
-    },
-    "coast": {
-        "clear": 0.40,
-        "cloudy": 0.25,
-        "rain": 0.15,
-        "heavy_rain": 0.08,
-        "storm": 0.05,
-        "fog": 0.07,
-    },
-    "lake": {
-        "clear": 0.45,
-        "cloudy": 0.25,
-        "rain": 0.15,
-        "heavy_rain": 0.08,
-        "fog": 0.07,
-    },
-    "river": {
-        "clear": 0.45,
-        "cloudy": 0.25,
-        "rain": 0.15,
-        "heavy_rain": 0.05,
-        "fog": 0.10,
-    },
-    
-    # Biomes tempérés
-    "plains": {
-        "clear": 0.50,
-        "cloudy": 0.25,
-        "rain": 0.15,
+# Probabilités par moment de la journée (pas de dépendance au biome)
+TIME_WEATHER_PROBABILITIES = {
+    "night": {
+        "clear": 0.30,
+        "cloudy": 0.22,
+        "fog": 0.20,
+        "rain": 0.12,
         "heavy_rain": 0.05,
         "storm": 0.03,
-        "fog": 0.02,
+        "snow": 0.05,
+        "blizzard": 0.03,
     },
-    "forest": {
-        "clear": 0.40,
-        "cloudy": 0.30,
-        "rain": 0.20,
-        "heavy_rain": 0.07,
-        "fog": 0.03,
-    },
-    "rainforest": {
+    "dawn": {
         "clear": 0.25,
-        "cloudy": 0.20,
-        "rain": 0.35,
-        "heavy_rain": 0.15,
-        "storm": 0.05,
-    },
-    "savanna": {
-        "clear": 0.60,
-        "cloudy": 0.20,
-        "rain": 0.10,
+        "cloudy": 0.28,
+        "fog": 0.22,
+        "rain": 0.12,
         "heavy_rain": 0.05,
-        "storm": 0.05,
+        "storm": 0.03,
+        "snow": 0.04,
+        "blizzard": 0.01,
     },
-    
-    # Biomes arides
-    "desert": {
-        "clear": 0.75,
-        "cloudy": 0.10,
-        "sandstorm": 0.10,
-        "heatwave": 0.05,
-    },
-    
-    # Biomes froids
-    "taiga": {
-        "clear": 0.40,
+    "day": {
+        "clear": 0.45,
         "cloudy": 0.25,
-        "fog": 0.05,
-        "snow": 0.25,
-        "blizzard": 0.05,
+        "rain": 0.14,
+        "heavy_rain": 0.06,
+        "storm": 0.03,
+        "fog": 0.03,
+        "heatwave": 0.02,
+        "sandstorm": 0.02,
     },
-    "tundra": {
-        "clear": 0.35,
-        "cloudy": 0.25,
-        "snow": 0.30,
-        "blizzard": 0.10,
+    "dusk": {
+        "clear": 0.28,
+        "cloudy": 0.28,
+        "fog": 0.22,
+        "rain": 0.12,
+        "heavy_rain": 0.05,
+        "storm": 0.03,
+        "snow": 0.04,
+        "blizzard": 0.01,
     },
-    "snow": {
-        "clear": 0.30,
-        "cloudy": 0.20,
-        "snow": 0.35,
-        "blizzard": 0.15,
-    },
-    
-    # Biomes spéciaux
-    "swamp": {
-        "cloudy": 0.35,
-        "fog": 0.35,
-        "rain": 0.20,
-        "clear": 0.10,
-    },
-    "mangrove": {
-        "cloudy": 0.30,
-        "rain": 0.30,
-        "heavy_rain": 0.15,
-        "fog": 0.15,
-        "clear": 0.10,
-    },
-    "rocky": {
-        "clear": 0.50,
-        "cloudy": 0.25,
-        "rain": 0.10,
-        "heavy_rain": 0.08,
-        "storm": 0.07,
-    },
-    "alpine": {
-        "clear": 0.35,
-        "cloudy": 0.25,
-        "snow": 0.25,
-        "blizzard": 0.10,
-        "fog": 0.05,
-    },
-    "volcanic": {
-        "clear": 0.40,
-        "cloudy": 0.30,
-        "storm": 0.15,
-        "rain": 0.10,
-        "fog": 0.05,
-    },
-    "mystic": {
-        "fog": 0.40,
-        "cloudy": 0.30,
-        "clear": 0.20,
-        "storm": 0.10,
-    },
+}
+
+# Bias par climat (global), appliqué aux probabilités
+CLIMATE_WEATHER_BIAS = {
+    "Glaciaire": {"snow": 2.6, "blizzard": 3.0, "rain": 0.6, "heatwave": 0.0, "sandstorm": 0.0},
+    "Froid": {"snow": 1.8, "blizzard": 1.6, "rain": 0.8, "heatwave": 0.2, "sandstorm": 0.2},
+    "Tempéré": {},
+    "Aride": {"sandstorm": 2.2, "heatwave": 1.8, "rain": 0.6, "snow": 0.2, "blizzard": 0.1},
+    "Tropical": {"rain": 1.5, "heavy_rain": 1.5, "storm": 1.2, "snow": 0.0, "blizzard": 0.0},
 }
 
 
 class TemperatureSystem:
     """
     Gère la température ambiante basée sur :
-    - Le biome
+    - Le climat global
     - L'heure (jour/nuit)
     - La saison (via le cycle annuel)
     - Les conditions météo actuelles
     """
     
-    # Températures de base par biome 
-    BASE_TEMPERATURES = {
-        "ocean": 15.0,
-        "coast": 18.0,
-        "lake": 16.0,
-        "river": 17.0,
-        "plains": 20.0,
-        "forest": 18.0,
-        "rainforest": 28.0,
-        "savanna": 30.0,
-        "desert": 35.0,
-        "taiga": 5.0,
-        "tundra": -5.0,
-        "snow": -15.0,
-        "swamp": 22.0,
-        "mangrove": 26.0,
-        "rocky": 18.0,
-        "alpine": -2.0,
-        "volcanic": 25.0,
-        "mystic": 15.0,
+    # Températures de base par climat global
+    CLIMATE_BASE_TEMPS = {
+        "Glaciaire": -18.0,
+        "Froid": 4.0,
+        "Tempéré": 18.0,
+        "Aride": 32.0,
+        "Tropical": 28.0,
     }
     
     def __init__(self):
@@ -314,7 +217,7 @@ class TemperatureSystem:
     
     def get_temperature(
         self,
-        biome: str,
+        climate: str,
         time_of_day: float,  
         day_of_year: int,    
         weather_modifier: float = 0.0
@@ -323,7 +226,7 @@ class TemperatureSystem:
         Calcule la température actuelle.
         
         Args:
-            biome: Nom du biome
+            climate: Climat global
             time_of_day: Position dans la journée (0.0 à 1.0)
             day_of_year: Jour de l'année pour la saison
             weather_modifier: Modificateur de la météo
@@ -331,7 +234,7 @@ class TemperatureSystem:
         Returns:
             Température 
         """
-        base = self.BASE_TEMPERATURES.get(biome, 20.0)
+        base = self.CLIMATE_BASE_TEMPS.get(climate, 20.0)
         
         # Variation jour/nuit 
         day_night_factor = math.sin((time_of_day - 0.25) * 2 * math.pi)
@@ -341,8 +244,8 @@ class TemperatureSystem:
         seasonal_factor = math.sin((day_of_year / 365.0 - 0.22) * 2 * math.pi)
         seasonal_delta = seasonal_factor * self.seasonal_amplitude
         
-        # Réduction de l'amplitude saisonnière pour les biomes tropicaux
-        if biome in ("rainforest", "desert", "savanna"):
+        # Réduction de l'amplitude saisonnière pour certains climats
+        if climate in ("Tropical", "Aride"):
             seasonal_delta *= 0.3
         
         temperature = base + day_night_delta + seasonal_delta + weather_modifier
@@ -369,37 +272,55 @@ class WeatherSystem:
         # RNG déterministe
         self.rng = random.Random(seed)
         
-        # Cache biome du joueur (pour optimisation)
-        self._cached_biome: Optional[str] = None
-        self._cache_position: Optional[Tuple[int, int]] = None
+        # Paramètres globaux (climat / variabilité)
+        self._climate_label = self._resolve_climate_label()
+        self._weather_var = self._resolve_weather_variability()
     
-    def _get_player_biome(self, player_x: int, player_y: int) -> str:
-        """Récupère le biome à la position du joueur avec cache"""
-        pos = (int(player_x), int(player_y))
-        
-        if self._cache_position == pos and self._cached_biome:
-            return self._cached_biome
-        
-        try:
-            biome = self.world.get_biome_name(player_x, player_y)
-            self._cached_biome = biome
-            self._cache_position = pos
-            return biome
-        except Exception:
-            return "plains"  # fallback
-    
-    def _select_weather_for_biome(self, biome: str) -> str:
-        """Sélectionne une nouvelle condition météo basée sur le biome"""
-        probs = BIOME_WEATHER_PROBABILITIES.get(biome)
-        
-        if not probs:
-            # Biome inconnu, utilise plains par défaut
-            probs = BIOME_WEATHER_PROBABILITIES["plains"]
-        
-        # Sélection pondérée
+    def _resolve_climate_label(self) -> str:
+        params = getattr(self.world, "params", None)
+        label = getattr(params, "Climat", None) if params is not None else None
+        if not label:
+            label = getattr(params, "climat", None) if params is not None else None
+        return str(label or "Tempéré")
+
+    def _resolve_weather_variability(self) -> float:
+        params = getattr(self.world, "params", None)
+        raw = getattr(params, "weather", None) if params is not None else None
+        label = str(raw or "Variable")
+        return {"Calme": 0.85, "Stable": 0.9, "Variable": 1.0, "Extrême": 1.25}.get(label, 1.0)
+
+    def _time_bucket(self, time_ratio: float) -> str:
+        t = max(0.0, min(1.0, float(time_ratio)))
+        if 0.20 <= t < 0.30:
+            return "dawn"
+        if 0.30 <= t < 0.70:
+            return "day"
+        if 0.70 <= t < 0.80:
+            return "dusk"
+        return "night"
+
+    def _select_weather_for_time(self, time_ratio: float) -> str:
+        bucket = self._time_bucket(time_ratio)
+        probs = dict(TIME_WEATHER_PROBABILITIES.get(bucket, TIME_WEATHER_PROBABILITIES["day"]))
+
+        # Applique biais climat
+        bias = CLIMATE_WEATHER_BIAS.get(self._climate_label, {})
+        for k, mult in bias.items():
+            if k in probs:
+                probs[k] *= float(mult)
+
+        # Variabilité globale: augmente les évènements extrêmes
+        if abs(self._weather_var - 1.0) > 1e-6:
+            extreme = {"storm", "heavy_rain", "blizzard", "sandstorm", "heatwave"}
+            calm = {"clear", "cloudy"}
+            for k in list(probs.keys()):
+                if k in extreme:
+                    probs[k] *= self._weather_var
+                elif k in calm and self._weather_var > 1.0:
+                    probs[k] *= (1.0 / self._weather_var)
+
         conditions = list(probs.keys())
         weights = list(probs.values())
-        
         chosen = self.rng.choices(conditions, weights=weights, k=1)[0]
         return chosen
     
@@ -418,8 +339,8 @@ class WeatherSystem:
         
         if self.condition_timer <= 0.0:
             # Changement de météo
-            biome = self._get_player_biome(player_x, player_y)
-            new_condition_id = self._select_weather_for_biome(biome)
+            time_ratio = self.day_night.get_time_ratio() if self.day_night else 0.5
+            new_condition_id = self._select_weather_for_time(time_ratio)
             self.current_condition = WEATHER_CONDITIONS[new_condition_id]
             
             # Durée aléatoire dans l'intervalle défini
@@ -431,8 +352,6 @@ class WeatherSystem:
     
     def get_current_temperature(self, player_x: int, player_y: int) -> float:
         """Calcule la température actuelle à la position du joueur"""
-        biome = self._get_player_biome(player_x, player_y)
-        
         # Récupère l'heure actuelle (0.0 à 1.0)
         time_ratio = self.day_night.get_time_ratio()
         
@@ -443,7 +362,7 @@ class WeatherSystem:
         weather_mod = self.current_condition.temperature_modifier if self.current_condition else 0.0
         
         return self.temperature_system.get_temperature(
-            biome=biome,
+            climate=self._climate_label,
             time_of_day=time_ratio,
             day_of_year=day_of_year,
             weather_modifier=weather_mod

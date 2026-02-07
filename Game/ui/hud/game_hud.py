@@ -284,9 +284,6 @@ def draw_inspection_panel(self, screen):
         text = text_font.render(label, True, (230, 230, 240))
         panel_surf.blit(text, text.get_rect(center=btn_rect.center))
     y_offset += 22
-    name_status = "verrouillé" if getattr(ent, "name_locked", False) else "modifiable"
-    name_line = text_font.render(f"Nom : {ent.nom} ({name_status})", True, (190, 200, 210))
-    panel_surf.blit(name_line, (10, y_offset))
     y_offset += 18
 
     if getattr(self, "rename_active", False) and getattr(self, "rename_target", None) is ent:

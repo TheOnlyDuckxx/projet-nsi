@@ -359,6 +359,9 @@ class SaveManager:
                 ind_data["species_key"] = species_key
             if getattr(ent, "is_fauna", False):
                 ind_data["is_fauna"] = True
+                fauna_id = getattr(ent, "fauna_id", None)
+                if fauna_id is not None:
+                    ind_data["fauna_id"] = fauna_id
 
             individus_data.append(ind_data)
 
@@ -528,10 +531,31 @@ class SaveManager:
                     continue
 
                 if is_fauna and hasattr(phase1, "_rabbit_definition"):
-                    from Game.species.fauna import PassiveFaunaFactory
+                    from Game.species.fauna import PassiveFaunaFactory, AggressiveFaunaFactory
 
-                    definition = phase1._rabbit_definition()
-                    factory = PassiveFaunaFactory(phase1, phase1.assets, definition)
+                    fauna_id = ind_data.get("fauna_id")
+                    definition = phase1.get_fauna_definition(fauna_id) if hasattr(phase1, "get_fauna_definition") else None
+                    if definition is None:
+                        # Fallback par nom d'espèce (anciens saves)
+                        name_guess = getattr(espece_for_ent, "nom", None) or ""
+                        name_guess = str(name_guess).strip().lower()
+                        if name_guess:
+                            catalog = phase1._fauna_definition_catalog() if hasattr(phase1, "_fauna_definition_catalog") else {}
+                            if name_guess in catalog:
+                                definition = catalog.get(name_guess)
+                                fauna_id = name_guess
+                            else:
+                                for key, defn in (catalog or {}).items():
+                                    if defn and str(getattr(defn, "species_name", "")).strip().lower() == name_guess:
+                                        definition = defn
+                                        fauna_id = key
+                                        break
+                    if definition is None:
+                        definition = phase1._rabbit_definition()
+                        fauna_id = fauna_id or "lapin"
+
+                    factory_cls = AggressiveFaunaFactory if getattr(definition, "is_aggressive", False) else PassiveFaunaFactory
+                    factory = factory_cls(phase1, phase1.assets, definition)
                     fauna_species = species_map.get(species_key) or phase1.fauna_species
                     if fauna_species is None:
                         fauna_species = factory.create_species()
@@ -539,6 +563,10 @@ class SaveManager:
                         if species_key:
                             species_map[species_key] = fauna_species
                     ent = factory.create_creature(fauna_species, x, y)
+                    try:
+                        ent.fauna_id = str(fauna_id) if fauna_id is not None else None
+                    except Exception:
+                        pass
                 else:
                     ent = espece_for_ent.create_individu(x=x, y=y, assets=phase1.assets)
 

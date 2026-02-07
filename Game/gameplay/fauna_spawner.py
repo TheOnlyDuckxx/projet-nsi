@@ -177,6 +177,10 @@ class FaunaSpawner:
         factory_cls = AggressiveFaunaFactory if getattr(definition, "is_aggressive", False) else PassiveFaunaFactory
         factory = factory_cls(phase, phase.assets, definition)
         ent = factory.create_creature(species, float(x), float(y))
+        try:
+            ent.fauna_id = str(species_id)
+        except Exception:
+            pass
         phase._ensure_move_runtime(ent)
         phase.entities.append(ent)
         return ent
