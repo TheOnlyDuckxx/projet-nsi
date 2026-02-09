@@ -19,7 +19,7 @@ LAKE  = 13
 SNOW= 14
 SWAMP = 15
 MANGROVE = 16
-ROCKY = 17
+ROCK = 17
 ALPINE = 18
 VOLCANIC = 19
 MYSTIC = 20
@@ -43,7 +43,7 @@ _DEFAULT_GROUND_SPRITES = {
     WATER_DEEP:    "tile_water_deep",
     SWAMP:     "tile_swamp",
     MANGROVE:  "tile_mangrove",
-    ROCKY:     "tile_rocky",
+    ROCK:     "tile_rock",
     ALPINE:    "tile_alpine",
     VOLCANIC:  "tile_volcanic",
     MYSTIC:    "tile_mystic",
@@ -67,7 +67,7 @@ _DEFAULT_NAME_TO_ID = {
     "water_deep": WATER_DEEP,
     "swamp": SWAMP,
     "mangrove": MANGROVE,
-    "rocky": ROCKY,
+    "rock": ROCK,
     "alpine": ALPINE,
     "volcanic": VOLCANIC,
     "mystic": MYSTIC,

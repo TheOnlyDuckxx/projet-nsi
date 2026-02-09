@@ -422,7 +422,7 @@ class IsoMapView:
                 if callable(after_tile_cb):
                     after_tile_cb(i, j, sx, sy, dx, dy, wall_h)
                 # props
-                if draw_entities and entity_map:
+                if draw_entities and entity_map and visible:
                     for e in entity_map.get((i, j), []):
                         # dessiner l’entité maintenant => insérée dans le pipeline iso
                         e.draw(screen, self, self.world)

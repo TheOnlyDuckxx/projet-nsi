@@ -540,7 +540,7 @@ BIOME_SNOW = 17
 # Extras (plus de variété, sans forcer des nouveaux tiles)
 BIOME_SWAMP = 18
 BIOME_MANGROVE = 19
-BIOME_ROCKY = 20
+BIOME_ROCK = 20
 BIOME_ALPINE = 21
 BIOME_VOLCANIC = 22
 BIOME_MYSTIC = 23
@@ -560,7 +560,7 @@ BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_SNOW: "snow",
     BIOME_SWAMP: "swamp",
     BIOME_MANGROVE: "mangrove",
-    BIOME_ROCKY: "rocky",
+    BIOME_ROCK: "rock",
     BIOME_ALPINE: "alpine",
     BIOME_VOLCANIC: "volcanic",
     BIOME_MYSTIC: "mystic",
@@ -587,7 +587,7 @@ _BIOME_TO_GROUND_NAME = {
     BIOME_RAINFOREST: "rainforest",
     BIOME_SWAMP: "swamp",
     BIOME_MANGROVE: "mangrove",
-    BIOME_ROCKY: "rocky",
+    BIOME_ROCK: "rock",
     BIOME_ALPINE: "alpine",
     BIOME_VOLCANIC: "volcanic",
     BIOME_MYSTIC: "mystic",
@@ -1221,7 +1221,7 @@ class ChunkedWorld:
                         elif t01 > 0.62 and peak > 0.86 and r1 < 0.35:
                             bid = BIOME_VOLCANIC
                         else:
-                            bid = BIOME_ROCKY
+                            bid = BIOME_ROCK
                     # Bas-fonds humides -> marais/mangrove
                     elif m01 > 0.74 and h01 < 0.42:
                         if (lake_noise > (lake_cut - 0.04)) and h01 < 0.30 and r2 < 0.70:
@@ -1328,7 +1328,7 @@ class ChunkedWorld:
                                 prop = prop_ids["bush"]
                             else:
                                 prop = prop_ids["berry_bush"] if r2 < 0.5 else prop_ids["blueberry_bush"]
-                        elif bid in (BIOME_ROCKY, BIOME_ALPINE, BIOME_VOLCANIC):
+                        elif bid in (BIOME_ROCK, BIOME_ALPINE, BIOME_VOLCANIC):
                             prop = prop_ids["rock"] if r1 < 0.65 else prop_ids["boulder"]
                         elif bid in (BIOME_SWAMP, BIOME_MANGROVE):
                             prop = prop_ids["reeds"] if r1 < 0.6 else prop_ids["bush"]

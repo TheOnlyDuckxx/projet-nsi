@@ -1962,9 +1962,14 @@ class Phase1:
         self._draw_construction_bars(screen)
         dx, dy, wall_h = self.view._proj_consts()
         for ent in self.entities:
+            visible, explored = self._tile_fog_state((int(ent.x), int(ent.y)))
+            if not explored:
+                continue
             self._draw_fauna_health_bar(screen, ent)
             self._draw_species_health_bar(screen, ent)
             draw_work_bar(self, screen, ent)
+            if not visible:
+                continue
 
             renderer = getattr(ent, "renderer", None)
             if renderer is None and hasattr(ent, "espece"):
@@ -2573,6 +2578,15 @@ class Phase1:
             return bool(self.fog.visible[j][i])
         except Exception:
             return True
+
+    def _tile_fog_state(self, tile: tuple[int, int]) -> tuple[bool, bool]:
+        if not self.fog:
+            return True, True
+        i, j = tile
+        try:
+            return self.fog.is_visible(i, j), self.fog.is_explored(i, j)
+        except Exception:
+            return True, True
 
     # ---------- PATHFINDING & COLLISIONS ----------
     def _is_walkable(self, i: int, j: int, generate: bool = True, ent=None) -> bool:
