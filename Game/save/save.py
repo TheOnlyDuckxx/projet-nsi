@@ -407,6 +407,11 @@ class SaveManager:
             "unlocked_crafts": list(getattr(phase1, "unlocked_crafts", []) or []),
             "food_reserve_capacity": getattr(phase1, "food_reserve_capacity", None),
             "tech_tree": getattr(getattr(phase1, "tech_tree", None), "to_dict", lambda: {})(),
+            "run_stats": getattr(phase1, "_run_stats", {}),
+            "daily_stats": getattr(phase1, "_daily_stats", []),
+            "stats_current_day": getattr(phase1, "_stats_current_day", {}),
+            "stats_last_day": getattr(phase1, "_stats_last_day", 0),
+            "session_time_seconds": getattr(phase1, "session_time_seconds", 0.0),
         }
 
 
@@ -666,6 +671,13 @@ class SaveManager:
             phase1.death_event_ready = data.get("death_event_ready", False)
             phase1.species_death_count = data.get("species_death_count", 0)
             phase1.food_reserve_capacity = data.get("food_reserve_capacity", getattr(phase1, "food_reserve_capacity", 100))
+            phase1._run_stats = dict(data.get("run_stats") or getattr(phase1, "_run_stats", {}))
+            phase1._daily_stats = list(data.get("daily_stats") or [])
+            phase1._stats_current_day = dict(data.get("stats_current_day") or getattr(phase1, "_stats_current_day", {}))
+            phase1._stats_last_day = int(data.get("stats_last_day", getattr(phase1, "_stats_last_day", 0)) or 0)
+            phase1.session_time_seconds = float(data.get("session_time_seconds", getattr(phase1, "session_time_seconds", 0.0)) or 0.0)
+            if hasattr(phase1, "_bootstrap_run_statistics"):
+                phase1._bootstrap_run_statistics()
             unlocked = data.get("unlocked_crafts")
             if unlocked is not None:
                 phase1.unlocked_crafts = set(unlocked)

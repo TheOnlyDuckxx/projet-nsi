@@ -282,6 +282,8 @@ class ReproductionSystem:
             if hasattr(self.phase, "entities"):
                 self.phase.entities.append(new_ind)
             new_ind.phase = self.phase
+            if hasattr(self.phase, "_on_species_birth"):
+                self.phase._on_species_birth(new_ind)
         except Exception:
             pass
 
