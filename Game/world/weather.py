@@ -6,7 +6,7 @@ Les probabilités et effets varient selon le biome et le cycle jour/nuit.
 
 import random
 import math
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 from dataclasses import dataclass
 
 
@@ -193,6 +193,68 @@ CLIMATE_WEATHER_BIAS = {
 }
 
 
+SEASON_ORDER: List[str] = ["spring", "summer", "autumn", "winter"]
+
+SEASON_DATA: Dict[str, Dict[str, object]] = {
+    "spring": {
+        "name": "Printemps",
+        "icon": "mistletoe",
+        "temperature_delta": 2.0,
+        "weather_multipliers": {
+            "clear": 1.20,
+            "rain": 1.25,
+            "snow": 0.20,
+            "blizzard": 0.0,
+            "cloudy": 1.00,
+            "storm": 0.70,
+            "heavy_rain": 1.12,
+        },
+    },
+    "autumn": {
+        "name": "Automne",
+        "icon": "leaf",
+        "temperature_delta": -2.0,
+        "weather_multipliers": {
+            "clear": 0.78,
+            "rain": 1.20,
+            "snow": 1.00,
+            "blizzard": 0.0,
+            "cloudy": 1.22,
+            "storm": 1.12,
+            "heavy_rain": 1.45,
+        },
+    },
+    "winter": {
+        "name": "Hiver",
+        "icon": "snowflake",
+        "temperature_delta": -8.0,
+        "weather_multipliers": {
+            "clear": 0.70,
+            "rain": 0.60,
+            "snow": 1.80,
+            "blizzard": 1.75,
+            "cloudy": 1.22,
+            "storm": 1.25,
+            "heavy_rain": 0.65,
+        },
+    },
+    "summer": {
+        "name": "Été",
+        "icon": "sun",
+        "temperature_delta": 8.0,
+        "weather_multipliers": {
+            "clear": 1.55,
+            "rain": 0.68,
+            "snow": 0.02,
+            "blizzard": 0.0,
+            "cloudy": 0.72,
+            "storm": 1.15,
+            "heavy_rain": 1.12,
+        },
+    },
+}
+
+
 class TemperatureSystem:
     """
     Gère la température ambiante basée sur :
@@ -289,6 +351,58 @@ class WeatherSystem:
         label = str(raw or "Variable")
         return {"Calme": 0.85, "Stable": 0.9, "Variable": 1.0, "Extrême": 1.25}.get(label, 1.0)
 
+    def _resolve_orbit_label(self) -> str:
+        params = getattr(self.world, "params", None)
+        raw = getattr(params, "orbit", None) if params is not None else None
+        return str(raw or "Circulaire")
+
+    def _resolve_orbital_period_days(self) -> int:
+        params = getattr(self.world, "params", None)
+        raw = getattr(params, "orbital_period", None) if params is not None else None
+        try:
+            value = int(str(raw or "64").strip())
+        except Exception:
+            value = 64
+        return max(4, value)
+
+    def _get_season_weights(self) -> List[float]:
+        orbit_label = self._resolve_orbit_label().lower()
+        if "tr" in orbit_label and "elip" in orbit_label:
+            return [0.6, 1.4, 0.6, 1.4]  # printemps, été, automne, hiver
+        if "elip" in orbit_label:
+            return [0.8, 1.2, 0.8, 1.2]
+        return [1.0, 1.0, 1.0, 1.0]
+
+    def _get_day_in_orbit(self) -> float:
+        period = float(self._resolve_orbital_period_days())
+        day = float(getattr(self.day_night, "jour", 0) or 0)
+        return day % period
+
+    def get_current_season_id(self) -> str:
+        period = float(self._resolve_orbital_period_days())
+        day_in_orbit = self._get_day_in_orbit()
+        weights = self._get_season_weights()
+
+        cursor = 0.0
+        for i, season_id in enumerate(SEASON_ORDER):
+            span = period * (weights[i] / 4.0)
+            cursor += span
+            if day_in_orbit < cursor:
+                return season_id
+        return SEASON_ORDER[0]
+
+    def get_season_info(self) -> Dict[str, object]:
+        season_id = self.get_current_season_id()
+        season_data = SEASON_DATA.get(season_id, {})
+        return {
+            "id": season_id,
+            "name": str(season_data.get("name", season_id)) if isinstance(season_data, dict) else season_id,
+            "icon": str(season_data.get("icon", "?")) if isinstance(season_data, dict) else "?",
+            "orbital_period_days": self._resolve_orbital_period_days(),
+            "orbit": self._resolve_orbit_label(),
+            "day_in_orbit": self._get_day_in_orbit(),
+        }
+
     def _time_bucket(self, time_ratio: float) -> str:
         t = max(0.0, min(1.0, float(time_ratio)))
         if 0.20 <= t < 0.30:
@@ -318,6 +432,18 @@ class WeatherSystem:
                     probs[k] *= self._weather_var
                 elif k in calm and self._weather_var > 1.0:
                     probs[k] *= (1.0 / self._weather_var)
+
+        # Effets saisonniers (orbite + période de révolution)
+        season_id = self.get_current_season_id()
+        season_data = SEASON_DATA.get(season_id, {})
+        season_multipliers = season_data.get("weather_multipliers", {}) if isinstance(season_data, dict) else {}
+        for k, mult in season_multipliers.items():
+            if k in probs:
+                probs[k] *= float(mult)
+
+        # Évite de retourner un set de poids nuls
+        if all(v <= 0.0 for v in probs.values()):
+            probs = dict(TIME_WEATHER_PROBABILITIES.get(bucket, TIME_WEATHER_PROBABILITIES["day"]))
 
         conditions = list(probs.keys())
         weights = list(probs.values())
@@ -358,14 +484,16 @@ class WeatherSystem:
         # Calcule le jour de l'année (0 à 364)
         day_of_year = int((self.day_night.jour % 365))
         
-        # Modificateur météo
+        # Modificateur météo + saison
         weather_mod = self.current_condition.temperature_modifier if self.current_condition else 0.0
-        
+        season_data = SEASON_DATA.get(self.get_current_season_id(), {})
+        season_temp_delta = float(season_data.get("temperature_delta", 0.0)) if isinstance(season_data, dict) else 0.0
+
         return self.temperature_system.get_temperature(
             climate=self._climate_label,
             time_of_day=time_ratio,
             day_of_year=day_of_year,
-            weather_modifier=weather_mod
+            weather_modifier=weather_mod + season_temp_delta
         )
     
     def get_visibility_multiplier(self) -> float:
@@ -402,7 +530,8 @@ class WeatherSystem:
             return {
                 "name": "Inconnu",
                 "icon": "❓",
-                "time_remaining": 0.0
+                "time_remaining": 0.0,
+                "season": self.get_season_info(),
             }
         
         return {
@@ -413,6 +542,7 @@ class WeatherSystem:
             "temperature_mod": self.current_condition.temperature_modifier,
             "visibility": self.current_condition.visibility_modifier,
             "movement": self.current_condition.movement_modifier,
+            "season": self.get_season_info(),
         }
     
     def force_weather(self, condition_id: str, duration_minutes: float = 30.0):

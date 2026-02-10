@@ -278,6 +278,63 @@ class BottomHUD:
         txt = self.small_font.render(f"XP {int(xp)}/{int(xp_max)}", True, (240, 240, 240))
         screen.blit(txt, (rect.x + 6, rect.y + 1))
 
+    def _draw_season_icon(self, screen, center_x: int, center_y: int, season_id: str):
+        if season_id == "summer":
+            color = (255, 205, 70)
+            pygame.draw.circle(screen, color, (center_x, center_y), 7)
+            for i in range(8):
+                a = i * (3.14159265 / 4)
+                x1 = center_x + int(10 * pygame.math.Vector2(1, 0).rotate_rad(a).x)
+                y1 = center_y + int(10 * pygame.math.Vector2(1, 0).rotate_rad(a).y)
+                x2 = center_x + int(13 * pygame.math.Vector2(1, 0).rotate_rad(a).x)
+                y2 = center_y + int(13 * pygame.math.Vector2(1, 0).rotate_rad(a).y)
+                pygame.draw.line(screen, color, (x1, y1), (x2, y2), 2)
+            return
+
+        if season_id == "autumn":
+            leaf_color = (230, 125, 35)
+            pts = [
+                (center_x, center_y - 10),
+                (center_x + 7, center_y - 3),
+                (center_x + 5, center_y + 7),
+                (center_x, center_y + 10),
+                (center_x - 6, center_y + 7),
+                (center_x - 8, center_y - 2),
+            ]
+            pygame.draw.polygon(screen, leaf_color, pts)
+            pygame.draw.line(screen, (140, 80, 35), (center_x, center_y - 7), (center_x, center_y + 8), 1)
+            return
+
+        if season_id == "winter":
+            c = (190, 230, 255)
+            pygame.draw.line(screen, c, (center_x, center_y - 10), (center_x, center_y + 10), 2)
+            pygame.draw.line(screen, c, (center_x - 9, center_y), (center_x + 9, center_y), 2)
+            pygame.draw.line(screen, c, (center_x - 7, center_y - 7), (center_x + 7, center_y + 7), 2)
+            pygame.draw.line(screen, c, (center_x + 7, center_y - 7), (center_x - 7, center_y + 7), 2)
+            return
+
+        # spring (bout de gui)
+        stem = (95, 165, 95)
+        berry = (230, 245, 230)
+        pygame.draw.line(screen, stem, (center_x - 8, center_y + 8), (center_x + 8, center_y - 8), 2)
+        pygame.draw.ellipse(screen, stem, pygame.Rect(center_x - 11, center_y - 2, 8, 5))
+        pygame.draw.ellipse(screen, stem, pygame.Rect(center_x - 2, center_y - 9, 8, 5))
+        pygame.draw.ellipse(screen, stem, pygame.Rect(center_x + 2, center_y - 1, 8, 5))
+        pygame.draw.circle(screen, berry, (center_x - 2, center_y + 4), 2)
+        pygame.draw.circle(screen, berry, (center_x + 2, center_y + 2), 2)
+
+    def _get_current_season(self):
+        ws = getattr(self.phase, "weather_system", None)
+        if ws is None or not hasattr(ws, "get_season_info"):
+            return {"id": "spring", "name": "Printemps"}
+        try:
+            info = ws.get_season_info()
+            if isinstance(info, dict):
+                return info
+        except Exception:
+            pass
+        return {"id": "spring", "name": "Printemps"}
+
     def _draw_level_and_clock(self, screen):
         # Niveau (gauche) avec cadre sprite
         lvl = getattr(self.species, "species_level", 1)
@@ -318,11 +375,21 @@ class BottomHUD:
         self.clock_renderer.draw(screen, clock_cx, clock_cy, self.day_night, None)
         self.clock_renderer.radius = prev_radius
 
+        season_info = self._get_current_season()
+        season_id = str(season_info.get("id", "spring"))
+        season_name = str(season_info.get("name", "Printemps"))
+
+        icon_cx = clock_cx + 42
+        icon_cy = clock_rect.y + 18
+        self._draw_season_icon(screen, icon_cx, icon_cy, season_id)
+
         time_str = self.day_night.get_time_string() if self.day_night else "--:--"
         label = self.small_font.render("Heure", True, (185, 210, 185))
-        screen.blit(label, (clock_cx + 32, clock_rect.y + 10))
+        screen.blit(label, (clock_cx + 62, clock_rect.y + 6))
+        season_txt = self.small_font.render(season_name, True, (210, 228, 210))
+        screen.blit(season_txt, (clock_cx + 62, clock_rect.y + 20))
         time_txt = self.font.render(time_str, True, (240, 240, 240))
-        screen.blit(time_txt, (clock_cx + 32, clock_rect.y + 26))
+        screen.blit(time_txt, (clock_cx + 62, clock_rect.y + 34))
 
     def _draw_quickcraft(self, screen):
         # Titre "CRAFT"
