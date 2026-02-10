@@ -747,7 +747,7 @@ class WorldCreationMenu(BaseMenu):
             self._btn_sprite_hover = self._btn_sprite_default
         self._sprite_cache: dict[tuple[int, int, bool], pygame.Surface] = {}
 
-        # Définition des 12 paramètres (12 boutons)
+        # Définition des paramètres du monde
         self.param_defs = [
             ("world_size", "Taille", ["Petite", "Moyenne", "Grande", "Gigantesque"]),
             ("water_coverage", "Eau", ["Aride", "Tempéré", "Océanique"]),
@@ -759,6 +759,8 @@ class WorldCreationMenu(BaseMenu):
             ("weather", "Météo", ["Calme", "Variable", "Extrême"]),
             ("gravity", "Gravité", ["Faible", "Moyenne", "Forte"]),
             ("cosmic_radiation", "Radiations", ["Faible", "Moyenne", "Forte"]),
+            ("orbit", "Orbite", ["Circulaire", "Eliptique", "Très Eliptique"]),
+            ("orbital_period", "Période", ["32", "48", "64", "80"]),
             ("mystic_influence", "Mystique", ["Nulle", "Faible", "Moyenne", "Forte"]),
             ("dimensional_stability", "Stabilité", ["Stable", "Fissuré", "Instable"]),
         ]
@@ -907,7 +909,8 @@ class WorldCreationMenu(BaseMenu):
         title_surf = self.title_font.render(self.title, True, (245, 245, 245))
         title_h = title_surf.get_height()
 
-        grid_h = 6 * btn_h + 5 * row_gap
+        rows = max(1, math.ceil(len(self._param_buttons) / 2))
+        grid_h = rows * btn_h + max(0, rows - 1) * row_gap
 
         required = top_pad + title_h + gap1 + input_h + gap2 + grid_h + gap3 + nav_h + bottom_pad
         vscale = min(1.0, (H * 0.96) / max(1, required))
@@ -919,7 +922,7 @@ class WorldCreationMenu(BaseMenu):
         input_h, btn_h, row_gap, nav_h = map(S, (input_h, btn_h, row_gap, nav_h))
 
         # Recalcule grid_h après scale
-        grid_h = 6 * btn_h + 5 * row_gap
+        grid_h = rows * btn_h + max(0, rows - 1) * row_gap
 
         # Positions
         title_y = top_pad
@@ -939,12 +942,12 @@ class WorldCreationMenu(BaseMenu):
         col1_x = margin
         col2_x = margin + col_w + col_gap
 
-        # Rects 12 boutons (6 + 6)
+        # Rects des boutons de paramètres
         param_rects = []
-        for r in range(6):
+        for r in range(rows):
             y = grid_y + r * (btn_h + row_gap)
             param_rects.append(pygame.Rect(col1_x, y, col_w, btn_h))
-        for r in range(6):
+        for r in range(rows):
             y = grid_y + r * (btn_h + row_gap)
             param_rects.append(pygame.Rect(col2_x, y, col_w, btn_h))
 
@@ -1129,7 +1132,7 @@ class WorldCreationMenu(BaseMenu):
             cy = ir.centery
             pygame.draw.line(screen, (40, 40, 40), (base_x, cy - ir.height // 4), (base_x, cy + ir.height // 4), 2)
 
-        # 12 boutons (2 colonnes de 6)
+        # Boutons de paramètres (2 colonnes)
         for b in self._param_buttons:
             self._draw_sprite_button(
                 screen,

@@ -112,6 +112,8 @@ class WorldParams:
     weather: str = "Variable"
     gravity: str = "Moyenne"
     cosmic_radiation: str = "Faible"
+    orbit: str = "Circulaire"
+    orbital_period: str = "64"
     mystic_influence: str = "Nulle"
     dimensional_stability: str = "Stable"
 
@@ -139,6 +141,8 @@ class WorldParams:
             weather=str(d.get("weather", "Variable")),
             gravity=str(d.get("gravity", "Moyenne")),
             cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
+            orbit=str(d.get("orbit", "Circulaire")),
+            orbital_period=str(d.get("orbital_period", "64")),
             mystic_influence=str(d.get("mystic_influence", "Nulle")),
             dimensional_stability=str(d.get("dimensional_stability", "Stable")),
             chunk_noise_step=int(d.get("chunk_noise_step", 16) or 16),
@@ -253,6 +257,8 @@ def load_world_params_from_preset(
     d.setdefault("weather", d.get("weather", "Variable"))
     d.setdefault("gravity", d.get("gravity", "Moyenne"))
     d.setdefault("cosmic_radiation", d.get("cosmic_radiation", "Faible"))
+    d.setdefault("orbit", d.get("orbit", "Circulaire"))
+    d.setdefault("orbital_period", str(d.get("orbital_period", "64")))
     d.setdefault("mystic_influence", d.get("mystic_influence", "Nulle"))
     d.setdefault("dimensional_stability", d.get("dimensional_stability", "Stable"))
 
@@ -325,6 +331,8 @@ def load_world_params_from_menu_dict(menu_dict: Dict[str, Any]) -> WorldParams:
         weather=str(menu_dict.get("weather", "Variable")),
         gravity=str(menu_dict.get("gravity", "Moyenne")),
         cosmic_radiation=str(menu_dict.get("cosmic_radiation", "Faible")),
+        orbit=str(menu_dict.get("orbit", "Circulaire")),
+        orbital_period=str(menu_dict.get("orbital_period", "64")),
         mystic_influence=str(menu_dict.get("mystic_influence", "Nulle")),
         dimensional_stability=str(menu_dict.get("dimensional_stability", "Stable")),
     )
