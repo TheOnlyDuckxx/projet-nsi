@@ -127,6 +127,11 @@ class Phase1:
         self.small_font = pygame.font.SysFont("consolas", 12)
         self.menu_button_rect = None
         self.end_run_button_rect = None
+        self.achievements_button_rect = None
+        self._pause_achievements_open = False
+        self._pause_ach_scroll = 0
+        self._pause_ach_max_scroll = 0
+        self._pause_ach_back_rect = None
         self.ui_menu_open = False
         self.right_hud = LeftHUD(self)
 
@@ -249,6 +254,11 @@ class Phase1:
         self.save_message_timer = 0.0
         self.menu_button_rect = None
         self.end_run_button_rect = None
+        self.achievements_button_rect = None
+        self._pause_achievements_open = False
+        self._pause_ach_scroll = 0
+        self._pause_ach_max_scroll = 0
+        self._pause_ach_back_rect = None
         self.inspect_mode_active = False
         self.props_transparency_active = False
         self._drag_select_start = None
@@ -1790,7 +1800,12 @@ class Phase1:
 
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
-                    self.paused = not self.paused
+                    if self.paused and self._pause_achievements_open:
+                        self._pause_achievements_open = False
+                    else:
+                        self.paused = not self.paused
+                        if not self.paused:
+                            self._pause_achievements_open = False
                 elif e.key == pygame.K_F6:
                     self._ensure_weather_system()
                     if self.weather_system:
@@ -1923,33 +1938,53 @@ class Phase1:
 
 
 
-            if self.paused and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                if self.end_run_button_rect and self.end_run_button_rect.collidepoint(e.pos):
-                    self.paused = False
-                    self._trigger_end_game("Partie terminee par le joueur.")
-                    return
-                if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
-                    self.paused = False  # pour éviter que le rendu de pause bloque tout
+            if self.paused:
+                if self._pause_achievements_open:
+                    if e.type == pygame.KEYDOWN and e.key in (pygame.K_DOWN, pygame.K_PAGEDOWN):
+                        self._pause_ach_scroll += 40
+                    elif e.type == pygame.KEYDOWN and e.key in (pygame.K_UP, pygame.K_PAGEUP):
+                        self._pause_ach_scroll -= 40
+                    elif e.type == pygame.MOUSEWHEEL:
+                        self._pause_ach_scroll -= int(e.y * 40)
+                    elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                        if self._pause_ach_back_rect and self._pause_ach_back_rect.collidepoint(e.pos):
+                            self._pause_achievements_open = False
+                    self._pause_ach_scroll = max(0, min(self._pause_ach_scroll, self._pause_ach_max_scroll))
+                    continue
 
-                    # --- Sauvegarde avant retour au menu ---
-                    try:
-                        ok = self.save()
-                        if ok:
-                            self.save_message = "Sauvegarde effectuée !"
-                        else:
-                            print("[Phase1] Sauvegarde échouée.")
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    if self.end_run_button_rect and self.end_run_button_rect.collidepoint(e.pos):
+                        self.paused = False
+                        self._trigger_end_game("Partie terminee par le joueur.")
+                        return
+                    if self.achievements_button_rect and self.achievements_button_rect.collidepoint(e.pos):
+                        self._update_achievements()
+                        self._pause_achievements_open = True
+                        self._pause_ach_scroll = 0
+                        continue
+                    if self.menu_button_rect and self.menu_button_rect.collidepoint(e.pos):
+                        self.paused = False  # pour eviter que le rendu de pause bloque tout
+
+                        # --- Sauvegarde avant retour au menu ---
+                        try:
+                            ok = self.save()
+                            if ok:
+                                self.save_message = "Sauvegarde effectuee !"
+                            else:
+                                print("[Phase1] Sauvegarde echouee.")
+                                self.save_message = "Erreur de sauvegarde."
+                        except Exception as ex:
+                            print(f"[Phase1] Erreur lors de la sauvegarde: {ex}")
                             self.save_message = "Erreur de sauvegarde."
-                    except Exception as ex:
-                        print(f"[Phase1] Erreur lors de la sauvegarde: {ex}")
-                        self.save_message = "Erreur de sauvegarde."
 
-                    self.save_message_timer = 2.5
-                    pygame.display.flip()  # force un dernier rendu avant de changer d'état
-                    pygame.time.wait(300)
+                        self.save_message_timer = 2.5
+                        pygame.display.flip()  # force un dernier rendu avant de changer d'etat
+                        pygame.time.wait(300)
 
-                    # --- Quitte proprement vers le menu principal ---
-                    self.app.change_state("MENU")
-                    return
+                        # --- Quitte proprement vers le menu principal ---
+                        self.app.change_state("MENU")
+                        return
+
 
     # ---------- UPDATE ----------
     def update(self, dt: float):
@@ -2087,6 +2122,8 @@ class Phase1:
             if self.save_message_timer <= 0:
                 self.save_message = ""
 
+        self._update_achievements()
+
         total = time.perf_counter() - t0
         if self._perf_logs_enabled and (should_trace or total >= self._perf_slow_frame_sec):
             print(f"[Perf][Phase1][Update] Fin frame | total {total:.3f}s | entities={len(self.entities)}")
@@ -2110,10 +2147,15 @@ class Phase1:
             button_width = 320
             button_height = 60
             button_x = screen.get_width() / 2 - button_width / 2
-            end_button_y = screen.get_height() / 2 - 30
-            menu_button_y = screen.get_height() / 2 + 50
+            gap = 14
+            total_h = button_height * 3 + gap * 2
+            top_y = screen.get_height() / 2 - total_h / 2
+            end_button_y = top_y
+            achievements_button_y = top_y + button_height + gap
+            menu_button_y = achievements_button_y + button_height + gap
 
             self.end_run_button_rect = pygame.Rect(button_x, end_button_y, button_width, button_height)
+            self.achievements_button_rect = pygame.Rect(button_x, achievements_button_y, button_width, button_height)
             self.menu_button_rect = pygame.Rect(button_x, menu_button_y, button_width, button_height)
 
             mouse_pos = pygame.mouse.get_pos()
@@ -2121,6 +2163,7 @@ class Phase1:
 
             for rect, label in (
                 (self.end_run_button_rect, "Terminer la partie"),
+                (self.achievements_button_rect, "Succes"),
                 (self.menu_button_rect, "Retour au menu principal"),
             ):
                 is_hover = rect.collidepoint(mouse_pos)
@@ -2133,6 +2176,144 @@ class Phase1:
                 button_text = font_button.render(label, True, (255, 255, 255))
                 button_text_rect = button_text.get_rect(center=rect.center)
                 screen.blit(button_text, button_text_rect)
+
+    def _build_achievement_session_context(self) -> dict:
+        run_stats = getattr(self, "_run_stats", {}) or {}
+        resources_by_type = run_stats.get("resources_by_type", {})
+        total_resources = 0
+        if isinstance(resources_by_type, dict):
+            for v in resources_by_type.values():
+                try:
+                    total_resources += int(v or 0)
+                except Exception:
+                    pass
+        return {
+            "days_survived": int(getattr(self.day_night, "jour", 0) or 0),
+            "animals_killed": int(run_stats.get("animals_killed", 0) or 0),
+            "resources_collected": int(total_resources),
+            "species_level": int(getattr(getattr(self, "espece", None), "species_level", 1) or 1),
+            "session_time_seconds": int(self.session_time_seconds or 0),
+        }
+
+    def _update_achievements(self):
+        prog = getattr(getattr(self, "app", None), "progression", None)
+        if prog is None:
+            return
+        prog.update_achievements(self._build_achievement_session_context())
+
+    def _draw_pause_achievements_menu(self, screen):
+        prog = getattr(getattr(self, "app", None), "progression", None)
+        if prog is None:
+            return
+
+        achievements = prog.get_achievements(sorted_list=True)
+        W, H = screen.get_size()
+
+        # assombrit la scene
+        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        title_size = clamp(int(H * 0.085), 34, 84)
+        item_title_size = clamp(int(H * 0.030), 16, 32)
+        item_size = clamp(int(H * 0.024), 12, 26)
+        btn_size = clamp(int(H * 0.036), 16, 36)
+
+        title_font = self.assets.get_font("MightySouly", title_size)
+        item_title_font = self.assets.get_font("MightySouly", item_title_size)
+        item_font = self.assets.get_font("KiwiSoda", item_size)
+        btn_font = self.assets.get_font("MightySouly", btn_size)
+
+        title_surf = title_font.render("Succes", True, (230, 230, 230))
+        screen.blit(title_surf, (W // 2 - title_surf.get_width() // 2, max(24, int(H * 0.06))))
+
+        margin = clamp(int(W * 0.10), 40, 140)
+        top = clamp(int(H * 0.18), 90, 180)
+        bottom = clamp(int(H * 0.18), 90, 180)
+        panel_rect = pygame.Rect(
+            margin,
+            top,
+            max(200, W - 2 * margin),
+            max(160, H - top - bottom),
+        )
+
+        pygame.draw.rect(screen, (30, 38, 50), panel_rect, border_radius=14)
+        pygame.draw.rect(screen, (90, 110, 140), panel_rect, width=2, border_radius=14)
+
+        if not achievements:
+            empty = item_font.render("Aucun succes pour le moment.", True, (130, 140, 150))
+            screen.blit(empty, (panel_rect.centerx - empty.get_width() // 2, panel_rect.centery - empty.get_height() // 2))
+        else:
+            pad = 16
+            line_gap = 4
+            card_gap = 10
+            title_h = item_title_font.get_height()
+            line_h = item_font.get_height()
+            card_h = pad * 2 + title_h + (line_h * 2) + (line_gap * 2)
+
+            content_h = len(achievements) * (card_h + card_gap) - card_gap
+            self._pause_ach_max_scroll = max(0, content_h - (panel_rect.height - pad * 2))
+            self._pause_ach_scroll = max(0, min(self._pause_ach_scroll, self._pause_ach_max_scroll))
+
+            prev_clip = screen.get_clip()
+            screen.set_clip(panel_rect)
+
+            y = panel_rect.y + pad - self._pause_ach_scroll
+            for ach in achievements:
+                if y > panel_rect.bottom:
+                    break
+
+                unlocked = bool(ach.get("unlocked", False))
+                card_bg = (58, 78, 104) if unlocked else (36, 44, 56)
+                txt_title = (235, 235, 235) if unlocked else (170, 170, 170)
+                txt_body = (210, 215, 220) if unlocked else (150, 155, 165)
+
+                rect = pygame.Rect(panel_rect.x + pad, y, panel_rect.width - pad * 2, card_h)
+                if rect.bottom >= panel_rect.y and rect.top <= panel_rect.bottom:
+                    pygame.draw.rect(screen, card_bg, rect, border_radius=10)
+                    pygame.draw.rect(screen, (90, 110, 140), rect, width=1, border_radius=10)
+
+                    title_txt = str(ach.get("title") or "Succes")
+                    desc_txt = str(ach.get("description") or "")
+                    progress = int(ach.get("progress", 0) or 0)
+                    unlocked_txt = "Oui" if unlocked else "Non"
+                    date_txt = str(ach.get("unlocked_at") or "")
+                    status_line = f"Progression: {progress}%  |  Debloque: {unlocked_txt}"
+                    if unlocked and date_txt:
+                        status_line += f"  |  Date: {date_txt}"
+
+                    ts = item_title_font.render(title_txt, True, txt_title)
+                    ds = item_font.render(desc_txt, True, txt_body)
+                    ss = item_font.render(status_line, True, txt_body)
+
+                    tx = rect.x + pad
+                    ty = rect.y + pad
+                    screen.blit(ts, (tx, ty))
+                    screen.blit(ds, (tx, ty + title_h + line_gap))
+                    screen.blit(ss, (tx, ty + title_h + line_gap + line_h + line_gap))
+
+                y += card_h + card_gap
+
+            screen.set_clip(prev_clip)
+
+            if self._pause_ach_scroll < self._pause_ach_max_scroll:
+                hint = item_font.render("Faites defiler pour voir plus.", True, (130, 140, 150))
+                screen.blit(hint, (panel_rect.centerx - hint.get_width() // 2, panel_rect.bottom - hint.get_height() - 8))
+
+        # bouton retour
+        back_text = btn_font.render("â† Retour", True, (230, 230, 230))
+        back_rect = back_text.get_rect(center=(W // 2, H - max(50, int(H * 0.08))))
+        self._pause_ach_back_rect = back_rect.inflate(24, 12)
+
+        mouse_pos = pygame.mouse.get_pos()
+        is_hover = self._pause_ach_back_rect.collidepoint(mouse_pos)
+        if is_hover:
+            pygame.draw.rect(screen, (60, 60, 90), self._pause_ach_back_rect, border_radius=10)
+            pygame.draw.rect(screen, (150, 150, 200), self._pause_ach_back_rect, 2, border_radius=10)
+        screen.blit(back_text, back_rect)
 
     # ---------- RENDER ----------
     def render(self, screen: pygame.Surface):
@@ -2193,7 +2374,10 @@ class Phase1:
 
         # 4) HUD / pause / notifications
         if self.paused and not self.ui_menu_open:
-            self.draw_pause_screen(screen)
+            if self._pause_achievements_open:
+                self._draw_pause_achievements_menu(screen)
+            else:
+                self.draw_pause_screen(screen)
 
         if not self.paused and not self.ui_menu_open:
             draw_inspection_panel(self, screen)

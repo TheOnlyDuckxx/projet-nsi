@@ -3,7 +3,7 @@
         "Custom": {
             "world_name": "Alpha",
             "seed": "Aléatoire",
-            "world_size": "Petite",
+            "world_size": "Moyenne",
             "water_coverage": "Tempéré",
             "temperature": "Tempéré",
             "atmosphere_density": "Normale",
@@ -14,7 +14,9 @@
             "gravity": "Forte",
             "cosmic_radiation": "Faible",
             "mystic_influence": "Nulle",
-            "dimensional_stability": "Stable"
+            "dimensional_stability": "Stable",
+            "orbit": "Eliptique",
+            "orbital_period": "64"
         }
     }
 }

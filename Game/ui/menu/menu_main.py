@@ -342,6 +342,7 @@ class MainMenu(BaseMenu):
             actions.append(("Reprendre", lambda: self.app.change_state("SAVE_SELECT")))
         actions += [
             ("Commencer", lambda: self.app.change_state("CREATION")),
+            ("Succes", lambda: self.app.change_state("ACHIEVEMENTS")),
             ("Options", lambda: self.app.change_state("OPTIONS")),
             ("Credits", lambda: self.app.change_state("CREDITS")),
             ("Quitter", lambda: self.app.quit_game()),
@@ -707,6 +708,161 @@ class CreditMenu(BaseMenu):
         screen.blit(self._title_surf, self._title_pos)
         for s, pos in zip(self._text_surfs, self._lines_pos):
             screen.blit(s, pos)
+
+        for w in self.widgets:
+            w.draw(screen)
+
+
+class AchievementsMenu(BaseMenu):
+    PANEL_BG = (30, 38, 50)
+    PANEL_BORDER = (90, 110, 140)
+    CARD_BG_UNLOCKED = (58, 78, 104)
+    CARD_BG_LOCKED = (36, 44, 56)
+    TEXT_UNLOCKED = (235, 235, 235)
+    TEXT_LOCKED = (170, 170, 170)
+    TEXT_MUTED = (130, 140, 150)
+
+    def __init__(self, app):
+        super().__init__(app, title="Succes")
+
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        title_size = clamp(int(HEIGHT * 0.085), 34, 84)
+        item_title_size = clamp(int(HEIGHT * 0.030), 16, 32)
+        item_size = clamp(int(HEIGHT * 0.024), 12, 26)
+        btn_size = clamp(int(HEIGHT * 0.036), 16, 36)
+
+        self.title_font = app.assets.get_font("MightySouly", title_size)
+        self.item_title_font = app.assets.get_font("MightySouly", item_title_size)
+        self.item_font = app.assets.get_font("KiwiSoda", item_size)
+        self.btn_font = app.assets.get_font("MightySouly", btn_size)
+
+        self.scroll = 0
+        self._max_scroll = 0
+        self._panel_rect = pygame.Rect(0, 0, 10, 10)
+
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230, 230, 230), hover_zoom=1.06)
+        self.btn_back = Button(
+            "Retour",
+            (WIDTH // 2, HEIGHT - max(60, int(HEIGHT * 0.10))),
+            anchor="center",
+            style=ghost,
+            on_click=lambda b: self.app.change_state("MENU"),
+        )
+        self.add(self.btn_back)
+
+        self._compute_layout()
+
+    def enter(self):
+        self.scroll = 0
+
+    def _compute_layout(self):
+        def clamp(v, a, b):
+            return a if v < a else b if v > b else v
+
+        margin = clamp(int(WIDTH * 0.10), 40, 140)
+        top = clamp(int(HEIGHT * 0.18), 90, 180)
+        bottom = clamp(int(HEIGHT * 0.18), 90, 180)
+
+        self._panel_rect = pygame.Rect(
+            margin,
+            top,
+            max(200, WIDTH - 2 * margin),
+            max(160, HEIGHT - top - bottom),
+        )
+
+        self._title_surf = self.title_font.render(self.title, True, (230, 230, 230))
+        self._title_pos = (WIDTH // 2 - self._title_surf.get_width() // 2, max(24, int(HEIGHT * 0.06)))
+
+        self.btn_back.move_to((WIDTH // 2, HEIGHT - max(50, int(HEIGHT * 0.08))))
+
+    def handle_input(self, events):
+        super().handle_input(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+            elif e.type == pygame.KEYDOWN and e.key in (pygame.K_DOWN, pygame.K_PAGEDOWN):
+                self.scroll += 40
+            elif e.type == pygame.KEYDOWN and e.key in (pygame.K_UP, pygame.K_PAGEUP):
+                self.scroll -= 40
+            elif e.type == pygame.MOUSEWHEEL:
+                self.scroll -= int(e.y * 40)
+
+        self.scroll = max(0, min(self.scroll, self._max_scroll))
+
+    def render(self, screen):
+        self._compute_layout()
+        screen.blit(self.bg, (0, 0))
+        screen.blit(self._overlay, (0, 0))
+        screen.blit(self._title_surf, self._title_pos)
+
+        panel = self._panel_rect
+        pygame.draw.rect(screen, self.PANEL_BG, panel, border_radius=14)
+        pygame.draw.rect(screen, self.PANEL_BORDER, panel, width=2, border_radius=14)
+
+        achievements = []
+        if getattr(self.app, "progression", None):
+            achievements = self.app.progression.get_achievements(sorted_list=True)
+
+        if not achievements:
+            empty = self.item_font.render("Aucun succes pour le moment.", True, self.TEXT_MUTED)
+            screen.blit(empty, (panel.centerx - empty.get_width() // 2, panel.centery - empty.get_height() // 2))
+        else:
+            pad = 16
+            line_gap = 4
+            card_gap = 10
+            title_h = self.item_title_font.get_height()
+            line_h = self.item_font.get_height()
+            card_h = pad * 2 + title_h + (line_h * 2) + (line_gap * 2)
+
+            content_h = len(achievements) * (card_h + card_gap) - card_gap
+            self._max_scroll = max(0, content_h - (panel.height - pad * 2))
+            self.scroll = max(0, min(self.scroll, self._max_scroll))
+
+            prev_clip = screen.get_clip()
+            screen.set_clip(panel)
+            y = panel.y + pad - self.scroll
+            for ach in achievements:
+                if y > panel.bottom:
+                    break
+
+                unlocked = bool(ach.get("unlocked", False))
+                card_bg = self.CARD_BG_UNLOCKED if unlocked else self.CARD_BG_LOCKED
+                txt_title = self.TEXT_UNLOCKED if unlocked else self.TEXT_LOCKED
+                txt_body = (210, 215, 220) if unlocked else (150, 155, 165)
+
+                rect = pygame.Rect(panel.x + pad, y, panel.width - pad * 2, card_h)
+                if rect.bottom >= panel.y and rect.top <= panel.bottom:
+                    pygame.draw.rect(screen, card_bg, rect, border_radius=10)
+                    pygame.draw.rect(screen, self.PANEL_BORDER, rect, width=1, border_radius=10)
+
+                    title = str(ach.get("title") or "Succes")
+                    desc = str(ach.get("description") or "")
+                    progress = int(ach.get("progress", 0) or 0)
+                    unlocked_txt = "Oui" if unlocked else "Non"
+                    date_txt = str(ach.get("unlocked_at") or "")
+                    status_line = f"Progression: {progress}%  |  Debloque: {unlocked_txt}"
+                    if unlocked and date_txt:
+                        status_line += f"  |  Date: {date_txt}"
+
+                    ts = self.item_title_font.render(title, True, txt_title)
+                    ds = self.item_font.render(desc, True, txt_body)
+                    ss = self.item_font.render(status_line, True, txt_body)
+
+                    tx = rect.x + pad
+                    ty = rect.y + pad
+                    screen.blit(ts, (tx, ty))
+                    screen.blit(ds, (tx, ty + title_h + line_gap))
+                    screen.blit(ss, (tx, ty + title_h + line_gap + line_h + line_gap))
+
+                y += card_h + card_gap
+
+            screen.set_clip(prev_clip)
+
+            if self.scroll < self._max_scroll:
+                hint = self.item_font.render("Faites defiler pour voir plus.", True, self.TEXT_MUTED)
+                screen.blit(hint, (panel.centerx - hint.get_width() // 2, panel.bottom - hint.get_height() - 8))
 
         for w in self.widgets:
             w.draw(screen)

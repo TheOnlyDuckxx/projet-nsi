@@ -11,6 +11,7 @@ from Game.ui.menu.menu_main import (
     MainMenu,
     OptionsMenu,
     CreditMenu,
+    AchievementsMenu,
     WorldCreationMenu,
     SpeciesCreationMenu,
     SaveSelectionMenu,
@@ -88,6 +89,7 @@ class App:
         self.states["MENU"] = MainMenu(self)
         self.states["SAVE_SELECT"] = SaveSelectionMenu(self)
         self.states["OPTIONS"] = OptionsMenu(self)
+        self.states["ACHIEVEMENTS"] = AchievementsMenu(self)
         self.states["CREDITS"] = CreditMenu(self)
         self.states["PHASE1"] = Phase1(self)
         self.states["LOADING"] = LoadingState(self)
