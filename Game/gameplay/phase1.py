@@ -80,6 +80,10 @@ class Phase1:
         self.session_time_seconds = 0.0
         self._game_end_pending = False
         self._game_end_reason = None
+        self._stats_last_day = 0
+        self._daily_stats: list[dict] = []
+        self._stats_current_day = {}
+        self._run_stats = {}
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
@@ -286,6 +290,133 @@ class Phase1:
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
+
+        self._stats_last_day = int(getattr(self.day_night, "jour", 0) or 0)
+        self._daily_stats = []
+        self._stats_current_day = {
+            "animals_killed": 0,
+            "resources_collected": 0,
+            "births": 0,
+            "deaths": 0,
+            "population_start": 0,
+            "population_end": 0,
+        }
+        self._run_stats = {
+            "animals_killed": 0,
+            "resources_by_type": {},
+            "total_population": 0,
+            "max_population": 0,
+            "max_innovation": 0,
+        }
+
+    def _bootstrap_run_statistics(self):
+        pop = max(0, int(getattr(self.espece, "population", 0) or 0))
+        if pop <= 0:
+            pop = self._count_living_species_members()
+        self._stats_last_day = int(getattr(self.day_night, "jour", 0) or 0)
+        self._stats_current_day["population_start"] = max(0, pop)
+        self._stats_current_day["population_end"] = max(0, pop)
+
+        if int(self._run_stats.get("total_population", 0) or 0) <= 0:
+            self._run_stats["total_population"] = max(0, pop)
+        self._run_stats["max_population"] = max(
+            int(self._run_stats.get("max_population", 0) or 0),
+            max(0, pop),
+        )
+        current_innov = int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0)
+        self._run_stats["max_innovation"] = max(
+            int(self._run_stats.get("max_innovation", 0) or 0),
+            current_innov,
+        )
+
+    def _flush_daily_stats(self, target_day: int, include_partial: bool = False):
+        current_day = int(getattr(self.day_night, "jour", 0) or 0)
+        if target_day < self._stats_last_day:
+            self._stats_last_day = target_day
+
+        while self._stats_last_day < target_day:
+            pop_end = max(0, int(getattr(self.espece, "population", 0) or 0))
+            if pop_end <= 0:
+                pop_end = self._count_living_species_members()
+            pop_start = max(0, int(self._stats_current_day.get("population_start", pop_end) or pop_end))
+            births = max(0, int(self._stats_current_day.get("births", 0) or 0))
+            deaths = max(0, int(self._stats_current_day.get("deaths", 0) or 0))
+            baseline = max(1, pop_start)
+            self._daily_stats.append(
+                {
+                    "day": int(self._stats_last_day),
+                    "animals_killed": max(0, int(self._stats_current_day.get("animals_killed", 0) or 0)),
+                    "resources_collected": max(0, int(self._stats_current_day.get("resources_collected", 0) or 0)),
+                    "population": pop_end,
+                    "births": births,
+                    "deaths": deaths,
+                    "birth_rate": births / baseline,
+                    "death_rate": deaths / baseline,
+                }
+            )
+            self._stats_last_day += 1
+            self._stats_current_day = {
+                "animals_killed": 0,
+                "resources_collected": 0,
+                "births": 0,
+                "deaths": 0,
+                "population_start": pop_end,
+                "population_end": pop_end,
+            }
+
+        if include_partial:
+            pop_end = max(0, int(getattr(self.espece, "population", 0) or 0))
+            if pop_end <= 0:
+                pop_end = self._count_living_species_members()
+            self._stats_current_day["population_end"] = pop_end
+            pop_start = max(0, int(self._stats_current_day.get("population_start", pop_end) or pop_end))
+            births = max(0, int(self._stats_current_day.get("births", 0) or 0))
+            deaths = max(0, int(self._stats_current_day.get("deaths", 0) or 0))
+            baseline = max(1, pop_start)
+            partial = {
+                "day": int(current_day),
+                "animals_killed": max(0, int(self._stats_current_day.get("animals_killed", 0) or 0)),
+                "resources_collected": max(0, int(self._stats_current_day.get("resources_collected", 0) or 0)),
+                "population": pop_end,
+                "births": births,
+                "deaths": deaths,
+                "birth_rate": births / baseline,
+                "death_rate": deaths / baseline,
+            }
+            if self._daily_stats and int(self._daily_stats[-1].get("day", -1)) == int(current_day):
+                self._daily_stats[-1] = partial
+            else:
+                self._daily_stats.append(partial)
+
+    def _on_species_birth(self, _individu=None):
+        self._stats_current_day["births"] = int(self._stats_current_day.get("births", 0) or 0) + 1
+        self._run_stats["total_population"] = int(self._run_stats.get("total_population", 0) or 0) + 1
+        current_pop = max(0, int(getattr(self.espece, "population", 0) or 0))
+        if current_pop <= 0:
+            current_pop = self._count_living_species_members()
+        self._run_stats["max_population"] = max(int(self._run_stats.get("max_population", 0) or 0), current_pop)
+
+    @staticmethod
+    def _collect_species_stats(species) -> dict:
+        if not species:
+            return {}
+        categories = {
+            "physique": dict(getattr(species, "base_physique", {}) or {}),
+            "sens": dict(getattr(species, "base_sens", {}) or {}),
+            "mental": dict(getattr(species, "base_mental", {}) or {}),
+            "social": dict(getattr(species, "base_social", {}) or {}),
+            "environnement": dict(getattr(species, "base_environnement", {}) or {}),
+            "genetique": dict(getattr(species, "genetique", {}) or {}),
+        }
+        cleaned = {}
+        for cat, values in categories.items():
+            cleaned[cat] = {}
+            for key, value in values.items():
+                if isinstance(value, (int, float)):
+                    cleaned[cat][str(key)] = float(value)
+                else:
+                    cleaned[cat][str(key)] = value
+        return cleaned
     def _attach_phase_to_entities(self):
         if getattr(self, "espece", None):
             try:
@@ -567,6 +698,10 @@ class Phase1:
             self.unlock_craft(craft_id)
         name = tech_data.get("nom", tech_id)
         add_notification(f"Technologie débloquée : {name}")
+        self._run_stats["max_innovation"] = max(
+            int(self._run_stats.get("max_innovation", 0) or 0),
+            int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0),
+        )
 
     def start_tech_research(self, tech_id: str) -> bool:
         if not self.tech_tree:
@@ -764,6 +899,9 @@ class Phase1:
         if getattr(target, "_combat_loot_granted", False):
             return
         target._combat_loot_granted = True
+        if getattr(target, "is_fauna", False) and self._is_player_species_entity(attacker):
+            self._run_stats["animals_killed"] = int(self._run_stats.get("animals_killed", 0) or 0) + 1
+            self._stats_current_day["animals_killed"] = int(self._stats_current_day.get("animals_killed", 0) or 0) + 1
 
         physique = getattr(target, "physique", {}) or {}
         taille = float(physique.get("taille", 2) or 2)
@@ -1148,11 +1286,37 @@ class Phase1:
         return False
 
     def _build_endgame_summary(self, reason: str) -> dict:
+        self._flush_daily_stats(int(getattr(self.day_night, "jour", 0) or 0), include_partial=True)
         espece_name = getattr(self.espece, "nom", "") if self.espece else ""
         species_level = int(getattr(self.espece, "species_level", 1) or 1) if self.espece else 1
         days = int(getattr(self.day_night, "jour", 0) or 0)
         deaths = int(getattr(self, "species_death_count", 0) or 0)
         play_time = int(self.session_time_seconds or 0)
+        tech_tree = getattr(self, "tech_tree", None)
+        species = getattr(self, "espece", None)
+        mutations = getattr(species, "mutations", None) if species else None
+        mutation_ids = set()
+        if species:
+            mutation_ids.update(getattr(species, "base_mutations", []) or [])
+        if mutations:
+            mutation_ids.update(getattr(mutations, "actives", []) or [])
+            mutation_ids.update((getattr(mutations, "temporaires", {}) or {}).keys())
+
+        max_pop = max(
+            int(self._run_stats.get("max_population", 0) or 0),
+            int(getattr(species, "population", 0) or 0),
+        )
+        total_pop = max(
+            int(self._run_stats.get("total_population", 0) or 0),
+            int(getattr(species, "population", 0) or 0),
+        )
+        self._run_stats["max_population"] = max_pop
+        self._run_stats["total_population"] = total_pop
+        self._run_stats["max_innovation"] = max(
+            int(self._run_stats.get("max_innovation", 0) or 0),
+            int(getattr(tech_tree, "innovations", 0) or 0),
+        )
+
         return {
             "species_name": espece_name,
             "species_level": species_level,
@@ -1160,6 +1324,15 @@ class Phase1:
             "deaths": deaths,
             "play_time_sec": play_time,
             "reason": reason,
+            "animals_killed": int(self._run_stats.get("animals_killed", 0) or 0),
+            "tech_unlocked": int(len(getattr(tech_tree, "unlocked", []) or [])),
+            "resources_by_type": dict(self._run_stats.get("resources_by_type", {}) or {}),
+            "max_population": max_pop,
+            "total_population": total_pop,
+            "max_innovation": int(self._run_stats.get("max_innovation", 0) or 0),
+            "mutations_unlocked": int(len(mutation_ids)),
+            "species_stats": self._collect_species_stats(species),
+            "daily_stats": list(self._daily_stats),
         }
 
     def _compute_endgame_xp(self, summary: dict) -> int:
@@ -1238,7 +1411,9 @@ class Phase1:
 
         if getattr(ent, "espece", None) == self.espece:
             self.species_death_count += 1
+            self._stats_current_day["deaths"] = int(self._stats_current_day.get("deaths", 0) or 0) + 1
             survivors = self._count_living_species_members()
+            self._run_stats["max_population"] = max(int(self._run_stats.get("max_population", 0) or 0), survivors)
             self.death_event_ready = self.species_death_count == 1 and survivors > 0
             self.event_manager.runtime_flags["species_survivors"] = survivors
             self.event_manager.runtime_flags["species_death_count"] = self.species_death_count
@@ -1391,6 +1566,7 @@ class Phase1:
                     self._init_fauna_species()
                     self._perf_enter_mark(perf, "Espece faune initialisee depuis sauvegarde")
                 self._attach_phase_to_entities()
+                self._bootstrap_run_statistics()
                 self._ensure_weather_system()
                 self._gameplay_ready = True
                 self._endgame_debug(
@@ -1453,6 +1629,7 @@ class Phase1:
                 self._init_fauna_species()
                 self._perf_enter_mark(perf, "Espece faune initialisee")
                 self._attach_phase_to_entities()
+                self._bootstrap_run_statistics()
                 self._perf_enter_mark(perf, "Entites rattachees a la phase")
             if self.bottom_hud is None:
                 self.bottom_hud = BottomHUD(self, self.espece, self.day_night)
@@ -1546,6 +1723,7 @@ class Phase1:
             self._init_fauna_species()
             self._perf_enter_mark(perf, "Espece faune initialisee")
             self._attach_phase_to_entities()
+            self._bootstrap_run_statistics()
             self._perf_enter_mark(perf, "Entites rattachees a la phase")
             self._ensure_move_runtime(self.joueur)
             self._ensure_move_runtime(self.joueur2)
@@ -1809,6 +1987,10 @@ class Phase1:
 
         # Mettre a jour le cycle jour/nuit
         self.day_night.update(dt)
+        self._run_stats["max_innovation"] = max(
+            int(self._run_stats.get("max_innovation", 0) or 0),
+            int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0),
+        )
         if self.weather_system and self.joueur:
             self.weather_system.update(
                 dt,
@@ -1819,11 +2001,12 @@ class Phase1:
         mark("Day/night update")
 
         if self.tech_tree:
-            current_day = self.day_night.jour
+            current_day = int(self.day_night.jour)
             if current_day > self._last_innovation_day:
                 for _ in range(current_day - self._last_innovation_day):
                     self.tech_tree.add_innovation(1)
                 self._last_innovation_day = current_day
+            self._flush_daily_stats(current_day)
         mark("Tech tree update")
 
         if self.espece and getattr(self.espece, "reproduction_system", None):
@@ -2406,6 +2589,9 @@ class Phase1:
                 continue
             self.warehouse[res_id] = self.warehouse.get(res_id, 0) + qty
             moved += qty
+            by_type = self._run_stats.setdefault("resources_by_type", {})
+            by_type[res_id] = int(by_type.get(res_id, 0) or 0) + qty
+            self._stats_current_day["resources_collected"] = int(self._stats_current_day.get("resources_collected", 0) or 0) + qty
         inventory.clear()
         return moved
 
