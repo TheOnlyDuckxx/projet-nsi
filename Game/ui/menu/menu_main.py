@@ -768,7 +768,7 @@ class AchievementsMenu(BaseMenu):
         self._panel_rect = pygame.Rect(
             margin,
             top,
-            max(200, WIDTH - 2 * margin),
+            max(200, WIDTH* 0.8 - 2 * margin),
             max(160, HEIGHT - top - bottom),
         )
 
@@ -870,11 +870,16 @@ class AchievementsMenu(BaseMenu):
 
 
 class WorldCreationMenu(BaseMenu):
-    GREEN_BG = (0x4b, 0x66, 0x4a)   # #4b664a
-    DARK_BG  = (0x1f, 0x21, 0x22)   # #1f2122
-
+    LEFT_BG = (32, 44, 48)
+    RIGHT_BG = (8, 8, 12)
+    PANEL_LINE = (75, 84, 96)
+    CARD_BG = (46, 58, 68)
+    CARD_BG_HOVER = (56, 70, 82)
+    ACCENT = (80, 160, 200)
+    TEXT = (232, 232, 232)
+    TEXT_MUTED = (170, 178, 186)
     INPUT_BG = (235, 235, 235)
-    INPUT_FG = (30, 30, 30)
+    INPUT_FG = (25, 25, 25)
     INPUT_PLACEHOLDER = (120, 120, 120)
 
     def __init__(self, app):
@@ -1022,6 +1027,14 @@ class WorldCreationMenu(BaseMenu):
     def _clamp(v, a, b):
         return a if v < a else b if v > b else v
 
+    @staticmethod
+    def _shade(color, delta):
+        return (
+            max(0, min(255, int(color[0] + delta))),
+            max(0, min(255, int(color[1] + delta))),
+            max(0, min(255, int(color[2] + delta))),
+        )
+
     def _compute_layout(self, screen: pygame.Surface):
         W, H = screen.get_size()
         if self._last_size == (W, H):
@@ -1042,9 +1055,9 @@ class WorldCreationMenu(BaseMenu):
         label_size = self._clamp(int(H * 0.026), 14, 30)
         value_size = self._clamp(int(H * 0.030), 16, 34)
 
-        self.title_font = self.app.assets.get_font("KiwiSoda", title_size)
-        self.small_font = self.app.assets.get_font("KiwiSoda", label_size)
-        self.value_font = self.app.assets.get_font("KiwiSoda", value_size)
+        self.title_font = self.app.assets.get_font("MightySouly", title_size)
+        self.small_font = self.app.assets.get_font("MightySouly", label_size)
+        self.value_font = self.app.assets.get_font("MightySouly", value_size)
 
         # Dimensions cibles (on rescale si ça dépasse)
         top_pad = int(H * 0.04)
@@ -1062,7 +1075,7 @@ class WorldCreationMenu(BaseMenu):
         nav_h = int(H * 0.12)
 
         # Mesure du titre
-        title_surf = self.title_font.render(self.title, True, (245, 245, 245))
+        title_surf = self.title_font.render(self.title, True, self.TEXT)
         title_h = title_surf.get_height()
 
         rows = max(1, math.ceil(len(self._param_buttons) / 2))
@@ -1230,26 +1243,30 @@ class WorldCreationMenu(BaseMenu):
 
     # ----------------- Render -----------------
 
-    def _draw_sprite_button(self, screen, rect, hovered, pressed, lines):
-        sprite = self._get_scaled_sprite(rect.width, rect.height, hovered)
-        screen.blit(
-            sprite,
-            (rect.centerx - sprite.get_width() // 2, rect.centery - sprite.get_height() // 2),
-        )
+    def _draw_sprite_button(self, screen, rect, hovered, pressed, lines, *, primary=False):
+        if primary:
+            bg = self._shade(self.ACCENT, -20 if pressed else 0)
+            border = (20, 30, 45)
+            text_main = (255, 255, 255)
+            text_sub = (235, 245, 250)
+        else:
+            bg = self.CARD_BG_HOVER if hovered else self.CARD_BG
+            if pressed:
+                bg = self._shade(bg, -8)
+            border = self.ACCENT if hovered else (20, 24, 30)
+            text_main = self.TEXT
+            text_sub = self.TEXT_MUTED
 
-        # Plus d'overlay au survol : sprite only
-        if pressed:
-            ov = pygame.Surface(rect.size, pygame.SRCALPHA)
-            ov.fill((0, 0, 0, 25))
-            screen.blit(ov, rect.topleft)
+        pygame.draw.rect(screen, bg, rect, border_radius=12)
+        pygame.draw.rect(screen, border, rect, width=2, border_radius=12)
 
         # Texte (centré)
         if len(lines) == 1:
-            t = self.value_font.render(lines[0], True, (245, 245, 245))
+            t = self.value_font.render(lines[0], True, text_main)
             screen.blit(t, (rect.centerx - t.get_width() // 2, rect.centery - t.get_height() // 2))
         else:
-            t1 = self.small_font.render(lines[0], True, (240, 240, 240))
-            t2 = self.value_font.render(lines[1], True, (255, 255, 255))
+            t1 = self.small_font.render(lines[0], True, text_sub)
+            t2 = self.value_font.render(lines[1], True, text_main)
             y = rect.centery - (t1.get_height() + t2.get_height()) // 2
             screen.blit(t1, (rect.centerx - t1.get_width() // 2, y))
             screen.blit(t2, (rect.centerx - t2.get_width() // 2, y + t1.get_height() - 2))
@@ -1260,8 +1277,9 @@ class WorldCreationMenu(BaseMenu):
         left_w = self._layout["left_w"]
 
         # Fonds 60/40
-        pygame.draw.rect(screen, self.GREEN_BG, pygame.Rect(0, 0, left_w, H))
-        pygame.draw.rect(screen, self.DARK_BG, pygame.Rect(left_w, 0, W - left_w, H))
+        pygame.draw.rect(screen, self.LEFT_BG, pygame.Rect(0, 0, left_w, H))
+        pygame.draw.rect(screen, self.RIGHT_BG, pygame.Rect(left_w, 0, W - left_w, H))
+        pygame.draw.line(screen, self.PANEL_LINE, (left_w, 0), (left_w, H), 2)
 
         # Titre centré sur le bloc gauche
         screen.blit(self._layout["title_surf"], self._layout["title_pos"])
@@ -1269,7 +1287,7 @@ class WorldCreationMenu(BaseMenu):
         # Input (placeholder + curseur)
         ir = self._layout["input_rect"]
         pygame.draw.rect(screen, self.INPUT_BG, ir, border_radius=10)
-        border = (220, 220, 220) if not self.name_active else (255, 255, 255)
+        border = self.PANEL_LINE if not self.name_active else self.ACCENT
         pygame.draw.rect(screen, border, ir, 2, border_radius=10)
 
         if self.world_name:
@@ -1300,7 +1318,7 @@ class WorldCreationMenu(BaseMenu):
 
         # Retour / Suivant
         self._draw_sprite_button(screen, self._btn_back.rect, self._btn_back.hovered, self._btn_back.pressed, [self._btn_back.text])
-        self._draw_sprite_button(screen, self._btn_next.rect, self._btn_next.hovered, self._btn_next.pressed, [self._btn_next.text])
+        self._draw_sprite_button(screen, self._btn_next.rect, self._btn_next.hovered, self._btn_next.pressed, [self._btn_next.text], primary=True)
 
         # Globe à droite (centré dans le bloc 40%)
         self._draw_globe(screen)

@@ -766,6 +766,27 @@ class Phase1:
             return False
         return bool(getattr(espece, "is_player_species", False))
 
+    def _is_player_species_entity(self, ent) -> bool:
+        if ent is None:
+            return False
+        if getattr(ent, "is_egg", False):
+            return False
+        if ent is getattr(self, "joueur", None) or ent is getattr(self, "joueur2", None):
+            return True
+        if bool(getattr(ent, "is_player_species", False)):
+            return True
+        espece = getattr(ent, "espece", None)
+        if espece is None:
+            return False
+        if espece is getattr(self, "espece", None):
+            return True
+        if hasattr(espece, "espece"):
+            espece_parent = getattr(espece, "espece", None)
+            if espece_parent is getattr(self, "espece", None):
+                return True
+            return bool(getattr(espece_parent, "is_player_species", False))
+        return bool(getattr(espece, "is_player_species", False))
+
     def _tile_is_water(self, i: int, j: int, generate: bool = True) -> bool:
         w = self.world
         if not w:

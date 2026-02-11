@@ -22,20 +22,8 @@ class EggRenderer:
         pygame.draw.circle(surf, (250, 250, 245), (self.BASE_SIZE[0] // 2, 6), 3)
         return surf
 
-    def _get_img(self) -> pygame.Surface:
-        if self.assets is None:
-            return self._placeholder_surface()
-        for key in ("oeuf1", "egg"):
-            try:
-                img = self.assets.get_image(key)
-                if img is not None:
-                    return img
-            except Exception:
-                continue
-        return self._placeholder_surface()
-
     def get_draw_surface_and_rect(self, view, world, tx: float, ty: float):
-        sprite = self._get_img()
+        sprite = self.assets.get_image("oeuf")
         zoom = getattr(view, "zoom", 1.0) or 1.0
         if abs(zoom - 1.0) > 1e-6:
             w, h = sprite.get_size()
