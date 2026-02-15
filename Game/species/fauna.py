@@ -29,7 +29,7 @@ class PassiveFaunaDefinition:
     hp: float = 100.0
     vision_range: float = 8.0
     flee_distance: float = 5.0
-    sprite_keys: Sequence[str] = ("rabbit_idle_0", "rabbit_idle_1", "rabbit_idle_2")
+    sprite_keys: Sequence[str] = ()
     sprite_keys_attack: Sequence[str] = ()
     sprite_sheet_idle: Optional[str] = None
     sprite_sheet_run: Optional[str] = None

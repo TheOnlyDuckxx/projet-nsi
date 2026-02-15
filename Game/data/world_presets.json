@@ -15,8 +15,8 @@
             "cosmic_radiation": "Faible",
             "mystic_influence": "Nulle",
             "dimensional_stability": "Stable",
-            "orbit": "Eliptique",
-            "orbital_period": "64"
+            "orbit": "Très Eliptique",
+            "orbital_period": "32"
         }
     }
 }

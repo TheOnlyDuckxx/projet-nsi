@@ -99,7 +99,6 @@ class SpeciesMenu:
         ids = []
         ids.extend(getattr(species, "base_mutations", []) or [])
         ids.extend(getattr(manager, "actives", []) or [])
-        ids.extend(list((getattr(manager, "temporaires", {}) or {}).keys()))
 
         seen = set()
         out = []

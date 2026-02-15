@@ -18,6 +18,8 @@
     "perf_slow_frame_ms": 120
   },
   "species": {
-    "base_mutations": []
+    "base_mutations": [
+      "Semibipedie"
+    ]
   }
 }

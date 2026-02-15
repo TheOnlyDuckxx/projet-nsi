@@ -47,6 +47,10 @@
       {
         "species": "champi",
         "proba": 1
+      },
+      {
+        "species": "forest_boss",
+        "proba": 1
       }
     ],
     "rainforest": [
@@ -60,6 +64,10 @@
       },
       {
         "species": "champi",
+        "proba": 1
+      },
+      {
+        "species": "forest_boss",
         "proba": 1
       }
     ],
@@ -82,6 +90,10 @@
       {
         "species": "champi",
         "proba": 1
+      },
+      {
+        "species": "forest_boss",
+        "proba": 1
       }
     ],
     "tundra": [
@@ -103,7 +115,12 @@
     "mangrove": [],
     "rock": [],
     "alpine": [],
-    "volcanic": [],
+    "volcanic": [
+      {
+        "species": "flamme",
+        "proba": 1
+      }
+    ],
     "mystic": [],
     "unknown": []
   }

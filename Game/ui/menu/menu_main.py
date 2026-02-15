@@ -1413,6 +1413,12 @@ class SpeciesCreationMenu(BaseMenu):
             mid: data for mid, data in all_mutations.items()
             if data.get("base", False)
         }
+        # Normalisation pour rendre les références "incompatibles" robustes (casse/accents/espaces).
+        self._base_mutation_norm_map: dict[str, str] = {}
+        for mid in self.base_mutations.keys():
+            n = self._norm_mut_id(mid)
+            if n and n not in self._base_mutation_norm_map:
+                self._base_mutation_norm_map[n] = mid
         self._mutation_list = sorted(
             list(self.base_mutations.items()),
             key=lambda kv: str(kv[1].get("nom", kv[0]))
@@ -1530,7 +1536,58 @@ class SpeciesCreationMenu(BaseMenu):
     def _get_incompatibles(self, data: dict) -> set:
         inc1 = set(data.get("incompatibles", []) or [])
         inc2 = set(data.get("imcompatibles", []) or [])
-        return inc1 | inc2
+        refs = inc1 | inc2
+        out: set[str] = set()
+        for ref in refs:
+            resolved = self._resolve_base_mutation_id(ref)
+            if resolved:
+                out.add(resolved)
+        return out
+
+    @staticmethod
+    def _norm_mut_id(value: str) -> str:
+        import re
+        import unicodedata
+
+        s = str(value or "").strip()
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        s = s.casefold()
+        # On retire tout ce qui n'est pas alphanum pour tolérer espaces/underscores/ponctuation.
+        s = re.sub(r"[^0-9a-z]+", "", s)
+        return s
+
+    def _resolve_base_mutation_id(self, ref: str) -> str | None:
+        ref = str(ref or "").strip()
+        if not ref:
+            return None
+        if ref in self.base_mutations:
+            return ref
+        return self._base_mutation_norm_map.get(self._norm_mut_id(ref))
+
+    def _conflicting_selected_mutations(self, candidate_id: str) -> set[str]:
+        """
+        Retourne les ids sélectionnés en conflit avec candidate_id.
+        On considère les incompatibilités dans les 2 sens, même si le JSON n'est pas symétrique.
+        """
+        candidate_id = self._resolve_base_mutation_id(candidate_id) or candidate_id
+        if candidate_id in self.selected_ids:
+            return set()
+
+        conflicts: set[str] = set()
+        cand_data = self.base_mutations.get(candidate_id, {}) or {}
+        cand_incompat = self._get_incompatibles(cand_data)
+        conflicts |= (cand_incompat & self.selected_ids)
+
+        # Sens inverse: une mutation déjà sélectionnée peut déclarer candidate incompatible.
+        for sid in self.selected_ids:
+            sdata = self.base_mutations.get(sid, {}) or {}
+            if candidate_id in self._get_incompatibles(sdata):
+                conflicts.add(sid)
+
+        return conflicts
 
     def _toggle_mutation(self, mutation_id: str):
         if mutation_id in self.selected_ids:
@@ -1540,8 +1597,7 @@ class SpeciesCreationMenu(BaseMenu):
             return
 
         data = self.base_mutations.get(mutation_id, {})
-        incompat_ids = self._get_incompatibles(data)
-        conflict = incompat_ids & self.selected_ids
+        conflict = self._conflicting_selected_mutations(mutation_id)
         if conflict:
             noms = [
                 self.base_mutations[c]["nom"] if c in self.base_mutations else c
@@ -1990,9 +2046,7 @@ class SpeciesCreationMenu(BaseMenu):
             name = data.get("nom", mid)
             pts = self._mutation_points_value(mid)
             selected = mid in self.selected_ids
-
-            incompat = self._get_incompatibles(data)
-            blocked = bool(incompat & self.selected_ids) and not selected
+            blocked = bool(self._conflicting_selected_mutations(mid)) and not selected
 
             bg = self.CARD_BG_DISABLED if blocked else (self.CARD_BG_HOVER if rect.collidepoint(mouse_pos) else self.CARD_BG)
             pygame.draw.rect(screen, bg, rect, border_radius=10)
@@ -2027,7 +2081,7 @@ class SpeciesCreationMenu(BaseMenu):
         # sprite preview
         if self._preview_renderer:
             try:
-                sprite, _ax, _ay = self._preview_renderer._compose()
+                sprite, _ax, _ay, _fh = self._preview_renderer._compose()
                 sw, sh = sprite.get_size()
                 target_h = rect.height * 0.45
                 scale = target_h / max(1, sh)

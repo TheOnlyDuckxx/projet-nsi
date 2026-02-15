@@ -217,6 +217,17 @@ class SaveManager:
     def _serialize_species(self, espece):
         if espece is None:
             return None
+        manager = getattr(espece, "mutations", None)
+        base_mutations = list(getattr(espece, "base_mutations", []) or [])
+        actives = list(getattr(manager, "actives", []) or []) if manager is not None else []
+        # Eviter doublons / valeurs vides (base_mutations + actives)
+        seen = set()
+        base_mutations = [
+            m for m in (str(x).strip() for x in base_mutations) if m and not (m in seen or seen.add(m))
+        ]
+        actives = [
+            m for m in (str(x).strip() for x in actives) if m and not (m in seen or seen.add(m))
+        ]
         return {
             "nom": getattr(espece, "nom", None),
             "color_name": getattr(espece, "color_name", None),
@@ -231,6 +242,10 @@ class SaveManager:
             "species_level": getattr(espece, "species_level", 1),
             "xp": getattr(espece, "xp", 0),
             "xp_to_next": getattr(espece, "xp_to_next", 100),
+            "base_mutations": base_mutations,
+            "mutations_actives": actives,
+            "mutation_interval": getattr(espece, "mutation_interval", 1),
+            "next_mutation_level": getattr(espece, "next_mutation_level", 2),
             "reproduction": getattr(getattr(espece, "reproduction_system", None), "to_dict", lambda: {})(),
         }
 
@@ -258,6 +273,34 @@ class SaveManager:
         espece.species_level = espece_data.get("species_level", 1)
         espece.xp = espece_data.get("xp", 0)
         espece.xp_to_next = espece_data.get("xp_to_next", 100)
+
+        # Progression des propositions de mutations (évite des incohérences après load).
+        try:
+            espece.mutation_interval = int(
+                espece_data.get("mutation_interval", getattr(espece, "mutation_interval", 1)) or 1
+            )
+        except Exception:
+            pass
+        try:
+            espece.next_mutation_level = int(
+                espece_data.get("next_mutation_level", getattr(espece, "next_mutation_level", 2)) or 2
+            )
+        except Exception:
+            pass
+
+        # Restauration des mutations: on ne ré-applique pas les effets (les stats sont déjà sauvegardées).
+        base_mutations = espece_data.get("base_mutations")
+        if isinstance(base_mutations, list):
+            espece.base_mutations = [str(x).strip() for x in base_mutations if str(x).strip()]
+
+        actives = espece_data.get("mutations_actives")
+        if isinstance(actives, list) and getattr(espece, "mutations", None) is not None:
+            restored = [str(x).strip() for x in actives if str(x).strip()]
+            for mid in getattr(espece, "base_mutations", []) or []:
+                if mid not in restored:
+                    restored.append(mid)
+            espece.mutations.actives = restored
+
         color_name = espece_data.get("color_name")
         color_rgb = espece_data.get("color_rgb")
         if color_name:
@@ -276,7 +319,7 @@ class SaveManager:
             if repro_state is not None and hasattr(espece, "reproduction_system"):
                 espece.reproduction_system.load_state(repro_state, assets=assets)
         except EOFError:
-            print("✗ Sauvegarde corrompue ou incomplète (EOF)")
+            print("Sauvegarde corrompue ou incomplète")
             phase1.save_message = "✗ Sauvegarde corrompue"
             phase1.save_message_timer = 3.0
             return False
@@ -434,10 +477,10 @@ class SaveManager:
 
             phase1.save_message = "✓ Partie sauvegardée !"
             phase1.save_message_timer = 3.0
-            print(f"✓ Partie sauvegardée dans {self.path}")
+            print(f"Partie sauvegardée dans {self.path}")
             return True
         except Exception as e:
-            print(f"✗ Erreur lors de la sauvegarde: {e}")
+            print(f"Erreur lors de la sauvegarde: {e}")
             phase1.save_message = "✗ Erreur de sauvegarde"
             phase1.save_message_timer = 3.0
             return False

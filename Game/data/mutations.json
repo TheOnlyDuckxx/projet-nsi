@@ -9,11 +9,10 @@
             }
         },
         "conditions": [],
-        "cout": 20,
         "categorie": "physique",
         "phase": 1,
         "base": true,
-        "points": -2
+        "points": -1
     },
     "peau_epaisse": {
         "nom": "Peau épaisse",
@@ -25,7 +24,6 @@
         },
         "conditions": [],
         "imcompatibles": [],
-        "cout": 1,
         "categorie": "physique",
         "phase": 1,
         "base": true,
@@ -44,7 +42,6 @@
             "herbivore",
             "carnivore"
         ],
-        "cout": 10,
         "categorie": "environnement",
         "phase": 1,
         "base": true,
@@ -64,7 +61,6 @@
             "herbivore",
             "omnivore"
         ],
-        "cout": 0,
         "categorie": "environnement",
         "phase": 1,
         "base": true,
@@ -86,7 +82,6 @@
             "carnivore",
             "omnivore"
         ],
-        "cout": 0,
         "categorie": "environnement",
         "phase": 1,
         "base": true,
@@ -102,7 +97,6 @@
             }
         },
         "conditions": [],
-        "cout": 10,
         "categorie": "sens",
         "phase": 1,
         "base": true,
@@ -122,7 +116,6 @@
         "incompatibles": [
             "Vision Panoramique"
         ],
-        "cout": 15,
         "categorie": "sens",
         "phase": 1,
         "base": true,
@@ -141,7 +134,6 @@
         "incompatibles": [
             "Vision Stéréoscopique"
         ],
-        "cout": 15,
         "categorie": "sens",
         "phase": 1,
         "base": true,
@@ -159,17 +151,16 @@
         },
         "conditions": [],
         "incompatibles": [
-            "Myope",
-            "Vision_nocturne",
+            "myope",
+            "vision_nocturne",
             "vision_perçante"
         ],
-        "cout": -80,
         "categorie": "sens",
         "phase": 1,
         "base": true,
         "points": 8
     },
-    "Myope": {
+    "myope": {
         "nom": "Myope",
         "description": "Réduction de la capacité visuelle à longue distance.",
         "effets": {
@@ -185,7 +176,6 @@
             "aveugle",
             "vision_perçante"
         ],
-        "cout": -20,
         "categorie": "sens",
         "phase": 1,
         "base": true,
@@ -205,15 +195,14 @@
         "conditions": [],
         "incompatibles": [
             "aveugle",
-            "Myope"
+            "myope"
         ],
-        "cout": 20,
         "categorie": "sens",
         "phase": 1,
         "base": true,
         "points": -2
     },
-    "Vision_nocturne": {
+    "vision_nocturne": {
         "nom": "Vision nocturne",
         "description": "Permet de voir dans des conditions de faible luminosité.",
         "effets": {
@@ -225,7 +214,6 @@
         "incompatibles": [
             "aveugle"
         ],
-        "cout": 10,
         "categorie": "sens",
         "phase": 1,
         "base": true,
@@ -242,7 +230,6 @@
         },
         "conditions": [],
         "incompatibles": [],
-        "cout": 15,
         "categorie": "sens",
         "phase": 1,
         "base": false
@@ -256,9 +243,9 @@
                 "vision": 10
             },
             "physique": {
-                "endurance": 20,
-                "vitesse": -15,
-                "force": -20
+                "endurance": 10,
+                "vitesse": -3,
+                "force": -2
             },
             "mental": {
                 "intelligence": 5,
@@ -268,14 +255,13 @@
         },
         "conditions": [],
         "incompatibles": [],
-        "cout": 30,
         "categorie": "sens",
         "phase": 1,
         "base": true,
         "points": -3
     },
     "Bipedie": {
-        "nom": "Bipédie",
+        "nom": "Bipedie",
         "description": "Permet de se déplacer sur deux jambes, libérant les membres supérieurs pour d'autres tâches.",
         "effets": {
             "sens": {
@@ -297,7 +283,6 @@
             "Semibipedie"
         ],
         "incompatibles": [],
-        "cout": 50,
         "categorie": "sens",
         "phase": 2,
         "base": false
@@ -325,7 +310,6 @@
             "Bipedie"
         ],
         "incompatibles": [],
-        "cout": 75,
         "categorie": "sens",
         "phase": 3,
         "base": false
@@ -344,7 +328,6 @@
         },
         "conditions": [],
         "incompatibles": [],
-        "cout": 20,
         "categorie": "social",
         "phase": 1,
         "base": false
@@ -367,7 +350,6 @@
         "incompatibles": [
             "Mâchoire réduite"
         ],
-        "cout": 15,
         "categorie": "physique",
         "phase": 1,
         "base": false
@@ -394,7 +376,6 @@
         "incompatibles": [
             "Mâchoire puissante"
         ],
-        "cout": 15,
         "categorie": "physique",
         "phase": 1,
         "base": false
@@ -411,22 +392,8 @@
                 "defense": 15
             }
         },
-        "effets_temporaire": {
-            "nom": "Se réfugier dans sa carapace",
-            "description": "Se protège…",
-            "durée": 300,
-            "effets": {
-                "physique": {
-                    "vitesse": -2000000
-                },
-                "combat": {
-                    "defense": 100
-                }
-            }
-        },
         "conditions": [],
         "incompatibles": [],
-        "cout": 25,
         "categorie": "physique",
         "phase": 1,
         "base": false

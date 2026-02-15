@@ -40,7 +40,6 @@ class Settings:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         
         if not os.path.exists(self.path):
-            print("⚠️ Fichier de configuration introuvable, création avec valeurs par défaut")
             self.data = copy.deepcopy(DEFAULTS)
             self.save()
             self.apply_all()
@@ -52,7 +51,6 @@ class Settings:
                 
                 # Vérifier si le fichier est vide
                 if not content:
-                    print("⚠️ Fichier de configuration vide, réinitialisation")
                     self.data = copy.deepcopy(DEFAULTS)
                     self.save()
                     self.apply_all()
@@ -86,7 +84,7 @@ class Settings:
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"⚠️ Erreur lors de la sauvegarde de la configuration: {e}")
+            print(f"Erreur lors de la sauvegarde de la configuration: {e}")
 
     def _merge_defaults(self, defaults, loaded):
         """
@@ -169,7 +167,7 @@ class Settings:
                 pass
             # etc.
         except Exception as e:
-            print(f"⚠️ Erreur lors de l'application du paramètre '{path}': {e}")
+            print(f"Erreur lors de l'application du paramètre '{path}': {e}")
     
     # Applique tous les réglages au lancement
     def apply_all(self):
@@ -179,7 +177,7 @@ class Settings:
             self.apply("video.vsync",         self.data["video"]["vsync"])
             self.apply("video.fps_cap",       self.data["video"]["fps_cap"])
         except KeyError as e:
-            print(f"⚠️ Clé de configuration manquante: {e}")
+            print(f"Clé de configuration manquante: {e}")
             print("   Réinitialisation des valeurs par défaut")
             self.data = copy.deepcopy(DEFAULTS)
             self.save()

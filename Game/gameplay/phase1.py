@@ -1331,7 +1331,6 @@ class Phase1:
             mutation_ids.update(getattr(species, "base_mutations", []) or [])
         if mutations:
             mutation_ids.update(getattr(mutations, "actives", []) or [])
-            mutation_ids.update((getattr(mutations, "temporaires", {}) or {}).keys())
 
         max_pop = max(
             int(self._run_stats.get("max_population", 0) or 0),
@@ -1509,7 +1508,7 @@ class Phase1:
             entity_name="Scorpion",
             move_speed=3.6,
             hp=70,
-            vision_range=15.0,
+            vision_range=10.0,
             flee_distance=0.0,
             attack=3.0,
             attack_speed=1.7,
@@ -1532,14 +1531,45 @@ class Phase1:
             sprite_sheet_frame_size=(32, 32),
             sprite_base_scale=0.8,
         )
+    
+    def _flamme_definition(self):
+        return AggressiveFaunaDefinition(
+            species_name="Flamme",
+            entity_name="Flamme",
+            move_speed=2.4,
+            hp=30,
+            vision_range=6.0,
+            flee_distance=0.0,
+            attack=20.0,
+            attack_speed=0.1,
+            sprite_sheet_idle="flame_idle",
+            sprite_sheet_frame_size=(32, 32),
+            sprite_base_scale=0.8,
+        )
+
+    def _forest_boss_definition(self):
+        return AggressiveFaunaDefinition(
+            species_name="Slime Tower",
+            entity_name="Slime Tower",
+            move_speed=1.4,
+            hp=300,
+            vision_range=6.0,
+            flee_distance=0.0,
+            attack=15.0,
+            attack_speed=1.2,
+            sprite_sheet_idle="forest_boss_idle",
+            sprite_sheet_frame_size=(48, 48),
+            sprite_base_scale=1,
+        )
 
     def _fauna_definition_catalog(self) -> dict[str, PassiveFaunaDefinition]:
         return {
             "lapin": self._rabbit_definition(),
-            "rabbit": self._rabbit_definition(),
             "capybara": self.capybara_definition(),
             "scorpion": self._scorpion_definition(),
             "champi": self._champi_definition(),
+            "flamme": self._flamme_definition(),
+            "forest_boss": self._forest_boss_definition()
         }
 
     def get_fauna_definition(self, species_id: str | None) -> Optional[PassiveFaunaDefinition]:
@@ -2161,7 +2191,7 @@ class Phase1:
             # Titre "PAUSE"
             font_title = pygame.font.SysFont(None, 60)
             text = font_title.render("PAUSE", True, (255, 255, 255))
-            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 100))
+            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 200))
             screen.blit(text, text_rect)
             
             # Boutons
@@ -2325,7 +2355,7 @@ class Phase1:
                 screen.blit(hint, (panel_rect.centerx - hint.get_width() // 2, panel_rect.bottom - hint.get_height() - 8))
 
         # bouton retour
-        back_text = btn_font.render("â† Retour", True, (230, 230, 230))
+        back_text = btn_font.render("Retour", True, (230, 230, 230))
         back_rect = back_text.get_rect(center=(W // 2, H - max(50, int(H * 0.08))))
         self._pause_ach_back_rect = back_rect.inflate(24, 12)
 

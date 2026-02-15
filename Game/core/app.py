@@ -149,7 +149,6 @@ class App:
 
     # Boucle principale pygame
     def run(self):
-        print(WIDTH,HEIGHT)
         while self.running:
             perf_enabled = bool(self.settings.get("debug.perf_logs", True))
             slow_frame_sec = max(0.01, float(self.settings.get("debug.perf_slow_frame_ms", 120)) / 1000.0)

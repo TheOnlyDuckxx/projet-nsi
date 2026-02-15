@@ -4,20 +4,6 @@ import pygame
 
 DEFAULT_BLOB_COLOR = (70, 130, 220)
 
-OFFSETS = {
-    "4_yeux_normaux": (0, 1),
-    "4_bouche_normale": (0, 1),
-    "4_jambe_base": (0, 1),
-    "4_corps_base": (0, 0),
-    "ailes_grandes": (0, -6),
-    "branchies": (0, -2),
-    "carapace": (0, 0),
-    "poils": (0, 0),
-    "camouflage": (0, 0),
-    "bioluminescence": (0, 0),
-    "pheromone": (0, 0),
-}
-
 class SpriteSheet:
     """Spritesheet en grille (ici surtout 1 ligne)."""
     def __init__(self, sheet: pygame.Surface, frame_w: int, frame_h: int):
@@ -43,6 +29,15 @@ class EspeceRenderer:
       - render(screen, view, world, tx, ty)
     """
     BASE_SIZE = (20, 24)  # gardé pour placeholder + échelle "par défaut"
+    # Certaines variantes n'utilisent pas la même hauteur de frame.
+    VARIANT_FRAME_SIZES = {
+        "bipede_blob_idle": (32, 40),
+    }
+    # Sheets utilisant la même palette que le blob de base (donc recolorisables).
+    RECOLORABLE_SHEETS = {
+        "base_blob_idle",
+        "bipede_blob_idle",
+    }
 
     def __init__(self, espece, assets):
         self.espece = espece
@@ -52,10 +47,6 @@ class EspeceRenderer:
         # Pour ne rien casser : si tu ne renseignes rien dans espece, ça marche quand même.
         self.sheet_key = getattr(espece, "sprite_sheet_key", "base_blob_idle")
         self.frame_w, self.frame_h = getattr(espece, "sprite_frame_size", (32, 32))
-
-        # Échelle "interne" pour que le passage 20x24 -> 32x32 ne te fasse pas un monstre à l'écran.
-        # Par défaut on rapproche la hauteur du vieux système : 24/32 = 0.75
-        self.base_scale = float(getattr(espece, "sprite_base_scale", self.BASE_SIZE[1] / self.frame_h))
 
         # Animations (tu peux étendre plus tard)
         self.animations = getattr(espece, "sprite_anims", None) or {
@@ -75,6 +66,8 @@ class EspeceRenderer:
 
         # Pour compat éventuelle avec le reste (si quelque part tu touches renderer.layers)
         self.layers = {}
+        # Appliquer tout de suite les variants/overlays liés aux mutations.
+        self.update_from_mutations()
 
     # --------- helpers sûrs ----------
     def _placeholder_surface(self, size, label: str) -> pygame.Surface:
@@ -101,6 +94,13 @@ class EspeceRenderer:
             if fallback_size is None:
                 fallback_size = (self.frame_w, self.frame_h)
             return self._placeholder_surface(fallback_size, key)
+
+    def _frame_size_for_variant(self, key: str) -> tuple[int, int]:
+        # Par défaut: taille configurée sur l'espèce (souvent 32x32).
+        # Certaines sheets ont une hauteur différente (ex: bipède 32x40).
+        if key in self.VARIANT_FRAME_SIZES:
+            return self.VARIANT_FRAME_SIZES[key]
+        return (int(self.frame_w), int(self.frame_h))
 
     def _resolve_species_color_rgb(self) -> tuple[int, int, int]:
         # Cas preview: renderer branché directement sur une Espece.
@@ -170,18 +170,24 @@ class EspeceRenderer:
         return out
 
     def _get_sheet(self, key: str) -> SpriteSheet:
-        cache_key = key
-        sheet_img = self._get_img(key, fallback_size=(self.frame_w, self.frame_h))
-        if key == "base_blob_idle":
+        fw, fh = self._frame_size_for_variant(key)
+        sheet_img = self._get_img(key, fallback_size=(fw, fh))
+
+        if key in self.RECOLORABLE_SHEETS:
             color_rgb = self._resolve_species_color_rgb()
-            cache_key = (key, color_rgb)
+            cache_key = (key, color_rgb, fw, fh)
             if cache_key in self._sheet_cache:
                 return self._sheet_cache[cache_key]
             sheet_img = self._recolor_base_blob_sheet(sheet_img, color_rgb)
-        elif key in self._sheet_cache:
-            return self._sheet_cache[key]
+        else:
+            cache_key = (key, fw, fh)
+            if cache_key in self._sheet_cache:
+                return self._sheet_cache[cache_key]
 
-        ss = SpriteSheet(sheet_img, self.frame_w, self.frame_h)
+        if cache_key in self._sheet_cache:
+            return self._sheet_cache[cache_key]
+
+        ss = SpriteSheet(sheet_img, fw, fh)
         self._sheet_cache[cache_key] = ss
         return ss
 
@@ -213,28 +219,29 @@ class EspeceRenderer:
             return frames[step % len(frames)]
         return frames[min(step, len(frames) - 1)]
 
-    # --------- mutations (hook conservé) ----------
+    # --------- mutations ----------
     def update_from_mutations(self):
-        # IMPORTANT: reset (sinon ça se duplique si tu appelles plusieurs fois)
         self.base_variant_key = self.sheet_key
         self.overlay_keys = []
         self._compose_cache.clear()
         self._scaled_cache.clear()
 
-        # Si plus tard tu fais des variantes complètes (spritesheet différente),
-        # tu peux changer base_variant_key ici.
-        # Exemple:
-        # if "Carapace" in self.espece.mutations.actives:
-        #     self.base_variant_key = "base_blob_idle_carapace"
+        # self.espece peut être un Individu (runtime) ou une Espece (preview)
+        manager = getattr(self.espece, "mutations", None)
+        base = getattr(self.espece, "base_mutations", None)
+        if manager is None and hasattr(self.espece, "espece"):
+            manager = getattr(getattr(self.espece, "espece", None), "mutations", None)
+        if base is None and hasattr(self.espece, "espece"):
+            base = getattr(getattr(self.espece, "espece", None), "base_mutations", None)
 
-        for m in getattr(self.espece.mutations, "actives", []):
-            if m == "Carapace": self.overlay_keys.append("carapace")
-            elif m == "Peau poilue": self.overlay_keys.append("poils")
-            elif m == "Ailes": self.overlay_keys.append("ailes_grandes")
-            elif m == "Branchies": self.overlay_keys.append("branchies")
-            elif m == "Chromatophores": self.overlay_keys.append("camouflage")
-            elif m == "Bioluminescence": self.overlay_keys.append("bioluminescence")
-            elif m == "Sécrétion de phéromones": self.overlay_keys.append("pheromone")
+        muts = set()
+        muts.update(getattr(manager, "actives", []) or [])
+        muts.update(base or [])
+        muts_lc = {str(x).strip().lower() for x in muts if str(x).strip()}
+
+        # Mutations du JSON: "Semibipedie", "Bipedie", "Bipedie exclusive"
+        if any(k in muts_lc for k in ("semibipedie", "bipedie", "bipedie exclusive")):
+            self.base_variant_key = "bipede_blob_idle"
 
     # --------- composition ----------
     def _compose(self):
@@ -276,8 +283,9 @@ class EspeceRenderer:
         anchor_x = (0 - minx) + bw / 2
         anchor_y = (0 - miny) + bh
 
-        self._compose_cache[cache_key] = (out, anchor_x, anchor_y)
-        return out, anchor_x, anchor_y
+        # On renvoie aussi la hauteur de frame source pour calculer l'échelle interne.
+        self._compose_cache[cache_key] = (out, anchor_x, anchor_y, ss.fh)
+        return out, anchor_x, anchor_y, ss.fh
 
     def _get_scaled(self, composed_surf: pygame.Surface, zoom_eff: float):
         # cache scaling (important si beaucoup d'entités)
@@ -300,12 +308,14 @@ class EspeceRenderer:
     # --------- API utilisée par le reste du jeu ----------
     def get_draw_surface_and_rect(self, view, world, tx: float, ty: float):
         # 1) compose (frame + overlays)
-        composed, anchor_x, anchor_y = self._compose()
+        composed, anchor_x, anchor_y, base_frame_h = self._compose()
 
-        # 2) zoom effectif = zoom caméra * échelle interne
+        # 2) zoom effectif = zoom caméra * échelle interne (dépend de la hauteur de frame)
         zoom = float(getattr(view, "zoom", 1.0) or 1.0)
         size_scale = self._resolve_size_scale()
-        zoom_eff = zoom * self.base_scale * size_scale
+        # Ex: 24/32 pour base_blob_idle, 24/40 pour bipede_blob_idle
+        internal_scale = float(self.BASE_SIZE[1]) / float(max(1, int(base_frame_h or 1)))
+        zoom_eff = zoom * internal_scale * size_scale
         sprite = self._get_scaled(composed, zoom_eff)
 
         # 3) projection iso (identique à ton ancien code)

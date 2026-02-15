@@ -1,7 +1,7 @@
-# Game/espece/mutations.py
 import json
 import random
-import time
+import re
+import unicodedata
 from typing import Optional
 from Game.core.utils import resource_path
 
@@ -10,18 +10,68 @@ class MutationManager:
         self.espece = espece
         self.connues = []          # mutations débloquées
         self.actives = []          # mutations permanentes actives
-        self.temporaires = {}      # { nom : timestamp_expiration }
         self.data = self.load_mutations()
+        self._id_aliases = self._build_id_aliases(self.data)
+
+    @staticmethod
+    def _canonical_id(nom) -> str:
+        return str(nom or "").strip()
+
+    @staticmethod
+    def _norm_id(value: str) -> str:
+        s = str(value or "").strip()
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        s = s.casefold()
+        s = re.sub(r"[^0-9a-z]+", "", s)
+        return s
+
+    @classmethod
+    def _build_id_aliases(cls, data: dict) -> dict[str, str]:
+        """
+        Map d'alias normalisés -> id canonique (clé exacte du JSON).
+        Permet de tolérer les incohérences de casse/accents/espaces dans 'conditions'/'incompatibles'.
+        """
+        aliases: dict[str, str] = {}
+        for mid, mdata in (data or {}).items():
+            key = str(mid or "").strip()
+            if not key:
+                continue
+            aliases.setdefault(cls._norm_id(key), key)
+            if isinstance(mdata, dict):
+                nom = mdata.get("nom")
+                if nom:
+                    aliases.setdefault(cls._norm_id(nom), key)
+        return aliases
+
+    def _resolve_mutation_id(self, ref: str) -> str:
+        ref = self._canonical_id(ref)
+        if not ref:
+            return ref
+        if ref in (self.data or {}):
+            return ref
+        resolved = self._id_aliases.get(self._norm_id(ref))
+        return resolved or ref
+
+    def _notify_renderers(self) -> None:
+        """Rafraîchit les renderers des individus existants (variants/overlays)."""
+        for individu in getattr(self.espece, "individus", []) or []:
+            renderer = getattr(individu, "renderer", None)
+            if renderer is not None and hasattr(renderer, "update_from_mutations"):
+                try:
+                    renderer.update_from_mutations()
+                except Exception:
+                    pass
 
     def _mutations_en_cours(self) -> set[str]:
         """
         Retourne l'ensemble des mutations actuellement appliquées à l'espèce,
-        qu'elles soient permanentes, temporaires ou définies comme mutations
-        de base au démarrage.
+        qu'elles soient permanentes ou définies comme mutations de base au démarrage.
         """
         base = getattr(self.espece, "base_mutations", []) or []
-        temporaires = self.temporaires.keys()
-        return set(self.actives) | set(base) | set(temporaires)
+        return {self._canonical_id(x) for x in (list(self.actives) + list(base)) if self._canonical_id(x)}
 
     # -------------------------
     # Chargement JSON
@@ -38,6 +88,7 @@ class MutationManager:
     # Vérification mutation
     # -------------------------
     def get_mutation(self, nom):
+        nom = self._resolve_mutation_id(nom)
         mutation = self.data.get(nom)
         if mutation is None:
             print(f"[Mutations] Mutation inconnue : {nom}")
@@ -65,7 +116,9 @@ class MutationManager:
             # "combat" : plutôt une stat d'individu, pas de base d'espèce
         }
 
-        for categorie, d in effets.items():
+        for categorie, d in (effets or {}).items():
+            if not isinstance(d, dict):
+                continue
             # 1) appliquer sur l'espèce (si ça a du sens)
             if apply_to_species:
                 attr_espece = mapping_espece.get(categorie)
@@ -73,10 +126,14 @@ class MutationManager:
                     cible_espece = getattr(self.espece, attr_espece, None)
                     if isinstance(cible_espece, dict):
                         for stat, delta in d.items():
-                            if stat in cible_espece:
+                            if not isinstance(delta, (int, float)):
+                                continue
+                            if stat not in cible_espece or cible_espece.get(stat) is None:
+                                cible_espece[stat] = 0
+                            if isinstance(cible_espece.get(stat), (int, float)):
                                 cible_espece[stat] += delta
                             else:
-                                print(f"[Mutations] Stat '{stat}' absente dans '{attr_espece}' (espèce)")
+                                print(f"[Mutations] Stat '{stat}' non numérique dans '{attr_espece}' (espèce)")
 
             # 2) appliquer sur chaque individu existant
             if apply_to_individus:
@@ -86,17 +143,31 @@ class MutationManager:
                         # ex : combat peut ne pas exister dans certains cas
                         continue
                     for stat, delta in d.items():
-                        if stat in cible_individu:
+                        if not isinstance(delta, (int, float)):
+                            continue
+                        if stat not in cible_individu or cible_individu.get(stat) is None:
+                            cible_individu[stat] = 0
+                        if isinstance(cible_individu.get(stat), (int, float)):
                             cible_individu[stat] += delta
-                        else:
-                            # on ne crash pas, juste un log
-                            pass
+                        # Garder compat : detection/detection_visuelle existent parfois dans environnement.
+                        if categorie == "sens" and stat in ("detection", "detection_visuelle"):
+                            env = getattr(individu, "environnement", None)
+                            if isinstance(env, dict) and isinstance(env.get(stat, 0), (int, float)):
+                                env[stat] = cible_individu.get(stat, env.get(stat))
 
 
     # -------------------------
     # Ajouter une mutation permanente
     # -------------------------
     def appliquer(self, nom):
+        nom = self._resolve_mutation_id(nom)
+        if not nom:
+            return
+
+        # Idempotent: ne jamais ré-appliquer une mutation déjà acquise.
+        if nom in self._mutations_en_cours():
+            return
+
         mutation = self.get_mutation(nom)
         if mutation is None:
             return
@@ -106,36 +177,14 @@ class MutationManager:
 
         if nom not in self.actives:
             self.actives.append(nom)
+        self._notify_renderers()
 
         print(f"[Mutations] '{nom}' appliquée")
 
-    # -------------------------
-    # Ajouter une mutation temporaire
-    # -------------------------
     def appliquer_temporaire(self, nom):
-        mutation = self.get_mutation(nom)
-        if mutation is None:
-            return
-
-        temp = mutation.get("effets_temporaire")
-        if not temp:
-            print(f"[Mutations] Pas d'effet temporaire dans : {nom}")
-            return
-
-        duree = temp.get("durée", 0)
-        effets = temp.get("effets", {})
-
-        # appliquer les effets
-        self.apply_effects(effets, nom)
-
-        # enregistrer l'expiration
-        fin = time.time() + duree
-        self.temporaires[nom] = {
-            "expire": fin,
-            "effets": effets
-        }
-
-        print(f"[Mutations] Effet temporaire '{temp.get('nom')}' activé pour {duree} sec.")
+        """Deprecated: le système d'effets temporaires a été retiré."""
+        # On garde la méthode pour compat (éviter crash si appelé par erreur).
+        print(f"[Mutations] Effets temporaires supprimés: '{self._canonical_id(nom)}' ignorée.")
 
     # -------------------------
     # Mutations de base (sélection menu espèce)
@@ -152,6 +201,16 @@ class MutationManager:
 
         applied: list[str] = []
         for mut_id in ids:
+            mut_id = self._resolve_mutation_id(mut_id)
+            if not mut_id:
+                continue
+
+            # Idempotent (utile pour preview / rechargements partiels).
+            if mut_id in self._mutations_en_cours():
+                if mut_id not in applied:
+                    applied.append(mut_id)
+                continue
+
             mutation = self.get_mutation(mut_id)
             if mutation is None:
                 continue
@@ -174,28 +233,12 @@ class MutationManager:
 
         return applied
 
-
-    # -------------------------
-    # Mise à jour des effets temporaires
-    # -------------------------
     def update(self):
-        now = time.time()
-        to_remove = []
-
-        for nom, info in self.temporaires.items():
-            if now >= info["expire"]:
-                # inverser les effets
-                effets = info["effets"]
-                effets_inverse = {
-                    cat: {stat: -delta for stat, delta in d.items()}
-                    for cat, d in effets.items()
-                }
-                self.apply_effects(effets_inverse, nom)
-
-                print(f"[Mutations] Effet temporaire '{nom}' terminé")
-                to_remove.append(nom)
+        # Le système d'effets temporaires est supprimé: rien à mettre à jour.
+        return
     
     def mutation_disponible(self, nom):
+        nom = self._resolve_mutation_id(nom)
         mutation = self.get_mutation(nom)
         if mutation is None:
             return False
@@ -213,16 +256,29 @@ class MutationManager:
         conditions = mutation.get("conditions", [])
         incompatibles_1 = mutation.get("incompatibles", [])
         incompatibles_2 = mutation.get("imcompatibles", [])  # faute possible dans le JSON
-        incompatibles = set(incompatibles_1) | set(incompatibles_2)
+        incompatibles = {self._resolve_mutation_id(x) for x in (set(incompatibles_1) | set(incompatibles_2)) if self._canonical_id(x)}
 
         # toutes les conditions doivent être remplies
         for cond in conditions:
-            if cond and cond not in self.actives:
+            cond = self._resolve_mutation_id(cond)
+            if cond and cond not in mutations_actuelles:
                 return False
 
         # aucune incompatibilité ne doit être active
         for inc in incompatibles:
-            if inc in mutations_actuelles:
+            if inc and inc in mutations_actuelles:
+                return False
+
+        # Sens inverse: si une mutation déjà acquise déclare nom comme incompatible,
+        # on considère aussi que nom n'est pas disponible (JSON parfois non symétrique).
+        for active_id in mutations_actuelles:
+            active_data = self.get_mutation(active_id)
+            if not isinstance(active_data, dict):
+                continue
+            a_inc1 = active_data.get("incompatibles", []) or []
+            a_inc2 = active_data.get("imcompatibles", []) or []
+            a_incompat = {self._resolve_mutation_id(x) for x in (set(a_inc1) | set(a_inc2)) if self._canonical_id(x)}
+            if nom in a_incompat:
                 return False
 
         return True
