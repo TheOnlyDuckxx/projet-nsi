@@ -7,7 +7,7 @@ import hashlib
 import math
 import time
 from typing import Optional
-from Game.ui.iso_render import IsoMapView
+from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.fauna import AggressiveFaunaDefinition, PassiveFaunaFactory, PassiveFaunaDefinition
@@ -63,6 +63,7 @@ class Phase1:
         self.weather_system = None 
         self.weather_icons: dict[str, pygame.Surface] = {}
         self._load_weather_icons()
+        self.prop_descriptions = self._load_prop_descriptions()
         self._weather_vfx_particles: dict[str, list[dict]] = {
             "rain": [],
             "snow": [],
@@ -474,6 +475,51 @@ class Phase1:
             self.weather_icons[condition_id] = scaled_sprite
             self.weather_icons[str(sprite_key)] = scaled_sprite
             self.weather_icons[condition.name] = scaled_sprite
+
+    def _load_prop_descriptions(self, path: str = "Game/data/props_descriptions.json") -> dict:
+        data = {"by_id": {}}
+        try:
+            with open(resource_path(path), "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except FileNotFoundError:
+            print(f"[Props] Fichier descriptions introuvable: {path}")
+            return data
+        except Exception as e:
+            print(f"[Props] Erreur de chargement des descriptions: {e}")
+            return data
+
+        by_id = {}
+        raw_by_id = payload.get("by_id") if isinstance(payload, dict) else None
+        if isinstance(raw_by_id, dict):
+            for key, value in raw_by_id.items():
+                if not isinstance(value, dict):
+                    continue
+                pid = str(key).strip()
+                if not pid:
+                    continue
+                by_id[pid] = {
+                    "name": str(value.get("name", "") or "").strip(),
+                    "description": str(value.get("description", "") or "").strip(),
+                }
+        elif isinstance(payload, dict) and isinstance(payload.get("props"), list):
+            for item in payload.get("props") or []:
+                if not isinstance(item, dict):
+                    continue
+                pid = item.get("id")
+                if pid is None:
+                    continue
+                pid = str(pid).strip()
+                by_id[pid] = {
+                    "name": str(item.get("name", "") or "").strip(),
+                    "description": str(item.get("description", "") or "").strip(),
+                }
+
+        data["by_id"] = by_id
+        return data
+
+    def _get_prop_description_entry(self, pid: int):
+        by_id = (self.prop_descriptions or {}).get("by_id", {})
+        return by_id.get(str(int(pid)))
 
     def _ensure_weather_system(self):
         """Initialise la météo si un monde est présent."""
@@ -1304,6 +1350,49 @@ class Phase1:
             count += 1
         return count
 
+    def _focus_camera_on_nearest_species_member(self) -> bool:
+        if not self.espece or not self.view:
+            return False
+
+        cam_x = float(getattr(self.view, "cam_x", 0.0) or 0.0)
+        cam_y = float(getattr(self.view, "cam_y", 0.0) or 0.0)
+        nearest = None
+        best_dist2 = None
+
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False):
+                continue
+            if getattr(ent, "espece", None) != self.espece:
+                continue
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "jauges", {}).get("sante", 0) <= 0:
+                continue
+
+            try:
+                sx, sy = self.view.world_to_screen(
+                    float(getattr(ent, "x", 0.0)),
+                    float(getattr(ent, "y", 0.0)),
+                    float(getattr(ent, "z", 0.0) or 0.0),
+                )
+            except Exception:
+                continue
+
+            dx = float(sx) - cam_x
+            dy = float(sy) - cam_y
+            dist2 = dx * dx + dy * dy
+            if best_dist2 is None or dist2 < best_dist2:
+                best_dist2 = dist2
+                nearest = (sx, sy)
+
+        if nearest is None:
+            return False
+
+        self.view.cam_x = float(nearest[0])
+        self.view.cam_y = float(nearest[1])
+        self.view.mouse_pan_active = False
+        return True
+
     def _has_player_species_entities(self) -> bool:
         if not self.espece:
             return False
@@ -1857,6 +1946,8 @@ class Phase1:
                         self.paused = not self.paused
                         if not self.paused:
                             self._pause_achievements_open = False
+                elif e.key == pygame.K_SPACE:
+                    self._focus_camera_on_nearest_species_member()
                 elif e.key == pygame.K_F6:
                     self._ensure_weather_system()
                     if self.weather_system:
@@ -2857,11 +2948,27 @@ class Phase1:
             cell = self.world.overlay[j][i]
         except Exception:
             cell = None
+
         craft_def = self._craft_def_from_cell(cell)
+        prop_entry = self._get_prop_description_entry(pid) or {}
+
+        sprite_name = None
+        try:
+            sprite_name = get_prop_sprite_name(int(pid))
+        except Exception:
+            sprite_name = None
+
         name = craft_def.get("name") if craft_def else None
         if not name:
+            name = prop_entry.get("name")
+        if not name and sprite_name:
+            name = str(sprite_name).replace("_", " ").strip().title()
+        if not name:
             name = f"Prop {pid}"
+
         desc = craft_def.get("description") if craft_def else None
+        if not desc:
+            desc = prop_entry.get("description")
         interaction = craft_def.get("interaction") if craft_def else None
 
         content_lines: list[str] = []
@@ -2869,13 +2976,14 @@ class Phase1:
             content_lines.extend(desc.split("\n"))
         else:
             content_lines.append("Aucune description.")
+        if sprite_name:
+            content_lines.append(f"Sprite: {sprite_name}")
 
-        # Infos spéciales entrepôt
         if isinstance(interaction, dict) and interaction.get("type") == "warehouse":
             if not self.warehouse:
-                content_lines.append("Entrepôt : aucun stock.")
+                content_lines.append("Entrepot : aucun stock.")
             else:
-                content_lines.append("Contenu de l'entrepôt :")
+                content_lines.append("Contenu de l'entrepot :")
                 for res, qty in self.warehouse.items():
                     content_lines.append(f"- {res} : {qty}")
 
@@ -3641,3 +3749,4 @@ class Phase1:
             
         except Exception as e:
             print(f"[Weather] Erreur affichage HUD: {e}")
+

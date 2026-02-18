@@ -19,7 +19,10 @@
   },
   "species": {
     "base_mutations": [
-      "Semibipedie"
+      "Semibipedie",
+      "vision_nocturne",
+      "Vision Panoramique",
+      "vision_perçante"
     ]
   }
 }

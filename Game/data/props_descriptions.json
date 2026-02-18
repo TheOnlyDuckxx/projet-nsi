@@ -1,0 +1,128 @@
+{
+  "by_id": {
+    "8": {
+      "name": "Grand arbre",
+      "description": "Arbre ancien et solide. Source fiable de bois."
+    },
+    "9": {
+      "name": "Arbre commun",
+      "description": "Arbre classique utile pour recolter du bois."
+    },
+    "10": {
+      "name": "Arbre robuste",
+      "description": "Arbre dense donnant souvent plus de materiaux."
+    },
+    "12": {
+      "name": "Arbre mort",
+      "description": "Tronc sec. Facile a debiter pour du combustible."
+    },
+    "13": {
+      "name": "Roche",
+      "description": "Roche de surface utile pour les outils primitifs."
+    },
+    "14": {
+      "name": "Palmier",
+      "description": "Arbre de zone chaude. Peut fournir fibres et bois leger."
+    },
+    "15": {
+      "name": "Cactus",
+      "description": "Plante de milieu aride. Resiste bien a la secheresse."
+    },
+    "16": {
+      "name": "Buisson",
+      "description": "Vegetation basse. Peut cacher des ressources."
+    },
+    "17": {
+      "name": "Buisson a baies",
+      "description": "Source de nourriture simple a recolter."
+    },
+    "18": {
+      "name": "Roseaux",
+      "description": "Plantes de zone humide utiles pour fibres et artisanat."
+    },
+    "19": {
+      "name": "Bois flotte",
+      "description": "Morceaux de bois uses ramenes par l'eau."
+    },
+    "20": {
+      "name": "Fleurs sauvages",
+      "description": "Flore decorative. Peut signaler un sol vivant."
+    },
+    "21": {
+      "name": "Souche",
+      "description": "Reste d'arbre coupe. Peut encore fournir du bois."
+    },
+    "22": {
+      "name": "Tronc",
+      "description": "Bille de bois exploitable pour la construction."
+    },
+    "23": {
+      "name": "Gros rocher",
+      "description": "Bloc mineral plus massif, utile pour la pierre."
+    },
+    "25": {
+      "name": "Fleurs sauvages II",
+      "description": "Variante florale decorative."
+    },
+    "26": {
+      "name": "Fleurs sauvages III",
+      "description": "Autre variante florale decorative."
+    },
+    "28": {
+      "name": "Buisson a myrtilles",
+      "description": "Plante comestible donnant des baies."
+    },
+    "29": {
+      "name": "Gisement de cuivre",
+      "description": "Veine de cuivre, utile pour la metallurgie debutante."
+    },
+    "30": {
+      "name": "Gisement de fer",
+      "description": "Minerai robuste pour equipements et structures."
+    },
+    "31": {
+      "name": "Gisement d'or",
+      "description": "Minerai rare, surtout utile pour prestige et commerce."
+    },
+    "32": {
+      "name": "Gisement d'argile",
+      "description": "Terre fine pour poterie, four et materiaux."
+    },
+    "33": {
+      "name": "Liane",
+      "description": "Fibre naturelle utile pour cordes et ligatures."
+    },
+    "34": {
+      "name": "Champignon I",
+      "description": "Champignon sauvage de petite taille."
+    },
+    "35": {
+      "name": "Champignon II",
+      "description": "Variante de champignon sauvage."
+    },
+    "36": {
+      "name": "Champignon III",
+      "description": "Autre variante de champignon sauvage."
+    },
+    "37": {
+      "name": "Tas d'os",
+      "description": "Restes organiques utiles pour artisanat ou engrais."
+    },
+    "38": {
+      "name": "Nid",
+      "description": "Structure naturelle pouvant contenir des ressources."
+    },
+    "39": {
+      "name": "Ruche",
+      "description": "Habitat d'insectes. Ressource potentielle mais risquee."
+    },
+    "40": {
+      "name": "Mare d'eau douce",
+      "description": "Petite reserve d'eau douce, utile a la survie."
+    },
+    "102": {
+      "name": "Entrepot primitif",
+      "description": "Structure de stockage pour centraliser les ressources du clan."
+    }
+  }
+}
