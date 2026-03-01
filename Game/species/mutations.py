@@ -6,6 +6,13 @@ from typing import Optional
 from Game.core.utils import resource_path
 
 class MutationManager:
+    RARITY_WEIGHTS = {
+        "commun": 60,
+        "rare": 25,
+        "epique": 10,
+        "legendaire": 5,
+    }
+
     def __init__(self, espece):
         self.espece = espece
         self.connues = []          # mutations débloquées
@@ -54,6 +61,18 @@ class MutationManager:
             return ref
         resolved = self._id_aliases.get(self._norm_id(ref))
         return resolved or ref
+
+    @classmethod
+    def _normalize_rarity(cls, rarity: str) -> str:
+        r = str(rarity or "").strip().lower()
+        return r if r in cls.RARITY_WEIGHTS else "commun"
+
+    def _rarity_weight_for_id(self, mutation_id: str) -> int:
+        mutation = self.get_mutation(mutation_id)
+        if not isinstance(mutation, dict):
+            return self.RARITY_WEIGHTS["commun"]
+        rarity = self._normalize_rarity(mutation.get("rarete", "commun"))
+        return self.RARITY_WEIGHTS.get(rarity, self.RARITY_WEIGHTS["commun"])
 
     def _notify_renderers(self) -> None:
         """Rafraîchit les renderers des individus existants (variants/overlays)."""
@@ -289,11 +308,31 @@ class MutationManager:
         """
         return [nom for nom in self.data.keys() if self.mutation_disponible(nom)]
 
-    def pick_random_available_mutation(self) -> Optional[str]:
+    def pick_random_available_mutation(self, exclude: Optional[set[str]] = None) -> Optional[str]:
         """
-        Retourne une mutation disponible au hasard (exclut les mutations de base).
+        Retourne une mutation disponible au hasard, pondérée par rareté.
+        Les mutations présentes dans 'exclude' sont ignorées.
         """
-        disponibles = self.mutations_disponibles()
+        excludes = {self._resolve_mutation_id(x) for x in (exclude or set()) if self._canonical_id(x)}
+        disponibles = [m for m in self.mutations_disponibles() if m not in excludes]
         if not disponibles:
             return None
-        return random.choice(disponibles)
+        weights = [self._rarity_weight_for_id(mid) for mid in disponibles]
+        return random.choices(disponibles, weights=weights, k=1)[0]
+
+    def pick_available_mutations(self, max_count: int = 5) -> list[str]:
+        """
+        Tire jusqu'à max_count mutations disponibles sans doublon, pondérées par rareté.
+        """
+        if max_count <= 0:
+            return []
+
+        selected: list[str] = []
+        excluded: set[str] = set()
+        for _ in range(max_count):
+            mut = self.pick_random_available_mutation(exclude=excluded)
+            if not mut:
+                break
+            selected.append(mut)
+            excluded.add(mut)
+        return selected

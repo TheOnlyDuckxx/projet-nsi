@@ -1,11 +1,11 @@
 {
   "save_version": "1.3",
-  "save_path": "Game\\save\\slots\\save_20260221_120646_873c.evosave",
+  "save_path": "Game/save/slots/save_20260221_120646_873c.evosave",
   "slot_id": "save_20260221_120646_873c",
   "species_name": "Espece sans nom",
-  "species_level": 2,
-  "tech_unlocked_count": 0,
-  "tech_current_research": null,
-  "updated_at": 1772227504.345076,
-  "updated_at_iso": "2026-02-27 22:25:04"
+  "species_level": 4,
+  "tech_unlocked_count": 1,
+  "tech_current_research": "Feu_totem",
+  "updated_at": 1772391210.2584283,
+  "updated_at_iso": "2026-03-01 19:53:30"
 }

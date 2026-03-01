@@ -14,7 +14,7 @@ from typing import Optional
 from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
-from Game.species.fauna import AggressiveFaunaDefinition, PassiveFaunaFactory, PassiveFaunaDefinition
+from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.species.species import Espece
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
@@ -33,8 +33,31 @@ from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
 from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
+from Game.world.weather_vfx import WeatherVFXController
 from Game.gameplay.tech_tree import TechTreeManager
 from Game.gameplay.fauna_spawner import FaunaSpawner
+from Game.gameplay.fauna_definitions import (
+    fauna_definition_catalog,
+    get_fauna_definition as resolve_fauna_definition,
+    rabbit_definition,
+)
+from Game.gameplay.phase1_data import (
+    collect_species_stats,
+    get_prop_description_entry,
+    load_prop_descriptions,
+)
+from Game.gameplay.phase1_combat import (
+    clear_entity_combat_refs,
+    combat_attack_interval,
+    combat_attack_range,
+    combat_damage,
+    draw_fauna_health_bar,
+    draw_species_health_bar,
+    grant_fauna_combat_rewards,
+    start_entity_combat,
+    stop_entity_combat,
+    update_entity_combat,
+)
 
 _WATER_BIOME_IDS = {1, 3, 4}
 _AUTO_HARVESTABLE_PROP_IDS = {
@@ -67,19 +90,11 @@ class Phase1:
         self.event_manager = EventManager()
 
         #Météo
-        self.weather_system = None 
+        self.weather_system = None
+        self.weather_vfx = WeatherVFXController()
         self.weather_icons: dict[str, pygame.Surface] = {}
         self._load_weather_icons()
         self.prop_descriptions = self._load_prop_descriptions()
-        self._weather_vfx_particles: dict[str, list[dict]] = {
-            "rain": [],
-            "snow": [],
-            "sand": [],
-        }
-        self._weather_vfx_time = 0.0
-        self._weather_flash_timer = 0.0
-        self._weather_flash_alpha = 0
-        self._weather_last_condition_id = None
         self.tech_tree = TechTreeManager(
             resource_path("Game/data/tech_tree.json"),
             on_unlock=self._on_tech_unlocked,
@@ -92,12 +107,6 @@ class Phase1:
         self._daily_stats: list[dict] = []
         self._stats_current_day = {}
         self._run_stats = {}
-        self._game_end_summary = None
-        self._game_end_xp = 0
-        self._gameplay_ready = False
-        self.session_time_seconds = 0.0
-        self._game_end_pending = False
-        self._game_end_reason = None
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
@@ -170,9 +179,6 @@ class Phase1:
         self._perf_logs_enabled = True
         self._perf_slow_frame_sec = 0.12
         self._perf_trace_frames = 0
-        self.session_time_seconds = 0.0
-        self._game_end_pending = False
-        self._game_end_reason = None
 
     def _perf_enter_start(self, source: str):
         now = time.perf_counter()
@@ -274,11 +280,8 @@ class Phase1:
         self.death_response_mode = None
         self.food_reserve_capacity = 100
         self.weather_system = None
-        self._weather_vfx_particles = {"rain": [], "snow": [], "sand": []}
-        self._weather_vfx_time = 0.0
-        self._weather_flash_timer = 0.0
-        self._weather_flash_alpha = 0
-        self._weather_last_condition_id = None
+        if self.weather_vfx:
+            self.weather_vfx.reset()
         self.tech_tree = TechTreeManager(
             resource_path("Game/data/tech_tree.json"),
             on_unlock=self._on_tech_unlocked,
@@ -399,26 +402,7 @@ class Phase1:
 
     @staticmethod
     def _collect_species_stats(species) -> dict:
-        """Récupère les stats de base d'une espèce"""
-        if not species:
-            return {}
-        categories = {
-            "physique": dict(getattr(species, "base_physique", {}) or {}),
-            "sens": dict(getattr(species, "base_sens", {}) or {}),
-            "mental": dict(getattr(species, "base_mental", {}) or {}),
-            "social": dict(getattr(species, "base_social", {}) or {}),
-            "environnement": dict(getattr(species, "base_environnement", {}) or {}),
-            "genetique": dict(getattr(species, "genetique", {}) or {}),
-        }
-        cleaned = {}
-        for cat, values in categories.items():
-            cleaned[cat] = {}
-            for key, value in values.items():
-                if isinstance(value, (int, float)):
-                    cleaned[cat][str(key)] = float(value)
-                else:
-                    cleaned[cat][str(key)] = value
-        return cleaned
+        return collect_species_stats(species)
     
     def _attach_phase_to_entities(self):
         """Facilite l'accès aux systèmes (A REVOIR)"""
@@ -457,45 +441,10 @@ class Phase1:
             self.weather_icons[condition.name] = scaled_sprite
 
     def _load_prop_descriptions(self, path: str = "Game/data/props_descriptions.json") -> dict:
-        """Charge les descriptions des props depuis le fichier JSON."""
-        data = {"by_id": {}}
-    
-        with open(resource_path(path), "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        
-        by_id = {}
-        raw_by_id = payload.get("by_id") if isinstance(payload, dict) else None
-        if isinstance(raw_by_id, dict):
-            for key, value in raw_by_id.items():
-                if not isinstance(value, dict):
-                    continue
-                pid = str(key).strip()
-                if not pid:
-                    continue
-                by_id[pid] = {
-                    "name": str(value.get("name", "") or "").strip(),
-                    "description": str(value.get("description", "") or "").strip(),
-                }
-        elif isinstance(payload, dict) and isinstance(payload.get("props"), list):
-            for item in payload.get("props") or []:
-                if not isinstance(item, dict):
-                    continue
-                pid = item.get("id")
-                if pid is None:
-                    continue
-                pid = str(pid).strip()
-                by_id[pid] = {
-                    "name": str(item.get("name", "") or "").strip(),
-                    "description": str(item.get("description", "") or "").strip(),
-                }
-
-        data["by_id"] = by_id
-        return data
+        return load_prop_descriptions(path)
 
     def _get_prop_description_entry(self, pid: int):
-        """Récupère la description d'un prop à partir de son ID"""
-        by_id = (self.prop_descriptions or {}).get("by_id", {})
-        return by_id.get(str(int(pid)))
+        return get_prop_description_entry(self.prop_descriptions, pid)
 
     def _ensure_weather_system(self):
         """Initialise la météo si un monde est présent."""
@@ -517,192 +466,13 @@ class Phase1:
             seed=seed,
         )
 
-    def _reset_weather_vfx_if_needed(self, condition_id: str ):
-        """Réinitialise les effets visuels de la météo si elle a changé"""
-        if condition_id == self._weather_last_condition_id:
-            return
-        self._weather_last_condition_id = condition_id
-        self._weather_vfx_particles["rain"].clear()
-        self._weather_vfx_particles["snow"].clear()
-        self._weather_vfx_particles["sand"].clear()
-        self._weather_flash_timer = 0.0
-        self._weather_flash_alpha = 0
-
     def _update_weather_vfx(self, dt: float):
-        """Update les particules et effets visuels de la météo actuelle (A REVOIR)"""
-        if not self.weather_system:
-            return
-
-        weather_info = self.weather_system.get_weather_info()
-        condition_id = weather_info.get("id")
-        self._reset_weather_vfx_if_needed(condition_id)
-        self._weather_vfx_time += max(0.0, dt)
-
-        w, h = self.screen.get_size()
-        area_scale = max(0.55, min(2.0, (w * h) / (1280 * 720)))
-
-        rain_target = 0
-        snow_target = 0
-        sand_target = 0
-
-        if condition_id == "rain":
-            rain_target = int(150 * area_scale)
-        elif condition_id == "heavy_rain":
-            rain_target = int(250 * area_scale)
-        elif condition_id == "storm":
-            rain_target = int(320 * area_scale)
-        elif condition_id == "snow":
-            snow_target = int(120 * area_scale)
-        elif condition_id == "blizzard":
-            snow_target = int(230 * area_scale)
-        elif condition_id == "sandstorm":
-            sand_target = int(220 * area_scale)
-
-        rain_particles = self._weather_vfx_particles["rain"]
-        while len(rain_particles) < rain_target:
-            rain_particles.append({
-                "x": random.uniform(-w * 0.2, w * 1.2),
-                "y": random.uniform(-h, 0),
-                "vx": random.uniform(-140.0, -40.0),
-                "vy": random.uniform(620.0, 980.0),
-                "length": random.uniform(8.0, 20.0),
-                "width": random.choice((1, 1, 1, 2)),
-            })
-        del rain_particles[rain_target:]
-
-        for p in rain_particles:
-            p["x"] += p["vx"] * dt
-            p["y"] += p["vy"] * dt
-            if p["y"] > h + 24 or p["x"] < -w * 0.3:
-                p["x"] = random.uniform(-w * 0.2, w * 1.2)
-                p["y"] = random.uniform(-h * 0.35, -8.0)
-
-        snow_particles = self._weather_vfx_particles["snow"]
-        while len(snow_particles) < snow_target:
-            snow_particles.append({
-                "x": random.uniform(0, w),
-                "y": random.uniform(-h, 0),
-                "vx": random.uniform(-30.0, 30.0),
-                "vy": random.uniform(30.0, 80.0),
-                "radius": random.uniform(1.5, 3.8),
-                "phase": random.uniform(0.0, math.tau),
-            })
-        del snow_particles[snow_target:]
-
-        for p in snow_particles:
-            p["x"] += (p["vx"] + math.sin(self._weather_vfx_time * 1.6 + p["phase"]) * 18.0) * dt
-            p["y"] += p["vy"] * dt
-            if p["y"] > h + 8:
-                p["y"] = random.uniform(-h * 0.3, -6.0)
-                p["x"] = random.uniform(0, w)
-            elif p["x"] < -12:
-                p["x"] = w + 12
-            elif p["x"] > w + 12:
-                p["x"] = -12
-
-        sand_particles = self._weather_vfx_particles["sand"]
-        while len(sand_particles) < sand_target:
-            sand_particles.append({
-                "x": random.uniform(-w, 0),
-                "y": random.uniform(0, h),
-                "vx": random.uniform(260.0, 440.0),
-                "vy": random.uniform(-20.0, 20.0),
-                "length": random.uniform(10.0, 18.0),
-            })
-        del sand_particles[sand_target:]
-
-        for p in sand_particles:
-            p["x"] += p["vx"] * dt
-            p["y"] += p["vy"] * dt
-            if p["x"] > w + 20:
-                p["x"] = random.uniform(-w * 0.35, -8.0)
-                p["y"] = random.uniform(0, h)
-            elif p["y"] < -8 or p["y"] > h + 8:
-                p["y"] = random.uniform(0, h)
-
-        if condition_id == "storm":
-            if self._weather_flash_timer > 0.0:
-                self._weather_flash_timer -= dt
-                self._weather_flash_alpha = max(0, int(self._weather_flash_alpha * 0.88))
-            elif random.random() < min(0.35 * max(dt, 0.0), 0.2):
-                self._weather_flash_timer = random.uniform(0.05, 0.18)
-                self._weather_flash_alpha = random.randint(120, 185)
-        else:
-            self._weather_flash_timer = 0.0
-            self._weather_flash_alpha = 0
+        if self.weather_vfx:
+            self.weather_vfx.update(dt, self.weather_system, self.screen.get_size())
 
     def _draw_weather_effects(self, screen: pygame.Surface):
-        """Dessine les effets visuels de la météo actuelle par-dessus le rendu du monde (A REVOIR)"""
-        if not self.weather_system:
-            return
-
-        condition_id = self.weather_system.get_weather_info().get("id")
-        if not condition_id:
-            return
-
-        w, h = screen.get_size()
-        fx = pygame.Surface((w, h), pygame.SRCALPHA)
-
-        if condition_id in ("rain", "heavy_rain", "storm"):
-            rain_color = (160, 185, 220, 150 if condition_id == "rain" else 180)
-            for p in self._weather_vfx_particles["rain"]:
-                x0 = int(p["x"])
-                y0 = int(p["y"])
-                x1 = int(p["x"] + (p["vx"] / max(p["vy"], 1.0)) * p["length"])
-                y1 = int(p["y"] + p["length"])
-                pygame.draw.line(fx, rain_color, (x0, y0), (x1, y1), int(p["width"]))
-            if condition_id in ("heavy_rain", "storm"):
-                fx.fill((16, 24, 36, 28), special_flags=pygame.BLEND_RGBA_ADD)
-
-        if condition_id in ("snow", "blizzard"):
-            for p in self._weather_vfx_particles["snow"]:
-                pygame.draw.circle(
-                    fx,
-                    (245, 248, 255, 190 if condition_id == "blizzard" else 160),
-                    (int(p["x"]), int(p["y"])),
-                    max(1, int(p["radius"])),
-                )
-            if condition_id == "blizzard":
-                fx.fill((210, 220, 235, 40))
-
-        if condition_id == "sandstorm":
-            fx.fill((165, 120, 65, 58))
-            for p in self._weather_vfx_particles["sand"]:
-                x0 = int(p["x"])
-                y0 = int(p["y"])
-                x1 = int(p["x"] + p["length"])
-                y1 = int(p["y"] + p["length"] * 0.06)
-                pygame.draw.line(fx, (225, 185, 120, 140), (x0, y0), (x1, y1), 2)
-
-        if condition_id == "fog":
-            fx.fill((208, 220, 228, 74))
-            for i in range(4):
-                y = int((i + 0.2) * (h / 4) + math.sin(self._weather_vfx_time * 0.35 + i * 0.9) * 24)
-                band_h = int(h * 0.22)
-                pygame.draw.ellipse(
-                    fx,
-                    (228, 236, 242, 36),
-                    (-int(w * 0.12), y, int(w * 1.25), band_h),
-                )
-
-        if condition_id == "heatwave":
-            fx.fill((255, 188, 118, 22))
-            for y in range(0, h, 7):
-                shift = int(math.sin(self._weather_vfx_time * 4.0 + y * 0.028) * 4)
-                pygame.draw.line(fx, (255, 218, 165, 18), (0 + shift, y), (w + shift, y), 1)
-
-        if condition_id == "cloudy":
-            fx.fill((86, 96, 112, 18))
-
-        if condition_id == "storm":
-            fx.fill((10, 14, 24, 44))
-
-        screen.blit(fx, (0, 0))
-
-        if self._weather_flash_alpha > 0:
-            flash = pygame.Surface((w, h), pygame.SRCALPHA)
-            flash.fill((236, 244, 255, self._weather_flash_alpha))
-            screen.blit(flash, (0, 0))
+        if self.weather_vfx:
+            self.weather_vfx.draw(screen, self.weather_system)
 
     def _init_craft_unlocks(self):
         """Initialise l'ensemble des crafts accessibles par défaut."""
@@ -851,298 +621,34 @@ class Phase1:
         return speed
 
     def _clear_entity_combat_refs(self, ent):
-        self._ensure_move_runtime(ent)
-        ent._combat_target = None
-        ent._combat_attack_cd = 0.0
-        ent._combat_repath_cd = 0.0
-        ent._combat_anchor = None
+        clear_entity_combat_refs(self, ent)
 
     def _stop_entity_combat(self, ent, stop_motion: bool = True):
-        self._clear_entity_combat_refs(ent)
-        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
-            return
-        if ent.ia.get("etat") == "combat":
-            ent.ia["etat"] = "idle"
-            ent.ia["objectif"] = None
-            ent.ia["order_action"] = None
-            ent.ia["target_craft_id"] = None
-        if stop_motion:
-            ent.move_path = []
-            ent._move_from = (float(ent.x), float(ent.y))
-            ent._move_to = None
-            ent._move_t = 0.0
+        stop_entity_combat(self, ent, stop_motion=stop_motion)
 
     def _start_entity_combat(self, attacker, target) -> bool:
-        if not attacker or not target:
-            return False
-        if attacker is target:
-            return False
-        if attacker not in self.entities or target not in self.entities:
-            return False
-        if getattr(attacker, "is_egg", False):
-            return False
-        if getattr(target, "is_egg", False):
-            return False
-        if not hasattr(attacker, "ia") or not isinstance(attacker.ia, dict):
-            return False
-        if getattr(target, "_dead_processed", False) or target.jauges.get("sante", 0) <= 0:
-            return False
-
-        attacker_is_fauna = bool(getattr(attacker, "is_fauna", False))
-        attacker_is_aggressive = bool(getattr(attacker, "is_aggressive", False))
-        target_is_fauna = bool(getattr(target, "is_fauna", False))
-
-        if attacker_is_fauna and not attacker_is_aggressive:
-            return False
-        if attacker_is_aggressive:
-            if target_is_fauna:
-                return False
-        else:
-            if not target_is_fauna:
-                return False
-
-        self._ensure_move_runtime(attacker)
-        if hasattr(attacker, "comportement"):
-            attacker.comportement.cancel_work("combat_start")
-        attacker.ia["etat"] = "combat"
-        attacker.ia["objectif"] = ("combat", (int(target.x), int(target.y)))
-        attacker.ia["order_action"] = None
-        attacker.ia["target_craft_id"] = None
-        attacker._combat_target = target
-        attacker._combat_attack_cd = 0.0
-        attacker._combat_repath_cd = 0.0
-        attacker._combat_anchor = (float(attacker.x), float(attacker.y))
-        return True
+        return start_entity_combat(self, attacker, target)
 
     def _combat_attack_interval(self, attacker) -> float:
-        speed = float(getattr(attacker, "physique", {}).get("vitesse", 3) or 3)
-        agilite = float(getattr(attacker, "combat", {}).get("agilite", 0) or 0)
-        base = max(0.35, 1.2 - speed * 0.05 - agilite * 0.01)
-        combat = getattr(attacker, "combat", {}) or {}
-        atk_speed = combat.get("attaque_speed", combat.get("attack_speed", None))
-        try:
-            atk_speed = float(atk_speed) if atk_speed is not None else None
-        except Exception:
-            atk_speed = None
-        if atk_speed is not None and atk_speed > 0:
-            return max(0.2, base / atk_speed)
-        return base
+        return combat_attack_interval(attacker)
 
     def _combat_attack_range(self, attacker) -> float:
-        taille = float(getattr(attacker, "physique", {}).get("taille", 3) or 3)
-        return max(0.85, 0.75 + taille * 0.06)
+        return combat_attack_range(attacker)
 
     def _combat_damage(self, attacker, target) -> float:
-        physique = getattr(attacker, "physique", {}) or {}
-        force = float(physique.get("force", 1) or 1)
-        speed = float(physique.get("vitesse", 1) or 1)
-        taille = float(physique.get("taille", 1) or 1)
-        combat = getattr(attacker, "combat", {}) or {}
-        melee = float(combat.get("attaque_melee", 0) or 0)
-        attack_bonus = float(combat.get("attaque", combat.get("attack", 0)) or 0)
-        defense = float(getattr(target, "combat", {}).get("defense", 0) or 0)
-
-        raw = 1.0 + force * 1.4 + speed * 0.55 + taille * 0.2 + melee * 0.05 + attack_bonus
-        reduced = raw - defense * 0.2
-        dmg = max(1.0, reduced)
-        return dmg * random.uniform(0.9, 1.1)
+        return combat_damage(attacker, target)
 
     def _grant_fauna_combat_rewards(self, attacker, target):
-        if not attacker or not target:
-            return
-        if getattr(target, "_combat_loot_granted", False):
-            return
-        target._combat_loot_granted = True
-        if getattr(target, "is_fauna", False) and self._is_player_species_entity(attacker):
-            self._run_stats["animals_killed"] = int(self._run_stats.get("animals_killed", 0) or 0) + 1
-            self._stats_current_day["animals_killed"] = int(self._stats_current_day.get("animals_killed", 0) or 0) + 1
-
-        physique = getattr(target, "physique", {}) or {}
-        taille = float(physique.get("taille", 2) or 2)
-        endurance = float(physique.get("endurance", 3) or 3)
-        xp_gain = max(8, int(round(endurance * 5 + taille * 2)))
-        attacker.add_xp(xp_gain)
-
-        meat_qty = max(1, int(round(taille * 0.7 + endurance * 0.35 + random.uniform(0.2, 1.2))))
-        leather_qty = int(taille // 3)
-        if random.random() < 0.55:
-            leather_qty += 1
-
-        drops = [("meat", meat_qty)]
-        if leather_qty > 0:
-            drops.append(("leather", leather_qty))
-
-        gained: list[str] = []
-        for item_id, qty in drops:
-            taken = 0
-            if hasattr(attacker, "comportement") and hasattr(attacker.comportement, "_add_to_inventory"):
-                try:
-                    taken = int(attacker.comportement._add_to_inventory(item_id, int(qty)))
-                except Exception:
-                    taken = 0
-            if taken > 0:
-                gained.append(f"{item_id} x{taken}")
-
-        add_notification(f"{attacker.nom} a vaincu {target.nom} (+{xp_gain} XP espèce).")
-        if gained:
-            add_notification("Butin récupéré : " + ", ".join(gained))
+        grant_fauna_combat_rewards(self, attacker, target)
 
     def _update_entity_combat(self, ent, dt: float):
-        if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
-            return
-        self._ensure_move_runtime(ent)
-
-        if ent.ia.get("etat") != "combat":
-            if ent._combat_target is not None:
-                self._clear_entity_combat_refs(ent)
-            return
-
-        if getattr(ent, "is_fauna", False) and not getattr(ent, "is_aggressive", False):
-            self._stop_entity_combat(ent)
-            return
-
-        target = ent._combat_target
-        if (
-            target is None
-            or target is ent
-            or target not in self.entities
-        ):
-            self._stop_entity_combat(ent)
-            return
-        if getattr(ent, "is_aggressive", False):
-            if getattr(target, "is_fauna", False) or getattr(target, "is_egg", False):
-                self._stop_entity_combat(ent)
-                return
-        else:
-            if not getattr(target, "is_fauna", False):
-                self._stop_entity_combat(ent)
-                return
-        if getattr(target, "_dead_processed", False) or target.jauges.get("sante", 0) <= 0:
-            self._stop_entity_combat(ent)
-            return
-
-        chase_limit = float(getattr(ent, "chase_distance", 0.0) or 0.0)
-        if chase_limit > 0.0 and getattr(ent, "is_aggressive", False):
-            anchor = getattr(ent, "_combat_anchor", None)
-            if anchor is None:
-                ent._combat_anchor = (float(ent.x), float(ent.y))
-                anchor = ent._combat_anchor
-            ax, ay = float(anchor[0]), float(anchor[1])
-            dx_e = float(ent.x) - ax
-            dy_e = float(ent.y) - ay
-            dx_t = float(target.x) - ax
-            dy_t = float(target.y) - ay
-            limit2 = chase_limit * chase_limit
-            if (dx_e * dx_e + dy_e * dy_e) > limit2 or (dx_t * dx_t + dy_t * dy_t) > limit2:
-                self._stop_entity_combat(ent)
-                return
-
-        dist = math.hypot(float(target.x) - float(ent.x), float(target.y) - float(ent.y))
-        attack_range = self._combat_attack_range(ent)
-
-        ent._combat_attack_cd = max(0.0, float(ent._combat_attack_cd) - dt)
-
-        if dist <= attack_range:
-            ent.move_path = []
-            ent._move_from = (float(ent.x), float(ent.y))
-            ent._move_to = None
-            ent._move_t = 0.0
-
-            if ent._combat_attack_cd > 0.0:
-                return
-
-            damage = self._combat_damage(ent, target)
-            target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
-            target._last_attacker = ent
-            ent._combat_attack_cd = self._combat_attack_interval(ent)
-            if hasattr(ent, "attack_anim_ms"):
-                ent._attack_anim_until_ms = pygame.time.get_ticks() + int(ent.attack_anim_ms)
-
-            if target.jauges.get("sante", 0) <= 0:
-                if not getattr(ent, "is_fauna", False) and getattr(target, "is_fauna", False):
-                    self._grant_fauna_combat_rewards(ent, target)
-                self._stop_entity_combat(ent)
-            return
-
-        ent._combat_repath_cd = max(0.0, float(ent._combat_repath_cd) - dt)
-        if ent._combat_repath_cd > 0.0:
-            return
-
-        chase_tile = self._find_nearest_walkable(
-            (int(target.x), int(target.y)),
-            max_radius=2,
-            forbidden=self._occupied_tiles(exclude=[ent, target]),
-            ent=ent,
-        )
-        if chase_tile is None:
-            chase_tile = (int(target.x), int(target.y))
-
-        self._apply_entity_order(
-            ent,
-            target=chase_tile,
-            etat="combat",
-            objectif=("combat", (int(target.x), int(target.y))),
-            action_mode=None,
-            craft_id=None,
-        )
-        ent._combat_repath_cd = 0.25
+        update_entity_combat(self, ent, dt)
 
     def _draw_fauna_health_bar(self, screen, ent):
-        if not getattr(ent, "is_fauna", False):
-            return
-        if ent.jauges.get("sante", 0) <= 0:
-            return
-        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
-        if not poly:
-            return
-
-        max_hp = float(getattr(ent, "max_sante", 100) or 100)
-        hp = float(ent.jauges.get("sante", 0) or 0)
-        ratio = max(0.0, min(1.0, hp / max(1.0, max_hp)))
-
-        cx = sum(p[0] for p in poly) / len(poly)
-        top = min(p[1] for p in poly) - 18
-        bar_w, bar_h = 46, 7
-        bg = pygame.Rect(int(cx - bar_w / 2), int(top - bar_h), bar_w, bar_h)
-        fg = bg.inflate(-2, -2)
-        fg.width = int(max(1, fg.width) * ratio)
-
-        surface = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
-        surface.fill((0, 0, 0, 175))
-        screen.blit(surface, (bg.x, bg.y))
-
-        if fg.width > 0:
-            color = (220, 60, 60) if ratio < 0.35 else (235, 170, 60) if ratio < 0.7 else (90, 205, 105)
-            pygame.draw.rect(screen, color, fg, border_radius=2)
+        draw_fauna_health_bar(self, screen, ent)
 
     def _draw_species_health_bar(self, screen, ent):
-        if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
-            return
-        if getattr(ent, "espece", None) != self.espece:
-            return
-        max_hp = float(getattr(ent, "max_sante", 100) or 100)
-        hp = float(ent.jauges.get("sante", 0) or 0)
-        if hp <= 0 or hp >= max_hp:
-            return
-        poly = self.view.tile_surface_poly(int(ent.x), int(ent.y))
-        if not poly:
-            return
-
-        ratio = max(0.0, min(1.0, hp / max(1.0, max_hp)))
-        cx = sum(p[0] for p in poly) / len(poly)
-        top = min(p[1] for p in poly) - 22
-        bar_w, bar_h = 48, 6
-        bg = pygame.Rect(int(cx - bar_w / 2), int(top - bar_h), bar_w, bar_h)
-        fg = bg.inflate(-2, -2)
-        fg.width = int(max(1, fg.width) * ratio)
-
-        surface = pygame.Surface((bg.width, bg.height), pygame.SRCALPHA)
-        surface.fill((0, 0, 0, 165))
-        screen.blit(surface, (bg.x, bg.y))
-
-        if fg.width > 0:
-            color = (220, 80, 80) if ratio < 0.35 else (235, 170, 60) if ratio < 0.7 else (90, 205, 105)
-            pygame.draw.rect(screen, color, fg, border_radius=2)
+        draw_species_health_bar(self, screen, ent)
 
     def _load_mutations_data(self):
         """
@@ -1541,108 +1047,14 @@ class Phase1:
                 self.bottom_hud.refresh_craft_buttons()
 
     # ---------- FAUNE ----------
-    def _rabbit_definition(self):
-        return PassiveFaunaDefinition(
-            species_name="Lapin",
-            entity_name="Lapin",
-            move_speed=2.1,
-            hp=100,
-            vision_range=10.0,
-            flee_distance=6.0,
-            sprite_sheet_idle="rabbit_idle",
-            sprite_sheet_run="rabbit_run",
-            sprite_sheet_frame_size=(32, 32),
-            sprite_base_scale=0.75,
-        )
-    
-    def capybara_definition(self):
-        return PassiveFaunaDefinition(
-            species_name="Capybara",
-            entity_name="Capybara",
-            move_speed=1.1,
-            hp=100,
-            vision_range=4.0,
-            flee_distance=1.0,
-            sprite_sheet_idle="capybara_idle",
-            sprite_sheet_frame_size=(32, 32),
-            sprite_base_scale=0.75,
-        )
-
-    def _scorpion_definition(self):
-        return AggressiveFaunaDefinition(
-            species_name="Scorpion",
-            entity_name="Scorpion",
-            move_speed=3.6,
-            hp=70,
-            vision_range=10.0,
-            flee_distance=0.0,
-            attack=3.0,
-            attack_speed=1.7,
-            sprite_sheet_idle="scorpion_idle",
-            sprite_sheet_frame_size=(32, 32),
-            sprite_base_scale=0.8,
-        )
-    
-    def _champi_definition(self):
-        return AggressiveFaunaDefinition(
-            species_name="Scorpion",
-            entity_name="Scorpion",
-            move_speed=1.6,
-            hp=200,
-            vision_range=6.0,
-            flee_distance=0.0,
-            attack=10.0,
-            attack_speed=0.6,
-            sprite_sheet_idle="champi_idle",
-            sprite_sheet_frame_size=(32, 32),
-            sprite_base_scale=0.8,
-        )
-    
-    def _flamme_definition(self):
-        return AggressiveFaunaDefinition(
-            species_name="Flamme",
-            entity_name="Flamme",
-            move_speed=2.4,
-            hp=30,
-            vision_range=6.0,
-            flee_distance=0.0,
-            attack=20.0,
-            attack_speed=0.1,
-            sprite_sheet_idle="flame_idle",
-            sprite_sheet_frame_size=(32, 32),
-            sprite_base_scale=0.8,
-        )
-
-    def _forest_boss_definition(self):
-        return AggressiveFaunaDefinition(
-            species_name="Slime Tower",
-            entity_name="Slime Tower",
-            move_speed=1.4,
-            hp=300,
-            vision_range=6.0,
-            flee_distance=0.0,
-            attack=15.0,
-            attack_speed=1.2,
-            sprite_sheet_idle="forest_boss_idle",
-            sprite_sheet_frame_size=(48, 48),
-            sprite_base_scale=1,
-        )
+    def _rabbit_definition(self) -> PassiveFaunaDefinition:
+        return rabbit_definition()
 
     def _fauna_definition_catalog(self) -> dict[str, PassiveFaunaDefinition]:
-        return {
-            "lapin": self._rabbit_definition(),
-            "capybara": self.capybara_definition(),
-            "scorpion": self._scorpion_definition(),
-            "champi": self._champi_definition(),
-            "flamme": self._flamme_definition(),
-            "forest_boss": self._forest_boss_definition()
-        }
+        return fauna_definition_catalog()
 
     def get_fauna_definition(self, species_id: str | None) -> Optional[PassiveFaunaDefinition]:
-        if not species_id:
-            return None
-        key = str(species_id).strip().lower()
-        return self._fauna_definition_catalog().get(key)
+        return resolve_fauna_definition(species_id)
 
     def _init_fauna_species(self, definition: PassiveFaunaDefinition | None = None):
         if definition is None:
@@ -3726,4 +3138,3 @@ class Phase1:
             
         except Exception as e:
             print(f"[Weather] Erreur affichage HUD: {e}")
-

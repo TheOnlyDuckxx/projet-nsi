@@ -397,5 +397,753 @@
         "categorie": "physique",
         "phase": 1,
         "base": false
+    },
+    "gigantisme": {
+        "nom": "Gigantisme",
+        "description": "Croissance corporelle majeure : plus de force et de réserve, mais moins de vitesse.",
+        "effets": {
+            "physique": {
+                "taille": 2,
+                "force": 3,
+                "endurance": 1,
+                "vitesse": -1,
+                "stockage_energetique": 1,
+                "weight_limit": 8
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "nanisme_agile"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "nanisme_agile": {
+        "nom": "Nanisme agile",
+        "description": "Gabarit réduit favorisant discrétion et mobilité.",
+        "effets": {
+            "physique": {
+                "taille": -2,
+                "vitesse": 2,
+                "force": -1
+            },
+            "mental": {
+                "dexterite": 2
+            },
+            "environnement": {
+                "discretion": 2
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "gigantisme"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "musculature_dense": {
+        "nom": "Musculature dense",
+        "description": "Masse musculaire compacte augmentant la puissance brute.",
+        "effets": {
+            "physique": {
+                "force": 4,
+                "weight_limit": 6,
+                "vitesse": -1
+            },
+            "environnement": {
+                "resistance_chaleur": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "ossature_legere"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "ossature_legere": {
+        "nom": "Ossature légère",
+        "description": "Structure osseuse allégée, idéale pour les déplacements rapides.",
+        "effets": {
+            "physique": {
+                "vitesse": 2,
+                "endurance": 1,
+                "force": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "musculature_dense",
+            "Carapace",
+            "armure_naturelle"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "tendons_elastiques": {
+        "nom": "Tendons élastiques",
+        "description": "Impulsions plus violentes et esquives plus fluides.",
+        "effets": {
+            "physique": {
+                "vitesse": 2,
+                "endurance": -1
+            },
+            "combat": {
+                "agilite": 3
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "metabolisme_econome": {
+        "nom": "Métabolisme économe",
+        "description": "Consommation d'énergie réduite, meilleure tenue dans la durée.",
+        "effets": {
+            "physique": {
+                "stockage_energetique": 3,
+                "endurance": 1,
+                "vitesse": -1
+            },
+            "mental": {
+                "agressivite": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "metabolisme_explosif"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "metabolisme_explosif": {
+        "nom": "Métabolisme explosif",
+        "description": "Performances maximales sur de courtes périodes.",
+        "effets": {
+            "physique": {
+                "vitesse": 2,
+                "force": 1,
+                "stockage_energetique": -2
+            },
+            "mental": {
+                "agressivite": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "metabolisme_econome"
+        ],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "poumons_hypertrophies": {
+        "nom": "Poumons hypertrophiés",
+        "description": "Capacité respiratoire améliorée pour les efforts prolongés.",
+        "effets": {
+            "physique": {
+                "endurance": 3,
+                "vitesse de nage": 1
+            },
+            "environnement": {
+                "resistance_aux_maladies": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "physique",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "branchies_semiaquatiques": {
+        "nom": "Branchies semi-aquatiques",
+        "description": "Transition vers un mode de vie amphibie.",
+        "effets": {
+            "physique": {
+                "vitesse de nage": 4
+            },
+            "environnement": {
+                "resistance_secheresse": -2,
+                "resistance_froid": -1
+            }
+        },
+        "conditions": [
+            "poumons_hypertrophies"
+        ],
+        "incompatibles": [
+            "tolerance_secheresse"
+        ],
+        "categorie": "environnement",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "graisse_isolante": {
+        "nom": "Graisse isolante",
+        "description": "Couche thermique protectrice contre les milieux froids.",
+        "effets": {
+            "environnement": {
+                "resistance_froid": 4,
+                "resistance_chaleur": -2,
+                "resistance_secheresse": 1
+            },
+            "physique": {
+                "vitesse": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "thermophilie"
+        ],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "thermoregulation_active": {
+        "nom": "Thermorégulation active",
+        "description": "Régulation interne de la température sur une large plage climatique.",
+        "effets": {
+            "physique": {
+                "temperature_corporelle": 0.5,
+                "stockage_energetique": -1
+            },
+            "environnement": {
+                "resistance_froid": 2,
+                "resistance_chaleur": 2
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "environnement",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "cryoprotection": {
+        "nom": "Cryoprotection",
+        "description": "Fluides corporels adaptés aux grands froids.",
+        "effets": {
+            "environnement": {
+                "resistance_froid": 5,
+                "resistance_chaleur": -2
+            },
+            "physique": {
+                "vitesse": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "thermophilie"
+        ],
+        "categorie": "environnement",
+        "phase": 2,
+        "base": false,
+        "rarete": "rare"
+    },
+    "thermophilie": {
+        "nom": "Thermophilie",
+        "description": "Tolérance extrême à la chaleur et aux zones arides.",
+        "effets": {
+            "environnement": {
+                "resistance_chaleur": 5,
+                "resistance_froid": -3
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "cryoprotection",
+            "graisse_isolante"
+        ],
+        "categorie": "environnement",
+        "phase": 2,
+        "base": false,
+        "rarete": "rare"
+    },
+    "tolerance_secheresse": {
+        "nom": "Tolérance à la sécheresse",
+        "description": "Capacité à survivre avec peu d'eau.",
+        "effets": {
+            "environnement": {
+                "resistance_secheresse": 4
+            },
+            "physique": {
+                "stockage_energetique": 1,
+                "vitesse": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "branchies_semiaquatiques"
+        ],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "foie_filtreur": {
+        "nom": "Foie filtreur",
+        "description": "Détoxification avancée contre poisons et contaminants.",
+        "effets": {
+            "environnement": {
+                "resistance_toxines": 4
+            },
+            "physique": {
+                "endurance": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "peau_antifongique": {
+        "nom": "Peau antifongique",
+        "description": "Barrière cutanée plus résistante aux infections.",
+        "effets": {
+            "environnement": {
+                "resistance_aux_maladies": 4,
+                "resistance_secheresse": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "mimetisme": {
+        "nom": "Mimétisme",
+        "description": "Capacité à se fondre dans l'environnement.",
+        "effets": {
+            "environnement": {
+                "discretion": 4
+            },
+            "social": {
+                "charisme": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "pigments_alerte"
+        ],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "pigments_alerte": {
+        "nom": "Pigments d'alerte",
+        "description": "Coloration vive dissuasive et intimidante.",
+        "effets": {
+            "mental": {
+                "intimidation": 2
+            },
+            "environnement": {
+                "discretion": -3,
+                "resistance_toxines": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "mimetisme"
+        ],
+        "categorie": "environnement",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "echolocalisation_active": {
+        "nom": "Echolocalisation active",
+        "description": "Perception de l'espace par émission et retour d'ondes.",
+        "effets": {
+            "sens": {
+                "echolocalisation": 25,
+                "vision": -1
+            },
+            "environnement": {
+                "discretion": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "Aveugle"
+        ],
+        "categorie": "sens",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "moustaches_sensorielles": {
+        "nom": "Moustaches sensorielles",
+        "description": "Détection fine des obstacles et mouvements proches.",
+        "effets": {
+            "sens": {
+                "toucher": 3
+            },
+            "environnement": {
+                "discretion": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [],
+        "categorie": "sens",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "vision_panoramique_evoluee": {
+        "nom": "Vision panoramique évoluée",
+        "description": "Champ visuel élargi pour repérer rapidement les menaces.",
+        "effets": {
+            "sens": {
+                "vision": 4
+            },
+            "environnement": {
+                "detection_visuelle": 10
+            }
+        },
+        "conditions": [
+            "Vision Panoramique"
+        ],
+        "incompatibles": [
+            "Vision Stéréoscopique"
+        ],
+        "categorie": "sens",
+        "phase": 2,
+        "base": false,
+        "rarete": "rare"
+    },
+    "cortex_developpe": {
+        "nom": "Cortex développé",
+        "description": "Traitement cognitif avancé et meilleure résolution de problèmes.",
+        "effets": {
+            "mental": {
+                "intelligence": 4,
+                "creativite": 2,
+                "independance": 1,
+                "sociabilite": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "hyper_agressivite"
+        ],
+        "categorie": "mental",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "hyper_agressivite": {
+        "nom": "Hyper-agressivité",
+        "description": "Réponse offensive immédiate en contexte de conflit.",
+        "effets": {
+            "mental": {
+                "agressivite": 4,
+                "courage": 1,
+                "empathie": -2,
+                "sociabilite": -2
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "temperament_pacifique",
+            "cortex_developpe"
+        ],
+        "categorie": "mental",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "temperament_pacifique": {
+        "nom": "Tempérament pacifique",
+        "description": "Coopération et désescalade préférées à l'affrontement.",
+        "effets": {
+            "mental": {
+                "agressivite": -3,
+                "empathie": 3
+            },
+            "social": {
+                "charisme": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "hyper_agressivite",
+            "carnivore"
+        ],
+        "categorie": "mental",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "langage_riche": {
+        "nom": "Langage riche",
+        "description": "Communication nuancée favorisant transmission culturelle et organisation.",
+        "effets": {
+            "social": {
+                "communication": 4,
+                "cohesion": 2,
+                "charisme": 1
+            },
+            "mental": {
+                "independance": -1
+            }
+        },
+        "conditions": [
+            "cortex_developpe"
+        ],
+        "incompatibles": [],
+        "categorie": "social",
+        "phase": 3,
+        "base": false,
+        "rarete": "legendaire"
+    },
+    "esprit_de_meute": {
+        "nom": "Esprit de meute",
+        "description": "Instinct collectif renforcé pour agir en groupe.",
+        "effets": {
+            "social": {
+                "cohesion": 4,
+                "fidelite": 2
+            },
+            "mental": {
+                "independance": -2
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "nomadisme"
+        ],
+        "categorie": "social",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "alpha_naturel": {
+        "nom": "Alpha naturel",
+        "description": "Autorité instinctive et domination sociale.",
+        "effets": {
+            "social": {
+                "charisme": 2
+            },
+            "mental": {
+                "intimidation": 3,
+                "agressivite": 1,
+                "empathie": -1
+            }
+        },
+        "conditions": [
+            "esprit_de_meute"
+        ],
+        "incompatibles": [
+            "temperament_pacifique"
+        ],
+        "categorie": "social",
+        "phase": 2,
+        "base": false,
+        "rarete": "rare"
+    },
+    "nomadisme": {
+        "nom": "Nomadisme",
+        "description": "Mobilité élevée au prix d'une moindre stabilité collective.",
+        "effets": {
+            "mental": {
+                "independance": 2
+            },
+            "social": {
+                "cohesion": -2
+            },
+            "environnement": {
+                "adaptabilite": 2
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "esprit_de_meute"
+        ],
+        "categorie": "social",
+        "phase": 1,
+        "base": false,
+        "rarete": "commun"
+    },
+    "fertilite_accrue": {
+        "nom": "Fertilité accrue",
+        "description": "Taux de reproduction supérieur, avec coût physiologique.",
+        "effets": {
+            "genetique": {
+                "taux_reproduction": 0.4
+            },
+            "physique": {
+                "endurance": -1,
+                "stockage_energetique": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "stabilite_genetique"
+        ],
+        "categorie": "genetique",
+        "phase": 1,
+        "base": false,
+        "rarete": "rare"
+    },
+    "mutagene": {
+        "nom": "Mutagène",
+        "description": "Génome plus instable, favorisant l'apparition de nouvelles variations.",
+        "effets": {
+            "genetique": {
+                "mutation_rate": 0.1
+            },
+            "environnement": {
+                "resistance_aux_maladies": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "stabilite_genetique"
+        ],
+        "categorie": "genetique",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "stabilite_genetique": {
+        "nom": "Stabilité génétique",
+        "description": "Transmission plus fiable des traits et résistance aux dérives.",
+        "effets": {
+            "genetique": {
+                "mutation_rate": -0.05
+            },
+            "environnement": {
+                "resistance_aux_maladies": 1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "mutagene",
+            "fertilite_accrue"
+        ],
+        "categorie": "genetique",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "predateur_sprinteur": {
+        "nom": "Prédateur sprinteur",
+        "description": "Explosivité offensive pour des attaques rapides et létales.",
+        "effets": {
+            "physique": {
+                "vitesse": 2,
+                "endurance": -1
+            },
+            "mental": {
+                "agressivite": 2
+            }
+        },
+        "conditions": [
+            "hyper_agressivite",
+            "metabolisme_explosif"
+        ],
+        "incompatibles": [
+            "temperament_pacifique"
+        ],
+        "categorie": "combat",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "armure_naturelle": {
+        "nom": "Armure naturelle",
+        "description": "Renforcement cutané augmentant fortement la défense.",
+        "effets": {
+            "combat": {
+                "defense": 10
+            },
+            "physique": {
+                "vitesse": -2
+            }
+        },
+        "conditions": [
+            "Carapace"
+        ],
+        "incompatibles": [
+            "ossature_legere",
+            "esquive_instinctive"
+        ],
+        "categorie": "combat",
+        "phase": 2,
+        "base": false,
+        "rarete": "epique"
+    },
+    "esquive_instinctive": {
+        "nom": "Esquive instinctive",
+        "description": "Réflexes avancés pour éviter les coups en mêlée.",
+        "effets": {
+            "physique": {
+                "vitesse": 1
+            },
+            "mental": {
+                "dexterite": 2
+            },
+            "combat": {
+                "agilite": 6
+            }
+        },
+        "conditions": [
+            "tendons_elastiques"
+        ],
+        "incompatibles": [
+            "armure_naturelle"
+        ],
+        "categorie": "combat",
+        "phase": 2,
+        "base": false,
+        "rarete": "rare"
+    },
+    "adaptation_generaliste": {
+        "nom": "Adaptation généraliste",
+        "description": "Polyvalence accrue dans plusieurs environnements, sans spécialisation extrême.",
+        "effets": {
+            "environnement": {
+                "adaptabilite": 4
+            },
+            "mental": {
+                "intelligence": 1
+            },
+            "physique": {
+                "force": -1
+            },
+            "sens": {
+                "vision": -1
+            }
+        },
+        "conditions": [],
+        "incompatibles": [
+            "predateur_sprinteur",
+            "armure_naturelle"
+        ],
+        "categorie": "environnement",
+        "phase": 2,
+        "base": false,
+        "rarete": "legendaire"
     }
 }
