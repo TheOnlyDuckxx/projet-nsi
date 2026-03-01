@@ -67,6 +67,7 @@ class Comportement:
 
     def _drops_for_prop(self,pid):
         """
+        A METTRE DANS UN JSON A PART :(
         Gère le drop des ressources lors de la récolte
         La table gère le nombre de ressource (entre min et max) et la problabilité (p)
         """

@@ -1,11 +1,19 @@
+# CRAFT.PY
+# Gestion du système de construction du jeu
+
+
+# --------------- IMPORTATION DES MODULES ---------------
+
 import json
 from typing import Dict, List, Tuple, Optional, Callable
 
+# --------------- UTILITAIRES ---------------
 
 def load_crafts(file_path: str) -> Dict:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# --------------- CLASSE PRINCIPALE ---------------
 
 class Craft:
     """
@@ -13,22 +21,17 @@ class Craft:
     - lit les recettes depuis crafts.json
     - vérifie l'inventaire de l'entité
     - consomme les ressources
-    - place le résultat (prop ou item)
+    - place le résultat
     """
 
     def __init__(self, crafts_file: str = "Game/data/crafts.json"):
-        self.crafts: Dict = load_crafts(crafts_file)
+        self.crafts = load_crafts(crafts_file)
 
     def _compute_work_required(self, craft_def: Dict) -> float:
         """
         Évalue la quantité de travail nécessaire pour terminer une construction.
         Basé principalement sur le coût en ressources, avec un minimum pour les crafts gratuits.
         """
-        if "work_required" in craft_def:
-            try:
-                return float(craft_def["work_required"])
-            except Exception:
-                pass
         cost = craft_def.get("cost", {}) or {}
         total_cost = sum(max(0, float(v)) for v in cost.values())
         return float(8.0 + total_cost * 1.5)
@@ -128,7 +131,7 @@ class Craft:
         tile: Optional[Tuple[int, int]] = None,
         notify: Optional[Callable[[str], None]] = None,
         storage: Dict[str, int] | None = None,
-    ) -> Optional[Dict]:
+    ):
         """
         Tente de crafter et de placer le résultat.
         - builder : entité qui porte l'inventaire (builder.carrying)

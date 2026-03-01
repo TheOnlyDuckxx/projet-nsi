@@ -1,11 +1,13 @@
-# Game/core/audio.py
-from __future__ import annotations
+# AUDIO.PY
+# Gère les fichiers audios
 
+# --------------- IMPORTATION DES MODULES ---------------
+from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import pygame
 
-
+# --------------- UTILITAIRES ---------------
 AUDIO_EXTS = {".wav", ".ogg", ".mp3"}
 
 
@@ -27,9 +29,11 @@ class AudioVolumes:
     music: float = 0.8
     sfx: float = 0.9
 
+# --------------- CLASSE PRINCIPALE ---------------
 
 class AudioManager:
     """
+    Fonctionnement similaire a la classe Assets mais pour l'audio
     - Musiques: stocke les chemins (lecture via pygame.mixer.music)
     - SFX: charge en pygame.mixer.Sound
     """
@@ -44,27 +48,24 @@ class AudioManager:
         self.vol = AudioVolumes()
         self._warned_missing: set[str] = set()
 
-        # Petites réservations utiles (optionnel)
+        # Petites réservations utiles (utile plus tard ?)
         self._reserved_channels = {
             "ui": 0,
             "ambient": 1,
         }
 
-    def load_all(self) -> "AudioManager":
-        if not pygame.mixer.get_init():
-            raise RuntimeError("pygame.mixer n'est pas initialisé (mixer.get_init() == None).")
-
+    def load_all(self):
+        """Charge tout les musiques et sfx"""
         pygame.mixer.set_num_channels(self.num_channels)
-
-        # charge / indexe
+        # indexe
         self._load_music_dir(self.base_dir / "music")
         self._load_sfx_dir(self.base_dir / "sfx")
 
-        # applique volumes initiaux
         self.apply_volumes()
         return self
 
-    def _load_music_dir(self, folder: Path) -> None:
+    def _load_music_dir(self, folder):
+        """Charge le dossier des musique et normalise leur chemin en nom"""
         if not folder.exists():
             return
         for p in folder.rglob("*"):
@@ -73,7 +74,8 @@ class AudioManager:
                 key = _norm_key(rel)  # ex: "phase1.day"
                 self.music_paths[key] = str(p.as_posix())
 
-    def _load_sfx_dir(self, folder: Path) -> None:
+    def _load_sfx_dir(self, folder):
+        """Charge les sfx"""
         if not folder.exists():
             return
         for p in folder.rglob("*"):
@@ -82,31 +84,16 @@ class AudioManager:
                 key = _norm_key(rel)  # ex: "ui.click"
                 self.sfx[key] = pygame.mixer.Sound(str(p.as_posix()))
 
-    # -------------------- Volumes --------------------
-
-    def set_volumes(
-        self,
-        *,
-        enabled: bool | None = None,
-        master: float | None = None,
-        music: float | None = None,
-        sfx: float | None = None,
-    ) -> None:
-        if enabled is not None:
-            self.vol.enabled = bool(enabled)
-        if master is not None:
-            self.vol.master = float(max(0.0, min(1.0, master)))
-        if music is not None:
-            self.vol.music = float(max(0.0, min(1.0, music)))
-        if sfx is not None:
-            self.vol.sfx = float(max(0.0, min(1.0, sfx)))
-
+    def set_volumes(self,*,enabled: bool,master: float,music: float,sfx: float):
+        """Initialise les volumes"""
+        self.vol.enabled = bool(enabled)
+        self.vol.master = float(max(0.0, min(1.0, master)))
+        self.vol.music = float(max(0.0, min(1.0, music)))
+        self.vol.sfx = float(max(0.0, min(1.0, sfx)))
         self.apply_volumes()
 
-    def apply_volumes(self) -> None:
-        if not pygame.mixer.get_init():
-            return
-
+    def apply_volumes(self):
+        """Applique les volumes des parametres aux mixer pygame"""
         if not self.vol.enabled:
             pygame.mixer.music.set_volume(0.0)
             for snd in self.sfx.values():
@@ -117,9 +104,9 @@ class AudioManager:
         for snd in self.sfx.values():
             snd.set_volume(self.vol.master * self.vol.sfx)
 
-    # -------------------- Play helpers --------------------
 
-    def play_music(self, key: str, *, loops: int = -1, fade_ms: int = 800, start: float = 0.0) -> None:
+    def play_music(self, key: str, *, loops: int = -1, fade_ms: int = 800, start: float = 0.0):
+        """Joue la musique séléctionnée"""
         if not self.vol.enabled:
             return
         path = self.music_paths.get(key)
@@ -137,13 +124,15 @@ class AudioManager:
         pygame.mixer.music.set_volume(self.vol.master * self.vol.music)
         pygame.mixer.music.play(loops=loops, start=start, fade_ms=fade_ms)
 
-    def stop_music(self, *, fade_ms: int = 600) -> None:
+    def stop_music(self, *, fade_ms: int = 600):
+        """Stoppe la musique avec une transition"""
         try:
             pygame.mixer.music.fadeout(fade_ms)
         except Exception:
             pygame.mixer.music.stop()
 
-    def play_sfx(self, key: str, *, volume: float = 1.0, channel: str | None = None) -> None:
+    def play_sfx(self, key: str, *, volume: float = 1.0, channel: str):
+        """Joue un sfx en respectant le systeme de canaux (pour gerer les priorités)"""
         if not self.vol.enabled:
             return
         snd = self.sfx.get(key)
@@ -164,8 +153,8 @@ class AudioManager:
             ch.set_volume(vol)
             ch.play(snd)
 
-    def _warn_missing(self, name: str) -> None:
-        # évite de spam la console
+    def _warn_missing(self, name: str):
+        """Affiche d'éventuel ressources manquantes mais évite de spam la console :( """
         if name in self._warned_missing:
             return
         self._warned_missing.add(name)

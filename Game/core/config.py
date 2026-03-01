@@ -1,10 +1,12 @@
 # CONFIG.PY
 # Code qui gère les paramètres du jeu et les variables GLOBALES
+
 # --------------- IMPORTATION DES MODULES ---------------
 import copy
 import json
 import os
 import pygame
+
 # --------------- VARIABLES GLOBALES ---------------
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -12,8 +14,7 @@ infoObject = pygame.display.Info()
 WIDTH = infoObject.current_w
 HEIGHT = infoObject.current_h
 FPS = 60
-TITLE = "EvoNSI"
-SCALE = 3  # pour sprites 16px → 48px
+TITLE = "Keystone : The Long Evolution"
 DEFAULTS = {
     "audio": {
         "enabled": True,
@@ -28,15 +29,19 @@ DEFAULTS = {
         "perf_slow_frame_ms": 120
     }
 }
-# --------------- CLASSE QUI GERE LES PARAMETRES PRINCIPAUX ---------------
+
+# --------------- CLASSE PRINCIPALE ---------------
 class Settings:
+    """Gère les parametres de l'utilisateur avec plusieurs fallback robustes"""
+
     def __init__(self, path="Game/data/settings.json"):
         self.path = path
         self.data = {}
         self._listeners = []
         self.load()
-    # Charge les paramètres enregistré dans le fichier .json
+
     def load(self):
+        """Charge les paramètres enregistré dans le fichier .json"""
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         
         if not os.path.exists(self.path):
@@ -56,13 +61,9 @@ class Settings:
                     self.apply_all()
                     return
                 
-                # Charger le JSON
                 loaded_data = json.loads(content)
-                
                 # Fusionner récursivement avec les valeurs par défaut
                 self.data = self._merge_defaults(DEFAULTS, loaded_data)
-                
-                print(f"✓ Configuration chargée depuis {self.path}")
                 
         except json.JSONDecodeError as e:
             print(f"Erreur de lecture du fichier de configuration: {e}")
@@ -77,14 +78,11 @@ class Settings:
         
         self.apply_all()
     
-    # Sauvegarde les paramètres dans le fichier .json
     def save(self):
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            with open(self.path, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Erreur lors de la sauvegarde de la configuration: {e}")
+        """Sauvegarde les paramètres dans le fichier .json"""    
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, indent=2, ensure_ascii=False)
 
     def _merge_defaults(self, defaults, loaded):
         """
@@ -144,8 +142,8 @@ class Settings:
     def on_change(self, callback):
         self._listeners.append(callback)
     
-    # Application des paramètres côté moteur
     def apply(self, path, value):
+        """Sauvegarde les paramètres dans le fichier .json"""
         try:
             if path.startswith("audio."):
                 if pygame.mixer.get_init():
@@ -169,8 +167,8 @@ class Settings:
         except Exception as e:
             print(f"Erreur lors de l'application du paramètre '{path}': {e}")
     
-    # Applique tous les réglages au lancement
     def apply_all(self):
+        """Applique tous les réglages au lancement"""
         try:
             self.apply("audio.master_volume", self.data["audio"]["master_volume"])
             self.apply("video.fullscreen",    self.data["video"]["fullscreen"])

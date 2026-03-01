@@ -3,12 +3,10 @@ from __future__ import annotations
 import pygame
 import math
 from typing import Optional, Tuple
-
-# Fallbacks si helpers indisponibles
 from Game.world.tiles import get_ground_sprite_name
 
 
-def get_prop_sprite_name(pid: int) -> Optional[str]:
+def get_prop_sprite_name(pid: int):
     mapping = {
         8: "prop_tree_3",
         9: "prop_tree_1",
@@ -27,7 +25,6 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         23: "prop_boulder",
         25:"prop_flower2",
         26:"prop_flower3",
-        102: "craft_entrepot",
         28: "prop_blueberry_bush",
         29: "prop_rock",
         30: "prop_rock",
@@ -41,6 +38,19 @@ def get_prop_sprite_name(pid: int) -> Optional[str]:
         38: "prop_bush",
         39: "prop_tree_2",
         40: "prop_reeds",
+
+        #Craft
+        101: "craft_feu_de_camp",
+        102: "craft_entrepot",
+        103: "craft_duck",
+        104: "craft_taniere",
+        105: "craft_farm",
+        106: "craft_spike",
+        # 107: "craft_entrepot",
+        # 108: "craft_entrepot",
+        # 109: "craft_entrepot",
+        # 110: "craft_entrepot",
+        # 111: "craft_entrepot",
     }
     
     return mapping.get(pid, "prop_tree_2")

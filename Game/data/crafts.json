@@ -8,7 +8,8 @@
       "wood": 6,
       "stone": 2,
       "flint": 1
-    }, "conditions":[],
+    }, 
+    "conditions":[],
     "locked": true,
     "interaction": {
       "type": "campfire",
@@ -27,8 +28,7 @@
     "sprite": "craft_entrepot",
     "cost": {
       "wood": 0,
-      "stone": 0,
-      "fiber": 0
+      "stone": 0
     },
     "conditions":[],
     "interaction": {
@@ -47,8 +47,8 @@
     "image": "btn_taniere",
     "sprite": "craft_taniere",
     "cost": {
-      "wood": 14,
-      "stone": 10,
+      "wood": 10,
+      "stone": 3,
       "leather": 4
     },
     "conditions":[],
@@ -58,19 +58,17 @@
     },
     "output": {
       "type": "prop",
-      "pid": 103
+      "pid": 104
     }
   },
 
   "Defense_primitive": {
     "name": "Defense primitive",
     "description": "Pieux et barricades simples pour ralentir les menaces proches.",
-    "image": "defense_primitive",
-    "sprite": "prop_spikes",
+    "image": "craft_spike",
+    "sprite": "craft_spike",
     "cost": {
-      "wood": 20,
-      "stone": 6,
-      "rope": 3
+      "wood": 5
     },
     "conditions":[],
     "interaction": {
@@ -79,7 +77,7 @@
     },
     "output": {
       "type": "prop",
-      "pid": 104
+      "pid": 106
     }
   },
 
@@ -144,7 +142,7 @@
     },
     "output": {
       "type": "prop",
-      "pid": 107
+      "pid": 105
     }
   },
 
@@ -172,11 +170,11 @@
   "Statue_de_canard": {
     "name": "Statue de canard",
     "description": "Totem décoratif. Augmente légèrement le moral/joie du clan (et c'est un canard).",
-    "image": "statue_canard",
-    "sprite": "prop_duck_statue",
+    "image": "craft_duck",
+    "sprite": "craft_duck",
     "cost": {
-      "stone": 16,
-      "clay": 6
+      "stone": 6,
+      "clay": 1
     },
     "conditions":[],
     "interaction": {
@@ -185,7 +183,7 @@
     },
     "output": {
       "type": "prop",
-      "pid": 109
+      "pid": 103
     }
   },
 

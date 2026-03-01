@@ -5,7 +5,6 @@ from Game.gameplay.level_up import LevelUp
 from .mutations import MutationManager
 from .comportement import Comportement
 from .reproduction import ReproductionSystem
-from .sensors import Sensors
 from .sprite_render import EspeceRenderer
 
 
@@ -209,7 +208,6 @@ class Individu:
         self.mutations = espece.mutations
         self.comportement = Comportement(self)
         self.reproduction = espece.reproduction_system
-        self.sensors = Sensors(self)
 
         # === Rendu ===
         self.renderer = EspeceRenderer(self, assets)

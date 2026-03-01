@@ -27,8 +27,9 @@ from Game.ui.menu.menu_end import EndGameScreen
 
 # --------------- CLASSE PRINCIPALE ---------------
 class App:
+    """Classe principale gerant les etats et la boucle de jeu"""
     def __init__(self):
-        pygame.init()
+        pygame.init() #initialise pygame dès le début pour éventuer des bugs lors des appels
 
         # init mixer (au cas où)
         if not pygame.mixer.get_init():
@@ -58,8 +59,6 @@ class App:
             music=float(self.settings.get("audio.music_volume", 0.8)),
             sfx=float(self.settings.get("audio.sfx_volume", 0.9)),
         )
-
-        # si un setting change -> on réapplique volumes
         self.settings.on_change(self._on_setting_changed)
 
         self.selected_base_mutations: list[str] = []
@@ -76,6 +75,7 @@ class App:
         self.change_state("MENU")
 
     def _on_setting_changed(self, path, value):
+        """Applique les parametres après changements"""
         if path.startswith("audio."):
             self.audio.set_volumes(
                 enabled=bool(self.settings.get("audio.enabled", True)),
@@ -84,8 +84,8 @@ class App:
                 sfx=float(self.settings.get("audio.sfx_volume", 0.9)),
             )
 
-    # Définis les "STATES"
     def _register_states(self):
+        """Définit les états possibles de la boucle principale"""
         self.states["MENU"] = MainMenu(self)
         self.states["SAVE_SELECT"] = SaveSelectionMenu(self)
         self.states["OPTIONS"] = OptionsMenu(self)
@@ -98,11 +98,13 @@ class App:
         self.states["END_SCREEN"] = EndGameScreen(self)
     
     def quit_game(self):
+        """Ferme le jeu proprement"""
         if getattr(self, "progression", None):
             self.progression.flush(force=True)
         self.running=False
 
     def _load_cursor(self, image_path: str, hotspot=(0, 0)):
+        """Charge les curseurs customs stockés dans /assets/vfx"""
         key = (image_path, int(hotspot[0]), int(hotspot[1]))
         cached = self._cursor_cache.get(key)
         if cached is not None:
@@ -113,6 +115,7 @@ class App:
         return cursor
 
     def set_cursor_image(self, image_path: str, hotspot=(0, 0)) -> bool:
+        """Applique les changements de curseur avec la fonction set_cursor() de pygame"""
         try:
             cursor = self._load_cursor(image_path, hotspot)
             pygame.mouse.set_cursor(cursor)
@@ -120,9 +123,9 @@ class App:
         except Exception as e:
             print("[Cursor] Erreur set_cursor_image:", e, "path=", image_path)
             return False
-
-    # Permet de changer de "STATES"
+        
     def change_state(self, key, **kwargs):
+        """Change d'état et log dans les perfs si activé"""
         prev_key = self.state_key
         perf_enabled = bool(self.settings.get("debug.perf_logs", True))
         if perf_enabled:
@@ -147,8 +150,8 @@ class App:
         if perf_enabled:
             print(f"[Perf][App] change_state {prev_key} -> {key} (fin) | total {time.perf_counter() - t0:.3f}s")
 
-    # Boucle principale pygame
     def run(self):
+        """Boucle principal pygame avec debug fps et state"""
         while self.running:
             perf_enabled = bool(self.settings.get("debug.perf_logs", True))
             slow_frame_sec = max(0.01, float(self.settings.get("debug.perf_slow_frame_ms", 120)) / 1000.0)

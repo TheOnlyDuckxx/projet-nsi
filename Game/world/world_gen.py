@@ -58,7 +58,6 @@ _PROP_ID_MAP = {
     "boulder": 23,
     "flower2": 25,
     "flower3": 26,
-    "entrepot": 102,
     "blueberry_bush": 28,
     "ore_copper": 29,
     "ore_iron": 30,
@@ -72,6 +71,14 @@ _PROP_ID_MAP = {
     "nest": 38,
     "beehive": 39,
     "freshwater_pool": 40,
+
+    #Craft
+    "feu":101,
+    "entrepot": 102,
+    "duck":103,
+    "taniere": 104,
+    "farm":105,
+    "spike":106,
 }
 
 

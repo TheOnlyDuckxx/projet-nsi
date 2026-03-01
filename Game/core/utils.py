@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, Literal
 
 
-# --------------- LE RESTE ---------------
+# --------------- CONTENU FAIT PAR CHATGPT PAR MANQUE CRUEL DE COMPETENCE EN LA MATIERE ---------------
 
 def resource_path(relative_path: str) -> str:
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))

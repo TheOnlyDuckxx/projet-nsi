@@ -1,4 +1,8 @@
-# --- imports en haut du fichier ---
+# PHASE1.PY
+# Gestion de la première phase du jeu (qui a l'origine devait en contenir 3)
+
+
+# --------------- IMPORTATION DES MODULES ---------------
 import pygame
 import random
 import heapq
@@ -39,7 +43,11 @@ _AUTO_HARVESTABLE_PROP_IDS = {
     35, 36, 37, 38, 39, 40,
 }
 
+
+# --------------- CLASSE PRINCIPALE ---------------
 class Phase1:
+    """Contient la logique reliant la logique de tout les systemes pour faire fonctionner le gameplay"""
+
     def __init__(self, app):
         self.app = app
         self.screen = app.screen
@@ -47,18 +55,17 @@ class Phase1:
         self.paused = False
 
         self.view = IsoMapView(self.assets, self.screen.get_size())
-        # Cache augmenté: évite de régénérer en boucle les chunks quand on explore beaucoup.
         self.gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=2048)
         self.params = None
         self.world = None
         self.fog=None
         
         # Système jour/nuit
-        # Cycle de 10 minutes réelles (600 secondes)
         self.day_night = DayNightCycle(cycle_duration=600)
-        self.day_night.set_time(6, 0)  # Commence à 6h du matin
-        self.day_night.set_speed(3.0)   # Vitesse normale
+        self.day_night.set_time(6, 0)
+        self.day_night.set_speed(3.0)
         self.event_manager = EventManager()
+
         #Météo
         self.weather_system = None 
         self.weather_icons: dict[str, pygame.Surface] = {}
@@ -94,25 +101,7 @@ class Phase1:
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
-        self.session_time_seconds = 0.0
-        self._game_end_pending = False
-        self._game_end_reason = None
-        self._game_end_summary = None
-        self._game_end_xp = 0
-        self._gameplay_ready = False
 
-        self.session_time_seconds = 0.0
-        self._game_end_pending = False
-        self._game_end_reason = None
-        self._game_end_summary = None
-        self._game_end_xp = 0
-        self._gameplay_ready = False
-        self.session_time_seconds = 0.0
-        self._game_end_pending = False
-        self._game_end_reason = None
-        self._game_end_summary = None
-        self._game_end_xp = 0
-        self._gameplay_ready = False
         # entités
         self.espece = None
         self.fauna_species: Espece | None = None
@@ -400,6 +389,7 @@ class Phase1:
                 self._daily_stats.append(partial)
 
     def _on_species_birth(self, _individu=None):
+        """Callback appelé à chaque naissance d'individus"""
         self._stats_current_day["births"] = int(self._stats_current_day.get("births", 0) or 0) + 1
         self._run_stats["total_population"] = int(self._run_stats.get("total_population", 0) or 0) + 1
         current_pop = max(0, int(getattr(self.espece, "population", 0) or 0))
@@ -409,6 +399,7 @@ class Phase1:
 
     @staticmethod
     def _collect_species_stats(species) -> dict:
+        """Récupère les stats de base d'une espèce"""
         if not species:
             return {}
         categories = {
@@ -428,7 +419,9 @@ class Phase1:
                 else:
                     cleaned[cat][str(key)] = value
         return cleaned
+    
     def _attach_phase_to_entities(self):
+        """Facilite l'accès aux systèmes (A REVOIR)"""
         if getattr(self, "espece", None):
             try:
                 self.espece.is_player_species = True
@@ -447,27 +440,14 @@ class Phase1:
                 pass
         # Nettoie les fenêtres d'info éventuelles (pour éviter les références périmées)
         self.info_windows = []
-        # Réinitialise le curseur
         self._set_cursor(self.default_cursor_path)
 
     def _load_weather_icons(self):
         """Charge les icônes météo disponibles dans le pack d'assets."""
         self.weather_icons = {}
-        if not self.assets:
-            return
-
-        default_sprite = None
-        try:
-            default_sprite = self.assets.get_image("placeholder")
-        except Exception:
-            default_sprite = None
-
         for condition_id, condition in WEATHER_CONDITIONS.items():
             sprite_key = condition.sprites or condition_id
-            try:
-                sprite = self.assets.get_image(sprite_key)
-            except Exception:
-                sprite = default_sprite
+            sprite = self.assets.get_image(sprite_key)
             if sprite is None:
                 continue
 
@@ -477,17 +457,12 @@ class Phase1:
             self.weather_icons[condition.name] = scaled_sprite
 
     def _load_prop_descriptions(self, path: str = "Game/data/props_descriptions.json") -> dict:
+        """Charge les descriptions des props depuis le fichier JSON."""
         data = {"by_id": {}}
-        try:
-            with open(resource_path(path), "r", encoding="utf-8") as f:
-                payload = json.load(f)
-        except FileNotFoundError:
-            print(f"[Props] Fichier descriptions introuvable: {path}")
-            return data
-        except Exception as e:
-            print(f"[Props] Erreur de chargement des descriptions: {e}")
-            return data
-
+    
+        with open(resource_path(path), "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        
         by_id = {}
         raw_by_id = payload.get("by_id") if isinstance(payload, dict) else None
         if isinstance(raw_by_id, dict):
@@ -518,6 +493,7 @@ class Phase1:
         return data
 
     def _get_prop_description_entry(self, pid: int):
+        """Récupère la description d'un prop à partir de son ID"""
         by_id = (self.prop_descriptions or {}).get("by_id", {})
         return by_id.get(str(int(pid)))
 
@@ -525,28 +501,24 @@ class Phase1:
         """Initialise la météo si un monde est présent."""
         if self.weather_system is not None or self.world is None:
             return
-        try:
-            raw_seed = getattr(self.params, "seed", 0) if self.params is not None else 0
-            world_seed = getattr(self.world, "seed", None)
-            if isinstance(raw_seed, str):
-                # Ex: "Aléatoire" dans le menu de création.
-                # Si le monde a déjà un seed final, on l'utilise.
-                if isinstance(world_seed, int):
-                    seed = world_seed
-                else:
-                    digest = hashlib.sha256(raw_seed.encode("utf-8")).hexdigest()
-                    seed = int(digest[:8], 16)
+        raw_seed = getattr(self.params, "seed", 0) if self.params is not None else 0
+        world_seed = getattr(self.world, "seed", None)
+        if isinstance(raw_seed, str):
+            if isinstance(world_seed, int):
+                seed = world_seed
             else:
-                seed = int(raw_seed or 0)
-            self.weather_system = WeatherSystem(
-                world=self.world,
-                day_night_cycle=self.day_night,
-                seed=seed,
-            )
-        except Exception as e:
-            print(f"[Weather] Erreur initialisation: {e}")
+                digest = hashlib.sha256(raw_seed.encode("utf-8")).hexdigest()
+                seed = int(digest[:8], 16)
+        else:
+            seed = int(raw_seed or 0)
+        self.weather_system = WeatherSystem(
+            world=self.world,
+            day_night_cycle=self.day_night,
+            seed=seed,
+        )
 
-    def _reset_weather_vfx_if_needed(self, condition_id: str | None):
+    def _reset_weather_vfx_if_needed(self, condition_id: str ):
+        """Réinitialise les effets visuels de la météo si elle a changé"""
         if condition_id == self._weather_last_condition_id:
             return
         self._weather_last_condition_id = condition_id
@@ -557,6 +529,7 @@ class Phase1:
         self._weather_flash_alpha = 0
 
     def _update_weather_vfx(self, dt: float):
+        """Update les particules et effets visuels de la météo actuelle (A REVOIR)"""
         if not self.weather_system:
             return
 
@@ -659,6 +632,7 @@ class Phase1:
             self._weather_flash_alpha = 0
 
     def _draw_weather_effects(self, screen: pygame.Surface):
+        """Dessine les effets visuels de la météo actuelle par-dessus le rendu du monde (A REVOIR)"""
         if not self.weather_system:
             return
 
@@ -750,6 +724,7 @@ class Phase1:
                 self.unlocked_crafts.add(cid)
 
     def _on_tech_unlocked(self, tech_id: str, tech_data: dict) -> None:
+        """Callback appelé quand une technologie est débloquée"""
         for craft_id in tech_data.get("craft", []) or []:
             self.unlock_craft(craft_id)
         name = tech_data.get("nom", tech_id)
@@ -760,6 +735,7 @@ class Phase1:
         )
 
     def start_tech_research(self, tech_id: str) -> bool:
+        """Démarre la recherche d'une technologie si possible, et affiche une notification."""
         if not self.tech_tree:
             return False
         ok = self.tech_tree.start_research(tech_id)
@@ -800,9 +776,9 @@ class Phase1:
         if not hasattr(ent, "_combat_attack_cd"): ent._combat_attack_cd = 0.0
         if not hasattr(ent, "_combat_repath_cd"): ent._combat_repath_cd = 0.0
         if not hasattr(ent, "_combat_anchor"): ent._combat_anchor = None
-        # ---------- Mutations de base de l'espèce ----------
 
     def _entity_can_walk_on_water(self, ent) -> bool:
+        """Helper pour savoir si une entité peut marcher sur l'eau"""
         if ent is None:
             return False
         if getattr(ent, "is_egg", False):
@@ -813,6 +789,7 @@ class Phase1:
         return bool(getattr(espece, "is_player_species", False))
 
     def _is_player_species_entity(self, ent) -> bool:
+        """Helper pour vérifier que l'espece appartient au joueur (pour les interactions, IA, etc)"""
         if ent is None:
             return False
         if getattr(ent, "is_egg", False):
@@ -1563,7 +1540,7 @@ class Phase1:
             if self.bottom_hud:
                 self.bottom_hud.refresh_craft_buttons()
 
-    # ---------- FAUNE PASSIVE ----------
+    # ---------- FAUNE ----------
     def _rabbit_definition(self):
         return PassiveFaunaDefinition(
             species_name="Lapin",
