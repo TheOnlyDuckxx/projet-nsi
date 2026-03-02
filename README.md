@@ -2,7 +2,7 @@
 
 [![Statut](https://img.shields.io/badge/statut-en%20developpement-blue)]([LIEN_BADGE_STATUT])
 [![Python](https://img.shields.io/badge/python-3.11%2B-green)]([LIEN_BADGE_PYTHON])
-[![License](https://img.shields.io/badge/license-a%20definir-lightgrey)]([LIEN_LICENSE])
+[![License](https://img.shields.io/badge/license-GPL3.0-lightgrey)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 Keystone : The Long Evolution est un jeu de simulation/évolution développé en Python avec Pygame.
 Le joueur crée son espèce, la fait survivre dans un monde procédural, débloque des mutations, gère sa progression technologique et affronte des événements dynamiques.
@@ -284,16 +284,3 @@ Conventions recommandées:
 Remerciements:
 - `[MENTION_PROF / ENCADRANT]`
 - `[SOURCE_ASSETS / LIBRAIRIES / INSPIRATIONS]`
-
----
-
-## Licence
-
-Licence du projet: `[A_DEFINIR]`
-
-Exemples possibles:
-- MIT
-- GPL-3.0
-- Licence propriétaire (projet scolaire)
-
-Texte de licence: `[LIEN_FICHIER_LICENSE]`
