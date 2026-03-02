@@ -380,6 +380,7 @@ class AggressiveFaunaBehavior:
         self.phase = phase
         self.vision_range = vision_range
         self._wander_timer = 0.0
+        self._structure_attack_cd = 0.0
 
     def try_eating(self):
         self.creature.jauges["faim"] = min(100, self.creature.jauges.get("faim", 100) + 10)
@@ -387,19 +388,18 @@ class AggressiveFaunaBehavior:
     def _targets(self):
         if not self.phase:
             return []
-        targets = []
+        targets: list[tuple[object, int]] = []
         for ent in getattr(self.phase, "entities", []):
             if ent is self.creature:
                 continue
-            if getattr(ent, "is_egg", False):
-                continue
             if getattr(ent, "_dead_processed", False):
                 continue
-            if ent.jauges.get("sante", 0) <= 0:
+            if getattr(ent, "jauges", {}).get("sante", 0) <= 0:
                 continue
             if getattr(ent, "is_fauna", False):
                 continue
-            targets.append(ent)
+            priority = 1 if getattr(ent, "is_egg", False) else 0
+            targets.append((ent, priority))
         return targets
 
     def _wander(self):
@@ -423,29 +423,76 @@ class AggressiveFaunaBehavior:
     def _pick_target_in_range(self):
         r2 = self.vision_range * self.vision_range
         best = None
+        best_priority = None
         best_d2 = None
-        for ent in self._targets():
+        for ent, priority in self._targets():
             dx = float(ent.x) - float(self.creature.x)
             dy = float(ent.y) - float(self.creature.y)
             d2 = dx * dx + dy * dy
-            if d2 <= r2 and (best_d2 is None or d2 < best_d2):
+            if d2 > r2:
+                continue
+            if best is None:
                 best = ent
+                best_priority = priority
+                best_d2 = d2
+                continue
+            if priority < best_priority or (priority == best_priority and d2 < best_d2):
+                best = ent
+                best_priority = priority
                 best_d2 = d2
         return best
 
     def update(self, dt: float, world):
         self._wander_timer += dt
-
-        if self.phase and self.creature.ia.get("etat") == "combat":
-            target = getattr(self.creature, "_combat_target", None)
-            if target in getattr(self.phase, "entities", []):
-                return
+        self._structure_attack_cd = max(0.0, self._structure_attack_cd - dt)
 
         target = self._pick_target_in_range()
         if target is not None and self.phase:
-            self.phase._start_entity_combat(self.creature, target)
+            current = getattr(self.creature, "_combat_target", None)
+            if current is not target:
+                self.phase._start_entity_combat(self.creature, target)
             self._wander_timer = 0.0
             return
+
+        if self.phase and self.creature.ia.get("etat") == "combat":
+            current_target = getattr(self.creature, "_combat_target", None)
+            if current_target in getattr(self.phase, "entities", []):
+                return
+
+        if self.phase:
+            structure = self.phase._find_nearest_attackable_structure(
+                self.creature,
+                max_radius=max(5, int(self.vision_range) + 1),
+            )
+            if structure is not None:
+                si, sj = structure
+                tx = float(si) + 0.5
+                ty = float(sj) + 0.5
+                dist = math.hypot(float(self.creature.x) - tx, float(self.creature.y) - ty)
+
+                if dist <= 1.7:
+                    if self._structure_attack_cd <= 0.0:
+                        damage = max(2.0, float(self.creature.combat.get("attaque", 4) or 4))
+                        self.phase._damage_structure_at(si, sj, damage, attacker=self.creature)
+                        self._structure_attack_cd = 0.8
+                    return
+
+                near_tile = self.phase._find_nearest_walkable(
+                    (si, sj),
+                    forbidden=self.phase._occupied_tiles(exclude=[self.creature]),
+                    ent=self.creature,
+                )
+                if near_tile:
+                    self.phase._ensure_move_runtime(self.creature)
+                    self.phase._apply_entity_order(
+                        self.creature,
+                        target=near_tile,
+                        etat="se_deplace",
+                        objectif=None,
+                        action_mode=None,
+                        craft_id=None,
+                    )
+                    return
 
         if self._wander_timer >= 3.5:
             self._wander_timer = 0.0

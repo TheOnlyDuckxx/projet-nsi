@@ -1,11 +1,27 @@
 # Game/espece/species.py
 
 from copy import deepcopy
+import random
 from Game.gameplay.level_up import LevelUp
 from .mutations import MutationManager
 from .comportement import Comportement
 from .reproduction import ReproductionSystem
 from .sprite_render import EspeceRenderer
+
+
+ROLE_CLASSES = ("savant", "pacifiste", "croyant", "belligerant")
+ROLE_CLASS_LABELS = {
+    "savant": "Savant",
+    "pacifiste": "Pacifiste",
+    "croyant": "Croyant",
+    "belligerant": "Belligerant",
+}
+
+MAIN_CLASS_PHYSIQUE_BONUS = {
+    "force": 1,
+    "endurance": 1,
+    "vitesse": 1,
+}
 
 
 class Espece:
@@ -71,6 +87,7 @@ class Espece:
         # === Population ===
         self.individus = []
         self.population = 0
+        self.main_class = None
 
     # ---------- API création / gestion d'individus ----------
 
@@ -79,6 +96,7 @@ class Espece:
         Crée un individu appartenant à cette espèce.
         """
         individu = Individu(self, x, y, assets)
+        self._apply_main_class_bonus_if_needed(individu)
         return individu
 
     def remove_individu(self, individu):
@@ -137,6 +155,33 @@ class Espece:
             return 0.0
         return max(0.0, min(1.0, self.xp / self.xp_to_next))
 
+    def set_main_class(self, class_id: str | None):
+        class_id = str(class_id or "").strip().lower()
+        if class_id not in ROLE_CLASSES:
+            self.main_class = None
+            return
+        self.main_class = class_id
+        for individu in self.individus:
+            self._apply_main_class_bonus_if_needed(individu)
+
+    def _apply_main_class_bonus_if_needed(self, individu) -> None:
+        if not individu:
+            return
+        if not self.main_class:
+            return
+        if getattr(individu, "role_class", None) != self.main_class:
+            return
+        if getattr(individu, "_main_class_bonus_applied", False):
+            return
+        physique = getattr(individu, "physique", None)
+        if not isinstance(physique, dict):
+            return
+        for stat, delta in MAIN_CLASS_PHYSIQUE_BONUS.items():
+            if stat not in physique or not isinstance(physique.get(stat), (int, float)):
+                physique[stat] = 0
+            physique[stat] += delta
+        individu._main_class_bonus_applied = True
+
 
 class Individu:
     """
@@ -148,6 +193,8 @@ class Individu:
         self.espece = espece          # Référence à l'espèce
         self.nom = espece.nom         # Pratique pour l'affichage
         self.name_locked = False
+        self.role_class = random.choice(ROLE_CLASSES)
+        self._main_class_bonus_applied = False
 
         # --- Position dans le monde ---
         self.x = float(x)
@@ -185,7 +232,6 @@ class Individu:
         self.jauges = {
             "faim": 20,
             "soif": 50,
-            "energie": self.physique["endurance"],
             "bonheur": 10,
             "sante": 100,
         }

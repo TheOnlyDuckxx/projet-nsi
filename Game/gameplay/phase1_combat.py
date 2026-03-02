@@ -41,7 +41,8 @@ def start_entity_combat(phase, attacker, target) -> bool:
         return False
     if getattr(attacker, "is_egg", False):
         return False
-    if getattr(target, "is_egg", False):
+    attacker_is_aggressive = bool(getattr(attacker, "is_aggressive", False))
+    if getattr(target, "is_egg", False) and not attacker_is_aggressive:
         return False
     if not hasattr(attacker, "ia") or not isinstance(attacker.ia, dict):
         return False
@@ -49,7 +50,6 @@ def start_entity_combat(phase, attacker, target) -> bool:
         return False
 
     attacker_is_fauna = bool(getattr(attacker, "is_fauna", False))
-    attacker_is_aggressive = bool(getattr(attacker, "is_aggressive", False))
     target_is_fauna = bool(getattr(target, "is_fauna", False))
 
     if attacker_is_fauna and not attacker_is_aggressive:
@@ -120,6 +120,8 @@ def grant_fauna_combat_rewards(phase, attacker, target):
     if getattr(target, "is_fauna", False) and phase._is_player_species_entity(attacker):
         phase._run_stats["animals_killed"] = int(phase._run_stats.get("animals_killed", 0) or 0) + 1
         phase._stats_current_day["animals_killed"] = int(phase._stats_current_day.get("animals_killed", 0) or 0) + 1
+        if hasattr(phase, "log_world_event"):
+            phase.log_world_event("kill", f"{attacker.nom} a tue {target.nom}.")
 
     physique = getattr(target, "physique", {}) or {}
     taille = float(physique.get("taille", 2) or 2)
@@ -171,7 +173,7 @@ def update_entity_combat(phase, ent, dt: float):
         stop_entity_combat(phase, ent)
         return
     if getattr(ent, "is_aggressive", False):
-        if getattr(target, "is_fauna", False) or getattr(target, "is_egg", False):
+        if getattr(target, "is_fauna", False):
             stop_entity_combat(phase, ent)
             return
     else:
@@ -213,11 +215,31 @@ def update_entity_combat(phase, ent, dt: float):
             return
 
         damage = combat_damage(ent, target)
-        target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
+        if getattr(target, "is_egg", False) and hasattr(target, "take_damage"):
+            try:
+                target.take_damage(damage)
+            except Exception:
+                target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
+        else:
+            target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
         target._last_attacker = ent
         ent._combat_attack_cd = combat_attack_interval(ent)
         if hasattr(ent, "attack_anim_ms"):
             ent._attack_anim_until_ms = pygame.time.get_ticks() + int(ent.attack_anim_ms)
+
+        # Auto-defense: les individus du joueur contre-attaquent leur agresseur.
+        if (
+            not getattr(target, "is_fauna", False)
+            and not getattr(target, "is_egg", False)
+            and hasattr(phase, "_is_player_species_entity")
+            and phase._is_player_species_entity(target)
+            and target in phase.entities
+            and ent in phase.entities
+            and target.jauges.get("sante", 0) > 0
+        ):
+            current = getattr(target, "_combat_target", None)
+            if current is None or current is not ent:
+                phase._start_entity_combat(target, ent)
 
         if target.jauges.get("sante", 0) <= 0:
             if not getattr(ent, "is_fauna", False) and getattr(target, "is_fauna", False):

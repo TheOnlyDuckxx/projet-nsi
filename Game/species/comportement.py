@@ -323,6 +323,12 @@ class Comportement:
             return
 
         leader.add_xp(taken_total * 10)
+        phase = getattr(leader, "phase", None)
+        if phase and hasattr(phase, "log_world_event"):
+            phase.log_world_event(
+                "harvest",
+                f"{leader.nom} a recolte un prop ({pid}) pour {taken_total} ressources.",
+            )
         try:
             if world and getattr(world, "overlay", None):
                 if 0 <= j < len(world.overlay) and 0 <= i < len(world.overlay[0]):
@@ -495,9 +501,15 @@ class Comportement:
                         "name": cell.get("name"),
                         "built": True,
                         "cost": cell.get("cost"),
+                        "max_hp": float(cell.get("max_hp", 80.0) or 80.0),
+                        "hp": float(cell.get("hp", cell.get("max_hp", 80.0)) or 80.0),
                     }
                 except Exception:
                     pass
+                phase = getattr(self.e, "phase", None)
+                if phase and hasattr(phase, "log_world_event"):
+                    bname = cell.get("name") or cell.get("craft_id") or "construction"
+                    phase.log_world_event("build", f"{self.e.nom} a termine {bname}.")
                 self.e.work = None
                 self.e.ia["etat"] = "idle"
                 self.e.ia["objectif"] = None
@@ -671,6 +683,12 @@ class Comportement:
             self.e.ia["target_craft_id"] = None
             return
         self.e.add_xp(taken_total*10)
+        phase = getattr(self.e, "phase", None)
+        if phase and hasattr(phase, "log_world_event"):
+            phase.log_world_event(
+                "harvest",
+                f"{self.e.nom} a recolte un prop ({w.get('pid')}) pour {taken_total} ressources.",
+            )
 
         try:
             if world and getattr(world, "overlay", None):

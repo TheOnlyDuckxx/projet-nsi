@@ -4,9 +4,16 @@ from Game.ui.hud.notification import add_notification
 
 _AI_BUTTON_SPECS = (
     ("harvest", "IA Recolte"),
-    ("builder", "IA Build"),
+    ("hunt", "IA Chasse"),
     ("guard", "IA Garde"),
 )
+
+_ROLE_COLORS = {
+    "savant": (90, 165, 235),
+    "pacifiste": (110, 196, 132),
+    "croyant": (214, 188, 96),
+    "belligerant": (222, 112, 112),
+}
 
 _INSPECTION_PANEL_DEFAULT_RATIO = 0.35
 _INSPECTION_PANEL_MIN_HEIGHT = 190
@@ -167,6 +174,17 @@ def handle_inspection_panel_click(self, pos, screen=None):
                 add_notification(f"{ent.nom} : IA recolte activee.")
             return True
 
+        if mode == "hunt":
+            active = ent.ia.get("auto_mode") == "hunt"
+            if active:
+                ent.ia["auto_mode"] = None
+                add_notification(f"{ent.nom} : IA chasse desactivee.")
+            else:
+                ent.ia["auto_mode"] = "hunt"
+                ent.ia["auto_next_decision_in"] = 0.0
+                add_notification(f"{ent.nom} : IA chasse activee.")
+            return True
+
         ent.ia["auto_mode"] = mode
         add_notification(f"{button['label']} : mode pas encore implemente.")
         return True
@@ -272,6 +290,15 @@ def draw_inspection_panel(self, screen):
     # === TITRE ===
     title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
     panel_surf.blit(title, (10, y_offset))
+    role_id = str(getattr(ent, "role_class", "") or "").strip().lower()
+    if role_id:
+        icon_rect = pygame.Rect(panel_width - 40, y_offset - 1, 22, 22)
+        icon_bg = _ROLE_COLORS.get(role_id, (120, 135, 160))
+        pygame.draw.rect(panel_surf, icon_bg, icon_rect, border_radius=5)
+        pygame.draw.rect(panel_surf, (220, 230, 240), icon_rect, 1, border_radius=5)
+        initial = role_id[:1].upper()
+        icon_text = text_font.render(initial, True, (245, 245, 245))
+        panel_surf.blit(icon_text, icon_text.get_rect(center=icon_rect.center))
     rename_button = layout.get("rename_button")
     if rename_button:
         btn_rect = rename_button.move(-panel_x, -panel_y)
@@ -308,7 +335,6 @@ def draw_inspection_panel(self, screen):
 
     jauges_display = [
         ("Santé", ent.jauges.get("sante", 0), 100, (220, 50, 50)),
-        ("Énergie", ent.jauges.get("energie", 0), ent.physique["endurance"], (100, 200, 255)),
         ("Faim", ent.jauges.get("faim", 0), 100, (255, 180, 50)),
         ("Soif", ent.jauges.get("soif", 0), 100, (100, 180, 255)),
     ]
@@ -425,7 +451,7 @@ def draw_inspection_panel(self, screen):
             rect = abs_rect.move(-panel_x, -panel_y)
             is_hovered = abs_rect.collidepoint(mouse_pos)
             is_active = auto_mode == button["mode"]
-            is_placeholder = button["mode"] != "harvest"
+            is_placeholder = button["mode"] not in {"harvest", "hunt"}
 
             bg = (45, 95, 55) if is_active else ((56, 74, 98) if is_hovered else (42, 54, 72))
             border = (130, 210, 140) if is_active else (90, 130, 170)

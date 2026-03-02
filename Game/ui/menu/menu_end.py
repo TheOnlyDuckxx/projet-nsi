@@ -27,6 +27,8 @@ class EndGameScreen(BaseMenu):
 
         self.active_tab = "resume"
         self.tab_buttons = {}
+        self._tab_layout_signature = None
+        self.stats_available = True
 
         self.title_font = app.assets.get_font("MightySouly", 64)
         self.value_font = app.assets.get_font("MightySouly", 28)
@@ -53,6 +55,7 @@ class EndGameScreen(BaseMenu):
         self.xp_gain = int(kwargs.get("xp_gain", 0) or 0)
         self._save_path = kwargs.get("save_path")
         self.active_tab = "resume"
+        self.stats_available = int(self.summary.get("days_survived", 0) or 0) >= 1
 
         self.before = self.app.progression.get_player_progress()
         result = self.app.progression.add_player_xp(self.xp_gain)
@@ -65,10 +68,20 @@ class EndGameScreen(BaseMenu):
         self._anim_remaining = float(result.get("gained", 0) or 0)
         self._xp_rate = max(40.0, self._anim_remaining / 2.5) if self._anim_remaining > 0 else 0.0
         self._anim_done = self._anim_remaining <= 0
+        if not self.stats_available:
+            self.active_tab = "resume"
+        self._tab_layout_signature = None
         if self._save_path:
             SaveManager.delete_save(self._save_path)
 
-    def _make_tab_buttons(self, panel):
+    def _ensure_tab_buttons(self, panel):
+        signature = (panel.x, panel.y, panel.width, panel.height)
+        if self._tab_layout_signature == signature and self.tab_buttons:
+            stats_btn = self.tab_buttons.get("stats")
+            if stats_btn is not None:
+                stats_btn.enabled = self.stats_available
+            return
+
         style = ButtonStyle(
             font=self.graph_font,
             bg_color=(44, 52, 64),
@@ -80,11 +93,27 @@ class EndGameScreen(BaseMenu):
         )
         y = panel.y + 22
         self.tab_buttons = {
-            "resume": Button("Resume", (panel.x + 20, y), anchor="topleft", style=style, on_click=lambda _b: self._set_tab("resume")),
-            "stats": Button("Statistiques", (panel.x + 180, y), anchor="topleft", style=style, on_click=lambda _b: self._set_tab("stats")),
+            "resume": Button(
+                "Resume",
+                (panel.x + 20, y),
+                anchor="topleft",
+                style=style,
+                on_click=lambda _b: self._set_tab("resume"),
+            ),
+            "stats": Button(
+                "Statistiques",
+                (panel.x + 180, y),
+                anchor="topleft",
+                style=style,
+                on_click=lambda _b: self._set_tab("stats"),
+                enabled=self.stats_available,
+            ),
         }
+        self._tab_layout_signature = signature
 
     def _set_tab(self, tab):
+        if tab == "stats" and not self.stats_available:
+            return
         self.active_tab = tab
 
     def handle_input(self, events):
@@ -251,6 +280,10 @@ class EndGameScreen(BaseMenu):
             pygame.draw.polygon(screen, (128, 228, 196), points, 2)
 
     def _draw_stats_tab(self, screen, rect):
+        if not self.stats_available:
+            msg = self.value_font.render("Statistiques indisponibles (< 1 jour).", True, (210, 210, 220))
+            screen.blit(msg, msg.get_rect(center=rect.center))
+            return
         resources = self.summary.get("resources_by_type", {}) or {}
         species_stats = self.summary.get("species_stats", {}) or {}
         daily = self.summary.get("daily_stats", []) or []
@@ -334,10 +367,16 @@ class EndGameScreen(BaseMenu):
         pygame.draw.rect(screen, (24, 28, 38), panel, border_radius=16)
         pygame.draw.rect(screen, (70, 82, 96), panel, 2, border_radius=16)
 
-        self._make_tab_buttons(panel)
+        self._ensure_tab_buttons(panel)
         for tab_id, btn in self.tab_buttons.items():
-            btn.style.active_bg_color = (85, 115, 150) if tab_id == self.active_tab else btn.style.active_bg_color
+            old_active = btn.style.active_bg_color
+            if tab_id == self.active_tab:
+                btn.style.active_bg_color = (85, 115, 150)
             btn.draw(screen)
+            btn.style.active_bg_color = old_active
+        if not self.stats_available:
+            locked = self.graph_font.render("Statistiques indisponibles (< 1 jour)", True, (190, 165, 150))
+            screen.blit(locked, (panel.x + 20, panel.y + 54))
 
         content = pygame.Rect(panel.x + 18, panel.y + 70, panel.width - 36, panel.height - 86)
         if self.active_tab == "resume":

@@ -107,7 +107,7 @@
         "description": "Permet une meilleure perception de la profondeur et une vision plus précise.",
         "effets": {
             "sens": {
-                "vision": 20,
+                "vision": 3,
                 "attaque_a_distance": 5,
                 "detection_visuelle": -20
             }
@@ -126,7 +126,7 @@
         "description": "Permet une vision à 280 degrés, utile pour détecter les prédateurs.",
         "effets": {
             "sens": {
-                "vision": -10,
+                "vision": -3,
                 "detection_visuelle": 40
             }
         },

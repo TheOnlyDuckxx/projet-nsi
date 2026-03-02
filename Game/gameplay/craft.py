@@ -36,6 +36,15 @@ class Craft:
         total_cost = sum(max(0, float(v)) for v in cost.values())
         return float(8.0 + total_cost * 1.5)
 
+    def _compute_structure_hp(self, craft_def: Dict) -> float:
+        """
+        HP d'une structure construite.
+        Les couts plus eleves donnent des structures plus resistantes.
+        """
+        cost = craft_def.get("cost", {}) or {}
+        total_cost = sum(max(0, float(v)) for v in cost.values())
+        return float(45.0 + total_cost * 4.0)
+
     # ---------- Utils inventaire ----------
 
     def _inventory_counts(self, inventory: List[Dict]) -> Dict[str, int]:
@@ -198,6 +207,8 @@ class Craft:
                 "state": "building",
                 "work_done": 0.0,
                 "work_required": self._compute_work_required(craft_def),
+                "max_hp": self._compute_structure_hp(craft_def),
+                "hp": self._compute_structure_hp(craft_def),
                 "name": craft_def.get("name", craft_id),
                 "craft_id": craft_id,
                 "interaction": craft_def.get("interaction"),

@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from Game.core.utils import resource_path
 from Game.gameplay.quest_effects import apply_quest_effect
+from Game.species.species import ROLE_CLASS_LABELS
 from Game.ui.hud.notification import add_notification
 
 
@@ -160,6 +161,56 @@ class EventManager:
         )
         self.register_python_event(protect_egg)
 
+        horde_alert = EventDefinition(
+            id="horde_alert",
+            title="Horde hostile",
+            short_text="Une horde d'ennemis agressifs est en approche.",
+            long_text="La pression ennemie explose pendant les 2 prochaines heures. Les créatures agressives seront beaucoup plus nombreuses.",
+            unique=False,
+            cooldown=120.0,
+            choices=[
+                ChoiceDefinition(
+                    id="ack",
+                    label="Se preparer",
+                    description="Organiser la defense du camp.",
+                )
+            ],
+            effects_immediate=[
+                {"type": "start_horde", "duration_minutes": 120.0},
+            ],
+        )
+        self.register_python_event(horde_alert)
+
+        class_choice_event = EventDefinition(
+            id="class_choice_event",
+            title="Choix de classe principale",
+            short_text="Une classe domine la population.",
+            long_text="Une tendance forte emerge. Choisissez votre classe principale pour orienter l'evolution de votre espece.",
+            unique=False,
+            cooldown=120.0,
+            choices=[
+                ChoiceDefinition(
+                    id="accept",
+                    label="Accepter",
+                    description="Fixe la classe dominante comme classe principale.",
+                    effects_immediate=[
+                        {"type": "set_main_class", "class_id": "from_flag"},
+                        {"type": "set_flag", "key": "class_choice_ready", "value": False},
+                    ],
+                ),
+                ChoiceDefinition(
+                    id="refuse",
+                    label="Refuser",
+                    description="La decision est repousse et le bonheur baisse.",
+                    effects_immediate=[
+                        {"type": "modify_happiness", "amount": -8, "reason": "Refus du choix de classe dominante."},
+                        {"type": "set_flag", "key": "class_choice_ready", "value": False},
+                    ],
+                ),
+            ],
+        )
+        self.register_python_event(class_choice_event)
+
     def register_python_event(self, definition: EventDefinition):
         """Permet d'ajouter un évènement défini en Python (condition/effets complexes)."""
         self.python_events[definition.id] = definition
@@ -301,6 +352,16 @@ class EventManager:
                 craft_id = eff.get("craft_id")
                 if craft_id and hasattr(phase, "unlock_craft"):
                     phase.unlock_craft(craft_id)
+            elif etype == "start_horde":
+                duration = float(eff.get("duration_minutes", 120.0) or 120.0)
+                if hasattr(phase, "start_horde"):
+                    phase.start_horde(duration_minutes=duration)
+            elif etype == "set_main_class":
+                class_id = eff.get("class_id")
+                if class_id == "from_flag":
+                    class_id = self.runtime_flags.get("class_choice_candidate")
+                if class_id and hasattr(phase, "set_main_class"):
+                    phase.set_main_class(str(class_id))
             elif etype == "set_death_policy":
                 mode = eff.get("mode")
                 if hasattr(phase, "set_death_policy"):
@@ -310,6 +371,81 @@ class EventManager:
                     # Effet inconnu : pour extension future
                     print(f"[Events] Effet inconnu ignoré: {eff}")
 
+    def _horde_ready(self, phase) -> bool:
+        day, hour, _min = self._get_game_time(phase)
+        if day <= 3:
+            return False
+
+        roll_key = (int(day), int(hour))
+        if self.runtime_flags.get("horde_last_roll_key") == roll_key:
+            return False
+        self.runtime_flags["horde_last_roll_key"] = roll_key
+
+        horde_state = getattr(phase, "horde_state", {}) or {}
+        if bool(horde_state.get("active", False)):
+            return False
+
+        last_day = float(horde_state.get("last_horde_day", -9999) or -9999)
+        if day - last_day <= 1.0:
+            return False
+
+        return random.random() < 0.02
+
+    def _trigger_horde_if_ready(self, phase):
+        if not self._horde_ready(phase):
+            return
+        definition = self.definitions.get("horde_alert")
+        if definition is None:
+            return
+        self._trigger_event(definition, phase)
+
+    def _class_choice_ready(self, phase) -> tuple[bool, str | None]:
+        species = getattr(phase, "espece", None)
+        if species is None:
+            return False, None
+        if getattr(species, "main_class", None):
+            return False, None
+
+        now_min = self._game_minutes_absolute(phase)
+        next_allowed = float(self.runtime_flags.get("class_choice_next_allowed_minute", 0.0) or 0.0)
+        if now_min < next_allowed:
+            return False, None
+
+        candidate, count = (None, 0)
+        if hasattr(phase, "get_dominant_role_class"):
+            candidate, count = phase.get_dominant_role_class(min_count=5)
+
+        forced_ready = bool(self.runtime_flags.get("class_choice_ready"))
+        if not forced_ready and (not candidate or int(count) < 5):
+            return False, None
+
+        if not candidate:
+            candidate = self.runtime_flags.get("class_choice_candidate")
+        if not candidate:
+            return False, None
+        return True, str(candidate)
+
+    def _trigger_class_choice_if_ready(self, phase):
+        ready, candidate = self._class_choice_ready(phase)
+        if not ready:
+            return
+
+        inst = self.instances.get("class_choice_event")
+        if inst and inst.state in {"active", "new"}:
+            return
+
+        self.runtime_flags["class_choice_candidate"] = candidate
+        label = ROLE_CLASS_LABELS.get(candidate, str(candidate).capitalize())
+        definition = self.definitions.get("class_choice_event")
+        if definition is None:
+            return
+        definition.short_text = f"La classe dominante est: {label}."
+        definition.long_text = (
+            f"Au moins 5 individus vivants appartiennent a la classe {label}. "
+            f"Voulez-vous la fixer comme classe principale ?"
+        )
+        self._trigger_event(definition, phase)
+
     # ---------- Lifecycle ----------
     def update(self, dt: float, phase):
         # 1) appliquer effets différés
@@ -317,8 +453,13 @@ class EventManager:
         if getattr(phase, "ui_menu_open", False):
             return
 
+        self._trigger_horde_if_ready(phase)
+        self._trigger_class_choice_if_ready(phase)
+
         # 2) tenter de déclencher de nouveaux events
         for ev_id, definition in self.definitions.items():
+            if ev_id in {"horde_alert", "class_choice_event", "protect_first_egg"}:
+                continue
             inst = self.instances.get(ev_id)
             if inst and inst.state in {"active", "resolved", "archived"}:
                 # cooldown pour non-uniques
@@ -421,6 +562,15 @@ class EventManager:
         inst.is_new = False
         if definition.unique:
             definition.already_met = True
+
+        if event_id == "class_choice_event":
+            now = self._game_minutes_absolute(phase)
+            if choice.id == "accept":
+                self.runtime_flags["class_choice_ready"] = False
+                self.runtime_flags["class_choice_candidate"] = None
+            else:
+                # Anti-spam: on espace les propositions apres un refus.
+                self.runtime_flags["class_choice_next_allowed_minute"] = now + 180.0
 
     # ---------- Query helpers ----------
     def get_sorted_events(self) -> List[EventInstance]:

@@ -76,114 +76,89 @@ class BaseMenu:
 class OptionsMenu(BaseMenu):
     def __init__(self, app):
         super().__init__(app, title="Options")
+        self.title_font = app.assets.get_font("MightySouly", 66)
+        self.btn_font = app.assets.get_font("MightySouly", 30)
+        self.section_font = app.assets.get_font("MightySouly", 34)
+        self.info_font = app.assets.get_font("MightySouly", 22)
 
-        def clamp(v, a, b):
-            return a if v < a else b if v > b else v
+        self.scroll = 0
+        self.max_scroll = 0
+        self.panel_rect = pygame.Rect(0, 0, 10, 10)
+        self.content_rect = pygame.Rect(0, 0, 10, 10)
+        self.feedback = ""
+        self.feedback_timer = 0.0
+        self.pending_rebind_path = None
 
-        # Fonts dépendants de HEIGHT
-        title_size = clamp(int(HEIGHT * 0.085), 34, 84)
-        item_size  = clamp(int(HEIGHT * 0.040), 18, 44)
-        self.title_font = app.assets.get_font("MightySouly", title_size)
-        self.btn_font = app.assets.get_font("MightySouly", item_size)
-
-        # Largeur sliders
-        slider_w = clamp(int(WIDTH * 0.36), 280, 620)
-
+        slider_w = max(320, int(WIDTH * 0.38))
         x = WIDTH // 2
 
-        # --- Widgets (positions provisoires, on re-layout après) ---
-        self.toggle_fullscreen = self.add(Toggle(
-            "Plein écran",
+        self.toggle_fullscreen = Toggle(
+            "Plein ecran",
             (x, 0),
             get_value=lambda: app.settings.get("video.fullscreen", False),
-            set_value=lambda v: app.settings.set("video.fullscreen", v),
-            font=self.btn_font
-        ))
-
-        self.toggle_vsync = self.add(Toggle(
+            set_value=lambda v: app.settings.set("video.fullscreen", bool(v)),
+            font=self.btn_font,
+        )
+        self.toggle_vsync = Toggle(
             "VSync",
             (x, 0),
             get_value=lambda: app.settings.get("video.vsync", False),
-            set_value=lambda v: app.settings.set("video.vsync", v),
-            font=self.btn_font
-        ))
-
-        self.toggle_perf_logs = self.add(Toggle(
+            set_value=lambda v: app.settings.set("video.vsync", bool(v)),
+            font=self.btn_font,
+        )
+        self.toggle_perf_logs = Toggle(
             "Logs performance",
             (x, 0),
             get_value=lambda: bool(app.settings.get("debug.perf_logs", True)),
             set_value=lambda v: app.settings.set("debug.perf_logs", bool(v)),
-            font=self.btn_font
-        ))
-
-        self.slider_master = self.add(Slider(
-            "Volume général",
+            font=self.btn_font,
+        )
+        self.slider_master = Slider(
+            "Volume general",
             (x, 0),
             width=slider_w,
             get_value=lambda: app.settings.get("audio.master_volume", 0.8),
             set_value=lambda v: app.settings.set("audio.master_volume", float(v)),
             font=self.btn_font,
-            min_v=0.0, max_v=1.0, step=0.01
-        ))
-
-        self.slider_music = self.add(Slider(
+            min_v=0.0,
+            max_v=1.0,
+            step=0.01,
+        )
+        self.slider_music = Slider(
             "Volume musique",
             (x, 0),
             width=slider_w,
             get_value=lambda: app.settings.get("audio.music_volume", 0.8),
             set_value=lambda v: app.settings.set("audio.music_volume", float(v)),
             font=self.btn_font,
-            min_v=0.0, max_v=1.0, step=0.01
-        ))
-
-        self.slider_sfx = self.add(Slider(
+            min_v=0.0,
+            max_v=1.0,
+            step=0.01,
+        )
+        self.slider_sfx = Slider(
             "Volume sfx",
             (x, 0),
             width=slider_w,
-            get_value=lambda: app.settings.get("audio.sfx_volume", 0.8),
+            get_value=lambda: app.settings.get("audio.sfx_volume", 0.9),
             set_value=lambda v: app.settings.set("audio.sfx_volume", float(v)),
             font=self.btn_font,
-            min_v=0.0, max_v=1.0, step=0.01
-        ))
-
-        self.slider_fps = self.add(Slider(
+            min_v=0.0,
+            max_v=1.0,
+            step=0.01,
+        )
+        self.slider_fps = Slider(
             "Limite FPS",
             (x, 0),
             width=slider_w,
             get_value=lambda: float(app.settings.get("video.fps_cap", 60)),
             set_value=lambda v: app.settings.set("video.fps_cap", int(v)),
             font=self.btn_font,
-            min_v=30, max_v=240, step=5
-        ))
-
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
-        self.btn_back = Button(
-            "← Retour",
-            (x, 0),
-            anchor="center",
-            style=ghost,
-            on_click=lambda b: app.change_state("MENU")
+            min_v=30,
+            max_v=240,
+            step=5,
         )
-        self.add(self.btn_back)
 
-        # --- Layout vertical centré (anti-chevauchement) ---
-        self._layout_centered()
-
-    def _layout_centered(self):
-        def clamp(v, a, b):
-            return a if v < a else b if v > b else v
-
-        x = WIDTH // 2
-
-        # Pré-rendu titre pour mesurer
-        title_surf = self.title_font.render(self.title, True, (230, 230, 230))
-        title_h = title_surf.get_height()
-
-        title_gap = clamp(int(HEIGHT * 0.030), 18, 60)
-        item_gap  = clamp(int(HEIGHT * 0.020), 10, 30)
-        back_gap  = clamp(int(HEIGHT * 0.030), 16, 46)
-
-        items = [
+        self.base_widgets = [
             self.toggle_fullscreen,
             self.toggle_vsync,
             self.toggle_perf_logs,
@@ -193,62 +168,208 @@ class OptionsMenu(BaseMenu):
             self.slider_fps,
         ]
 
-        def item_block_h(w):
-            # Toggle = hauteur du bouton
-            if hasattr(w, "btn"):
-                return w.btn.rect.height
+        self.keybind_specs = [
+            ("Transparence props", "controls.props_transparency"),
+            ("Mode inspection", "controls.inspect_mode"),
+            ("Focus individu proche", "controls.focus_nearest"),
+        ]
+        bind_style = ButtonStyle(
+            draw_background=True,
+            radius=10,
+            padding_x=14,
+            padding_y=8,
+            hover_zoom=1.03,
+            font=self.info_font,
+            bg_color=(58, 66, 82),
+            hover_bg_color=(74, 84, 104),
+            border_color=(124, 144, 178),
+        )
+        self.rebind_buttons = {
+            path: Button(
+                "Touche",
+                (x, 0),
+                anchor="midright",
+                style=bind_style,
+                on_click=lambda _b, p=path: self._start_rebind(p),
+            )
+            for _label, path in self.keybind_specs
+        }
+        self._refresh_rebind_labels()
 
-            # Slider : label est à bar_top - 36, knob dépasse => il faut une “hauteur de bloc” plus grande
-            # (on s'aligne sur votre implémentation Slider._rebuild_rects) :contentReference[oaicite:3]{index=3}
-            label_h = w.label_surf.get_height()
-            return 5 + label_h + (2 * w.knob_r) + 5  # marge sécurité
+        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230, 230, 230), hover_zoom=1.08)
+        self.btn_back = Button(
+            "← Retour",
+            (0, 0),
+            anchor="midleft",
+            style=ghost,
+            on_click=lambda _b: app.change_state("MENU"),
+        )
 
-        blocks = [item_block_h(w) for w in items]
-        total_h = title_h + title_gap + sum(blocks) + item_gap * (len(items) - 1) + back_gap + self.btn_back.rect.height
+    def _key_label(self, key_code: int) -> str:
+        try:
+            name = pygame.key.name(int(key_code))
+        except Exception:
+            name = ""
+        name = (name or "").strip()
+        return name.upper() if name else f"KEY_{int(key_code)}"
 
-        top_y = HEIGHT // 2 - total_h // 2
+    def _refresh_rebind_labels(self):
+        for _label, path in self.keybind_specs:
+            key_code = int(self.app.settings.get(path, 0) or 0)
+            self.rebind_buttons[path].set_text(self._key_label(key_code))
 
-        # Stocke pour render
-        self._title_surf = title_surf
-        self._title_pos = (x - title_surf.get_width() // 2, top_y)
+    def _set_feedback(self, message: str, duration: float = 2.0):
+        self.feedback = str(message or "")
+        self.feedback_timer = max(0.0, float(duration))
 
-        cursor = top_y + title_h + title_gap
+    def _start_rebind(self, path: str):
+        self.pending_rebind_path = path
+        self._set_feedback("Appuyez sur une touche (Echap pour annuler)", duration=4.0)
 
-        for w, bh in zip(items, blocks):
-            if hasattr(w, "btn"):
-                # Toggle
-                w.btn.move_to((x, cursor + bh // 2))
+    def _find_conflict(self, target_path: str, new_key: int):
+        for label, path in self.keybind_specs:
+            if path == target_path:
+                continue
+            old = int(self.app.settings.get(path, 0) or 0)
+            if old == int(new_key):
+                return label
+        return None
+
+    def _apply_rebind(self, path: str, key: int):
+        conflict = self._find_conflict(path, key)
+        if conflict:
+            self._set_feedback(f"Conflit: touche deja utilisee par '{conflict}'", duration=2.5)
+            return
+        self.app.settings.set(path, int(key), apply=False, save=True)
+        self._refresh_rebind_labels()
+        self._set_feedback("Raccourci mis a jour.", duration=1.5)
+
+    def _layout(self):
+        sw, sh = self.app.screen.get_size()
+        panel_w = int(sw * 0.74)
+        panel_h = int(sh * 0.74)
+        self.panel_rect = pygame.Rect((sw - panel_w) // 2, int(sh * 0.14), panel_w, panel_h)
+        self.content_rect = self.panel_rect.inflate(-30, -60)
+        self.content_rect.height -= 26
+        self.btn_back.move_to((self.panel_rect.x + 8, self.panel_rect.bottom - 18))
+
+        content_y = self.content_rect.y + 10 - self.scroll
+        center_x = self.content_rect.centerx
+
+        # Video / audio section
+        for widget in self.base_widgets:
+            if hasattr(widget, "btn"):
+                widget.btn.style.font = self.info_font
+                widget.btn.move_to((center_x, content_y + 16))
+                row_h = widget.btn.rect.height + 10
             else:
-                # Slider : on place le centre de la barre en tenant compte du label au-dessus
-                label_h = w.label_surf.get_height()
-                bar_center_y = cursor + 36 + label_h + 8 + w.knob_r
-                w.pos = (x, bar_center_y)
-                w._rebuild_rects()
-            cursor += bh + item_gap
+                widget.font = self.info_font
+                widget.pos = (center_x, content_y + 28)
+                widget._rebuild_rects()
+                row_h = 68
+            content_y += row_h
 
-        # Bouton retour sous le bloc
-        cursor += back_gap
-        self.btn_back.move_to((x, cursor + self.btn_back.rect.height // 2))
+        content_y += 16
+        self._keys_section_y = content_y
+        for label, path in self.keybind_specs:
+            btn = self.rebind_buttons[path]
+            btn.style.font = self.info_font
+            btn.move_to((self.content_rect.right - 20, content_y + 16))
+            content_y += 44
+
+        total_height = max(1, content_y - (self.content_rect.y + 10 - self.scroll))
+        self.max_scroll = max(0, total_height - self.content_rect.height + 14)
+        self.scroll = max(0, min(self.scroll, self.max_scroll))
+
+    def update(self, dt):
+        if self.feedback_timer > 0:
+            self.feedback_timer = max(0.0, self.feedback_timer - float(dt))
+            if self.feedback_timer <= 0:
+                self.feedback = ""
 
     def handle_input(self, events):
-        super().handle_input(events)
+        self._layout()
+        mouse_pos = pygame.mouse.get_pos()
+        content_hover = self.content_rect.collidepoint(mouse_pos)
+
+        if self.pending_rebind_path is not None:
+            for e in events:
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_ESCAPE:
+                        self.pending_rebind_path = None
+                        self._set_feedback("Rebind annule.", duration=1.2)
+                    else:
+                        self._apply_rebind(self.pending_rebind_path, e.key)
+                        self.pending_rebind_path = None
+            return
+
         for e in events:
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                 self.app.change_state("MENU")
+                return
+            if e.type == pygame.MOUSEWHEEL and content_hover:
+                self.scroll = max(0, min(self.scroll - e.y * 34, self.max_scroll))
+                self._layout()
+            if e.type == pygame.KEYDOWN and e.key in (pygame.K_DOWN, pygame.K_PAGEDOWN):
+                self.scroll = max(0, min(self.scroll + 34, self.max_scroll))
+                self._layout()
+            if e.type == pygame.KEYDOWN and e.key in (pygame.K_UP, pygame.K_PAGEUP):
+                self.scroll = max(0, min(self.scroll - 34, self.max_scroll))
+                self._layout()
+
+        for widget in self.base_widgets:
+            widget.handle(events)
+        for _label, path in self.keybind_specs:
+            self.rebind_buttons[path].handle(events)
+        self.btn_back.handle(events)
 
     def render(self, screen):
-        # même fond que partout (menu_background + overlay)
+        self._layout()
+
         screen.blit(self.bg, (0, 0))
         screen.blit(self._overlay, (0, 0))
 
-        # titre centré (pas celui de BaseMenu à y=120)
-        screen.blit(self._title_surf, self._title_pos)
+        title = self.title_font.render(self.title, True, (235, 235, 235))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 46))
 
-        for w in self.widgets:
-            w.draw(screen)
-        for w in self.widgets:
-            if hasattr(w, "draw_popup"):
-                w.draw_popup(screen)
+        pygame.draw.rect(screen, (24, 30, 42), self.panel_rect, border_radius=16)
+        pygame.draw.rect(screen, (88, 112, 146), self.panel_rect, 2, border_radius=16)
+
+        section_video = self.section_font.render("Configuration", True, (214, 228, 246))
+        screen.blit(section_video, (self.content_rect.x + 6, self.content_rect.y - self.scroll + 2))
+        section_keys = self.section_font.render("Raccourcis clavier", True, (214, 228, 246))
+        keys_y = int(getattr(self, "_keys_section_y", self.content_rect.y + 200))
+        screen.blit(section_keys, (self.content_rect.x + 6, keys_y))
+
+        prev_clip = screen.get_clip()
+        screen.set_clip(self.content_rect)
+
+        for widget in self.base_widgets:
+            widget.draw(screen)
+        y = int(getattr(self, "_keys_section_y", self.content_rect.y + 200) + 38)
+        for label, path in self.keybind_specs:
+            text = self.info_font.render(label, True, (225, 232, 242))
+            screen.blit(text, (self.content_rect.x + 14, y))
+            self.rebind_buttons[path].draw(screen)
+            y += 44
+
+        screen.set_clip(prev_clip)
+
+        if self.max_scroll > 0:
+            track = pygame.Rect(self.panel_rect.right - 10, self.content_rect.y, 4, self.content_rect.height)
+            pygame.draw.rect(screen, (44, 52, 64), track, border_radius=3)
+            thumb_h = max(30, int(track.height * (self.content_rect.height / (self.content_rect.height + self.max_scroll))))
+            thumb_y = track.y + int((track.height - thumb_h) * (self.scroll / max(1, self.max_scroll)))
+            pygame.draw.rect(screen, (122, 144, 176), pygame.Rect(track.x, thumb_y, track.width, thumb_h), border_radius=3)
+
+        if self.pending_rebind_path is not None:
+            msg = self.info_font.render("En attente d'une touche...", True, (250, 214, 132))
+            screen.blit(msg, (self.panel_rect.x + 20, self.panel_rect.bottom - 42))
+        elif self.feedback:
+            msg = self.info_font.render(self.feedback, True, (210, 220, 240))
+            screen.blit(msg, (self.panel_rect.x + 20, self.panel_rect.bottom - 42))
+
+        self.btn_back.draw(screen)
 
 
 

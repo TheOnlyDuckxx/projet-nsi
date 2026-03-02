@@ -79,7 +79,6 @@ class Egg:
         # Attributs minimaux pour le HUD/inspection
         self.jauges = {
             "sante": self.durability,
-            "energie": self.durability,
             "faim": 0,
             "soif": 0,
         }
@@ -93,7 +92,6 @@ class Egg:
     def take_damage(self, amount: float) -> None:
         self.durability = max(0.0, self.durability - max(0.0, float(amount)))
         self.jauges["sante"] = self.durability
-        self.jauges["energie"] = self.durability
 
     def is_destroyed(self) -> bool:
         return self.durability <= 0

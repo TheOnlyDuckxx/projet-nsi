@@ -14,8 +14,13 @@
     "language": "fr"
   },
   "debug": {
-    "perf_logs": false,
+    "perf_logs": true,
     "perf_slow_frame_ms": 120
+  },
+  "controls": {
+    "props_transparency": 104,
+    "inspect_mode": 105,
+    "focus_nearest": 32
   },
   "species": {
     "base_mutations": []

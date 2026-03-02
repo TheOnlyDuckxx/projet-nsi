@@ -9,7 +9,7 @@ from Game.world.fog_of_war import FogOfWar
 
 DEFAULT_SAVE_PATH = os.path.join("Game", "save", "savegame.evosave")
 SAVES_DIR = os.path.join("Game", "save", "slots")
-SAVE_VERSION = "1.3"
+SAVE_VERSION = "1.4"
 SAVE_HEADER = b"EVOBYTE"  # petite signature maison
 
 
@@ -246,6 +246,7 @@ class SaveManager:
             "mutations_actives": actives,
             "mutation_interval": getattr(espece, "mutation_interval", 1),
             "next_mutation_level": getattr(espece, "next_mutation_level", 2),
+            "main_class": getattr(espece, "main_class", None),
             "reproduction": getattr(getattr(espece, "reproduction_system", None), "to_dict", lambda: {})(),
         }
 
@@ -287,6 +288,12 @@ class SaveManager:
             )
         except Exception:
             pass
+        main_class = espece_data.get("main_class")
+        if main_class is not None:
+            try:
+                espece.main_class = str(main_class).strip().lower() or None
+            except Exception:
+                espece.main_class = None
 
         # Restauration des mutations: on ne ré-applique pas les effets (les stats sont déjà sauvegardées).
         base_mutations = espece_data.get("base_mutations")
@@ -384,6 +391,8 @@ class SaveManager:
                 "jauges": getattr(ent, "jauges", None),
                 "ia": getattr(ent, "ia", None),
                 "effets_speciaux": getattr(ent, "effets_speciaux", None),
+                "role_class": getattr(ent, "role_class", None),
+                "main_class_bonus_applied": bool(getattr(ent, "_main_class_bonus_applied", False)),
             }
 
             # Inventaire : on prend "carrying" en priorité, sinon "inventaire"
@@ -428,6 +437,12 @@ class SaveManager:
         else:
             print("pas de fog :(")
 
+        if hasattr(phase1, "_flush_daily_stats"):
+            try:
+                phase1._flush_daily_stats(int(getattr(phase1.day_night, "jour", 0) or 0), include_partial=True)
+            except Exception:
+                pass
+
         # ---------- PAYLOAD FINAL ----------
         return {
             "version": SAVE_VERSION,
@@ -442,6 +457,12 @@ class SaveManager:
             "fog": fog_data,
             "day_night": day_night_data,   # <-- NEW
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
+            "weather_state": getattr(getattr(phase1, "weather_system", None), "to_dict", lambda: None)(),
+            "quest_state": getattr(getattr(phase1, "quest_manager", None), "to_dict", lambda: {})(),
+            "world_history": list(getattr(phase1, "world_history", []) or []),
+            "class_state": dict(getattr(phase1, "class_state", {}) or {}),
+            "horde_state": dict(getattr(phase1, "horde_state", {}) or {}),
+            "warehouse_built_count": int(getattr(phase1, "_warehouse_built_count", 0) or 0),
             "warehouse": getattr(phase1, "warehouse", None),
             "happiness": getattr(phase1, "happiness", None),
             "death_response_mode": getattr(phase1, "death_response_mode", None),
@@ -639,6 +660,15 @@ class SaveManager:
                     ent.carrying = ind_data["inventaire"]
                 if ind_data.get("effets_speciaux") is not None:
                     ent.effets_speciaux = ind_data["effets_speciaux"]
+                if ind_data.get("role_class") is not None:
+                    try:
+                        ent.role_class = str(ind_data.get("role_class")).strip().lower()
+                    except Exception:
+                        pass
+                try:
+                    ent._main_class_bonus_applied = bool(ind_data.get("main_class_bonus_applied", False))
+                except Exception:
+                    pass
 
                 if is_fauna:
                     ent.is_fauna = True
@@ -709,6 +739,16 @@ class SaveManager:
                 dn.jour = int(dn_data.get("jour", 0))
             log_step("Jour/Nuit restaure")
 
+            weather_state = data.get("weather_state")
+            if weather_state is not None:
+                ensure_weather = getattr(phase1, "_ensure_weather_system", None)
+                if callable(ensure_weather):
+                    ensure_weather()
+                ws = getattr(phase1, "weather_system", None)
+                if ws is not None and hasattr(ws, "from_dict"):
+                    ws.from_dict(weather_state)
+            log_step("Meteo restauree")
+
             phase1.happiness = data.get("happiness", getattr(phase1, "happiness", 10.0))
             phase1.death_response_mode = data.get("death_response_mode")
             phase1.death_event_ready = data.get("death_event_ready", False)
@@ -719,6 +759,29 @@ class SaveManager:
             phase1._stats_current_day = dict(data.get("stats_current_day") or getattr(phase1, "_stats_current_day", {}))
             phase1._stats_last_day = int(data.get("stats_last_day", getattr(phase1, "_stats_last_day", 0)) or 0)
             phase1.session_time_seconds = float(data.get("session_time_seconds", getattr(phase1, "session_time_seconds", 0.0)) or 0.0)
+            phase1.world_history = list(data.get("world_history") or [])
+            phase1.class_state = dict(data.get("class_state") or {})
+            phase1.horde_state = dict(data.get("horde_state") or getattr(phase1, "horde_state", {}))
+            phase1.quest_state = dict(data.get("quest_state") or {})
+            phase1._warehouse_built_count = int(data.get("warehouse_built_count", getattr(phase1, "_warehouse_built_count", 0)) or 0)
+            if getattr(phase1, "event_manager", None) is not None:
+                phase1.event_manager.runtime_flags["horde_active"] = bool(
+                    phase1.horde_state.get("active", False)
+                )
+            if getattr(phase1, "espece", None) is not None:
+                class_main = phase1.class_state.get("main_class")
+                if class_main:
+                    try:
+                        phase1.espece.main_class = str(class_main).strip().lower() or None
+                    except Exception:
+                        phase1.espece.main_class = None
+                elif getattr(phase1.espece, "main_class", None):
+                    phase1.class_state["main_class"] = getattr(phase1.espece, "main_class", None)
+            qmgr = getattr(phase1, "quest_manager", None)
+            if qmgr is not None:
+                qmgr.load_state(data.get("quest_state") or {})
+            if hasattr(phase1, "_normalize_statistics_state"):
+                phase1._normalize_statistics_state()
             if hasattr(phase1, "_bootstrap_run_statistics"):
                 phase1._bootstrap_run_statistics()
             unlocked = data.get("unlocked_crafts")
@@ -726,6 +789,8 @@ class SaveManager:
                 phase1.unlocked_crafts = set(unlocked)
                 if phase1.bottom_hud:
                     phase1.bottom_hud.refresh_craft_buttons()
+            if hasattr(phase1, "_refresh_craft_gate_state"):
+                phase1._refresh_craft_gate_state(force=True)
 
             tech_state = data.get("tech_tree")
             tech_tree = getattr(phase1, "tech_tree", None)

@@ -15,7 +15,7 @@ from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
 from world.world_gen import load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
-from Game.species.species import Espece
+from Game.species.species import Espece, ROLE_CLASS_LABELS
 from Game.save.save import SaveManager
 from Game.core.utils import resource_path
 from Game.ui.hud.bottom_hud import BottomHUD
@@ -31,6 +31,7 @@ from Game.world.fog_of_war import FogOfWar
 from Game.gameplay.craft import Craft
 from Game.world.day_night import DayNightCycle
 from Game.gameplay.event import EventManager
+from Game.gameplay.quest_manager import QuestManager
 from Game.ui.hud.draggable_window import DraggableWindow
 from Game.world.weather import WEATHER_CONDITIONS, WeatherSystem
 from Game.world.weather_vfx import WeatherVFXController
@@ -88,6 +89,7 @@ class Phase1:
         self.day_night.set_time(6, 0)
         self.day_night.set_speed(3.0)
         self.event_manager = EventManager()
+        self.quest_manager = QuestManager(self)
 
         #Météo
         self.weather_system = None
@@ -110,6 +112,17 @@ class Phase1:
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
+        self.world_history: list[dict] = []
+        self.class_state: dict = {"main_class": None, "chosen_day": None}
+        self.horde_state: dict = {
+            "active": False,
+            "ends_at_minute": 0.0,
+            "last_horde_day": -9999.0,
+            "aggressive_spawn_multiplier": 3.0,
+        }
+        self._warehouse_gate_cache: bool | None = None
+        self._warehouse_gate_probe_cd = 0.0
+        self._warehouse_built_count = 0
 
         # entités
         self.espece = None
@@ -268,10 +281,22 @@ class Phase1:
         self.day_night.set_time(6, 0)
         self.day_night.set_speed(3.0)
         self.event_manager = EventManager()
+        self.quest_manager = QuestManager(self)
         self.right_hud = LeftHUD(self)
         self.bottom_hud = None
         self._set_cursor(self.default_cursor_path)
         self._init_craft_unlocks()
+        self.world_history = []
+        self.class_state = {"main_class": None, "chosen_day": None}
+        self.horde_state = {
+            "active": False,
+            "ends_at_minute": 0.0,
+            "last_horde_day": -9999.0,
+            "aggressive_spawn_multiplier": 3.0,
+        }
+        self._warehouse_gate_cache = None
+        self._warehouse_gate_probe_cd = 0.0
+        self._warehouse_built_count = 0
         self.happiness = 10.0
         self.happiness_min = -100.0
         self.happiness_max = 100.0
@@ -331,6 +356,78 @@ class Phase1:
             int(self._run_stats.get("max_innovation", 0) or 0),
             current_innov,
         )
+
+    def _normalize_statistics_state(self):
+        run_defaults = {
+            "animals_killed": 0,
+            "resources_by_type": {},
+            "total_population": 0,
+            "max_population": 0,
+            "max_innovation": 0,
+        }
+        cur_defaults = {
+            "animals_killed": 0,
+            "resources_collected": 0,
+            "births": 0,
+            "deaths": 0,
+            "population_start": 0,
+            "population_end": 0,
+        }
+
+        src_run = dict(getattr(self, "_run_stats", {}) or {})
+        self._run_stats = {}
+        for key, default in run_defaults.items():
+            val = src_run.get(key, default)
+            if isinstance(default, dict):
+                self._run_stats[key] = dict(val or {})
+            else:
+                try:
+                    self._run_stats[key] = int(val or 0)
+                except Exception:
+                    self._run_stats[key] = int(default)
+
+        src_cur = dict(getattr(self, "_stats_current_day", {}) or {})
+        self._stats_current_day = {}
+        for key, default in cur_defaults.items():
+            try:
+                self._stats_current_day[key] = int(src_cur.get(key, default) or 0)
+            except Exception:
+                self._stats_current_day[key] = int(default)
+
+        normalized_daily = []
+        for row in list(getattr(self, "_daily_stats", []) or []):
+            if not isinstance(row, dict):
+                continue
+            try:
+                day = int(row.get("day", 0) or 0)
+            except Exception:
+                day = 0
+            births = int(row.get("births", 0) or 0)
+            deaths = int(row.get("deaths", 0) or 0)
+            population = int(row.get("population", 0) or 0)
+            animals = int(row.get("animals_killed", 0) or 0)
+            resources = int(row.get("resources_collected", 0) or 0)
+            baseline = max(1, int(row.get("population_start", population) or population))
+            birth_rate = float(row.get("birth_rate", births / baseline) or births / baseline)
+            death_rate = float(row.get("death_rate", deaths / baseline) or deaths / baseline)
+            normalized_daily.append(
+                {
+                    "day": day,
+                    "animals_killed": max(0, animals),
+                    "resources_collected": max(0, resources),
+                    "population": max(0, population),
+                    "births": max(0, births),
+                    "deaths": max(0, deaths),
+                    "birth_rate": max(0.0, birth_rate),
+                    "death_rate": max(0.0, death_rate),
+                }
+            )
+        normalized_daily.sort(key=lambda d: int(d.get("day", 0)))
+        self._daily_stats = normalized_daily
+        try:
+            self._stats_last_day = int(getattr(self, "_stats_last_day", 0) or 0)
+        except Exception:
+            self._stats_last_day = 0
 
     def _flush_daily_stats(self, target_day: int, include_partial: bool = False):
         current_day = int(getattr(self.day_night, "jour", 0) or 0)
@@ -422,6 +519,15 @@ class Phase1:
                 ent.phase = self
             except Exception:
                 pass
+            if (
+                getattr(self, "espece", None) is not None
+                and getattr(ent, "espece", None) is self.espece
+                and hasattr(self.espece, "_apply_main_class_bonus_if_needed")
+            ):
+                try:
+                    self.espece._apply_main_class_bonus_if_needed(ent)
+                except Exception:
+                    pass
         # Nettoie les fenêtres d'info éventuelles (pour éviter les références périmées)
         self.info_windows = []
         self._set_cursor(self.default_cursor_path)
@@ -474,8 +580,7 @@ class Phase1:
         if self.weather_vfx:
             self.weather_vfx.draw(screen, self.weather_system)
 
-    def _init_craft_unlocks(self):
-        """Initialise l'ensemble des crafts accessibles par défaut."""
+    def _tech_locked_crafts(self) -> set[str]:
         tech_locked_crafts: set[str] = set()
         if self.tech_tree and getattr(self.tech_tree, "techs", None):
             for tech_data in (self.tech_tree.techs or {}).values():
@@ -484,6 +589,11 @@ class Phase1:
                 for craft_id in tech_data.get("craft", []) or []:
                     if craft_id:
                         tech_locked_crafts.add(str(craft_id))
+        return tech_locked_crafts
+
+    def _init_craft_unlocks(self):
+        """Initialise l'ensemble des crafts accessibles par défaut."""
+        tech_locked_crafts = self._tech_locked_crafts()
 
         self.unlocked_crafts = set()
         for cid, craft_def in self.craft_system.crafts.items():
@@ -492,6 +602,9 @@ class Phase1:
                 locked = True
             if not locked:
                 self.unlocked_crafts.add(cid)
+        if "Entrepot_primitif" in self.craft_system.crafts:
+            self.unlocked_crafts.add("Entrepot_primitif")
+        self._warehouse_gate_cache = bool(int(getattr(self, "_warehouse_built_count", 0) or 0) > 0)
 
     def _on_tech_unlocked(self, tech_id: str, tech_data: dict) -> None:
         """Callback appelé quand une technologie est débloquée"""
@@ -503,6 +616,97 @@ class Phase1:
             int(self._run_stats.get("max_innovation", 0) or 0),
             int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0),
         )
+
+    def _scan_warehouses_near_entities(self, radius: int = 96) -> int:
+        """
+        Scan borné autour des entités vivantes pour migration d'anciens saves.
+        Évite le scan global de la carte (trop coûteux).
+        """
+        if not self.world or not getattr(self.world, "overlay", None):
+            return 0
+        w, h = int(self.world.width), int(self.world.height)
+        if w <= 0 or h <= 0:
+            return 0
+
+        centers: list[tuple[int, int]] = []
+        for ent in self.entities:
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "is_fauna", False):
+                continue
+            centers.append((int(getattr(ent, "x", 0)), int(getattr(ent, "y", 0))))
+            if len(centers) >= 6:
+                break
+        if not centers:
+            try:
+                sx, sy = self.world.spawn
+                centers.append((int(sx), int(sy)))
+            except Exception:
+                centers.append((w // 2, h // 2))
+
+        found = 0
+        seen: set[tuple[int, int]] = set()
+        rad = max(8, int(radius))
+        for cx, cy in centers:
+            x0 = max(0, cx - rad)
+            x1 = min(w - 1, cx + rad)
+            y0 = max(0, cy - rad)
+            y1 = min(h - 1, cy + rad)
+            for j in range(y0, y1 + 1):
+                row = self.world.overlay[j]
+                for i in range(x0, x1 + 1):
+                    if (i, j) in seen:
+                        continue
+                    seen.add((i, j))
+                    cell = row[i]
+                    if isinstance(cell, dict):
+                        if cell.get("state") == "built" and (
+                            cell.get("craft_id") == "Entrepot_primitif" or cell.get("pid") == 102
+                        ):
+                            found += 1
+                    elif isinstance(cell, int) and int(cell) == 102:
+                        found += 1
+        return found
+
+    def has_built_warehouse(self, force_scan: bool = False) -> bool:
+        count = int(getattr(self, "_warehouse_built_count", 0) or 0)
+        if force_scan and count <= 0:
+            detected = self._scan_warehouses_near_entities()
+            if detected > 0:
+                self._warehouse_built_count = int(detected)
+                count = int(detected)
+        built = count > 0
+        self._warehouse_gate_cache = bool(built)
+        return bool(built)
+
+    def _refresh_craft_gate_state(self, force: bool = False):
+        previous = self._warehouse_gate_cache
+        built = self.has_built_warehouse(force_scan=force)
+        if not force and previous is not None and bool(previous) == bool(built):
+            return
+        self._warehouse_gate_cache = bool(built)
+        self._warehouse_gate_probe_cd = 0.75
+        if self.selected_craft and not self.is_craft_unlocked(self.selected_craft):
+            self.selected_craft = None
+        if self.bottom_hud:
+            self.bottom_hud.refresh_craft_buttons()
+
+    def unlock_all_non_tech_crafts(self, skip: set[str] | None = None):
+        skip = set(skip or set())
+        tech_locked = self._tech_locked_crafts()
+        for craft_id, craft_def in self.craft_system.crafts.items():
+            if craft_id in skip:
+                continue
+            if craft_id == "Entrepot_primitif":
+                self.unlocked_crafts.add(craft_id)
+                continue
+            if craft_id in tech_locked:
+                continue
+            if craft_def.get("locked") or craft_def.get("requires_unlock"):
+                continue
+            self.unlocked_crafts.add(craft_id)
+        if self.bottom_hud:
+            self.bottom_hud.refresh_craft_buttons()
 
     def start_tech_research(self, tech_id: str) -> bool:
         """Démarre la recherche d'une technologie si possible, et affiche une notification."""
@@ -615,10 +819,11 @@ class Phase1:
 
         if self._entity_can_walk_on_water(ent) and self._tile_is_water(int(ent.x), int(ent.y), generate=False):
             swim = float(physique.get("vitesse de nage", physique.get("vitesse_de_nage", 3)) or 3)
-            water_mult = max(0.35, min(0.9, 0.45 + 0.06 * swim))
+            # Ralentissement leger et constant dans l'eau.
+            water_mult = max(0.75, min(0.98, 0.85 + (swim - 5.0) * 0.02))
             speed *= water_mult
 
-        return speed
+        return max(0.2, speed)
 
     def _clear_entity_combat_refs(self, ent):
         clear_entity_combat_refs(self, ent)
@@ -833,6 +1038,220 @@ class Phase1:
             count += 1
         return count
 
+    def count_living_members_by_class(self, class_id: str | None = None) -> int:
+        wanted = str(class_id or "").strip().lower()
+        count = 0
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False) or getattr(ent, "is_fauna", False):
+                continue
+            if getattr(ent, "espece", None) != self.espece:
+                continue
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "jauges", {}).get("sante", 0) <= 0:
+                continue
+            if wanted and str(getattr(ent, "role_class", "") or "").strip().lower() != wanted:
+                continue
+            count += 1
+        return count
+
+    def get_dominant_role_class(self, min_count: int = 0) -> tuple[str | None, int]:
+        counts: dict[str, int] = {}
+        for ent in self.entities:
+            if getattr(ent, "is_egg", False) or getattr(ent, "is_fauna", False):
+                continue
+            if getattr(ent, "espece", None) != self.espece:
+                continue
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "jauges", {}).get("sante", 0) <= 0:
+                continue
+            role = str(getattr(ent, "role_class", "") or "").strip().lower()
+            if not role:
+                continue
+            counts[role] = counts.get(role, 0) + 1
+
+        if not counts:
+            return None, 0
+        best_role, best_count = max(counts.items(), key=lambda kv: kv[1])
+        if int(best_count) < int(min_count):
+            return None, int(best_count)
+        return best_role, int(best_count)
+
+    def set_main_class(self, class_id: str | None):
+        if not self.espece:
+            return
+        normalized = str(class_id or "").strip().lower()
+        if normalized not in ROLE_CLASS_LABELS:
+            return
+        if getattr(self.espece, "main_class", None) == normalized:
+            return
+        self.espece.set_main_class(normalized)
+        day = int(getattr(self.day_night, "jour", 0) or 0)
+        self.class_state["main_class"] = normalized
+        self.class_state["chosen_day"] = day
+        self.event_manager.runtime_flags["class_choice_ready"] = False
+        self.event_manager.runtime_flags["class_choice_candidate"] = None
+        label = ROLE_CLASS_LABELS.get(normalized, normalized.title())
+        add_notification(f"Classe principale fixee: {label}.")
+        self.log_world_event("class", f"L'espece adopte la classe principale '{label}'.")
+
+    def _current_day_hour_minute(self) -> tuple[int, int, int]:
+        dn = getattr(self, "day_night", None)
+        if dn is None:
+            return 0, 0, 0
+        ratio = float(dn.get_time_ratio() if hasattr(dn, "get_time_ratio") else 0.0)
+        ratio = max(0.0, min(1.0, ratio))
+        hours_float = ratio * 24.0
+        hour = int(hours_float) % 24
+        minute = int((hours_float - int(hours_float)) * 60.0) % 60
+        day = int(getattr(dn, "jour", 0) or 0)
+        return day, hour, minute
+
+    def _game_minutes_absolute(self) -> float:
+        day, hour, minute = self._current_day_hour_minute()
+        return float(day * 24 * 60 + hour * 60 + minute)
+
+    def log_world_event(self, category: str, message: str):
+        day, hour, minute = self._current_day_hour_minute()
+        entry = {
+            "day": int(day),
+            "hour": int(hour),
+            "minute": int(minute),
+            "category": str(category or "event"),
+            "message": str(message or ""),
+        }
+        self.world_history.append(entry)
+        if len(self.world_history) > 1200:
+            self.world_history = self.world_history[-1200:]
+
+    def is_horde_active(self) -> bool:
+        return bool((self.horde_state or {}).get("active", False))
+
+    def get_horde_aggressive_spawn_multiplier(self) -> float:
+        if not self.is_horde_active():
+            return 1.0
+        return float((self.horde_state or {}).get("aggressive_spawn_multiplier", 3.0) or 3.0)
+
+    def get_horde_spawn_cycle_multiplier(self) -> float:
+        return self.get_horde_aggressive_spawn_multiplier()
+
+    def start_horde(self, duration_minutes: float = 120.0):
+        now = self._game_minutes_absolute()
+        day, _hour, _minute = self._current_day_hour_minute()
+        duration = max(1.0, float(duration_minutes or 120.0))
+        ends = now + duration
+        already_active = self.is_horde_active()
+        self.horde_state["active"] = True
+        self.horde_state["ends_at_minute"] = max(float(self.horde_state.get("ends_at_minute", 0.0) or 0.0), ends)
+        self.horde_state["last_horde_day"] = float(day)
+        self.horde_state["aggressive_spawn_multiplier"] = float(
+            self.horde_state.get("aggressive_spawn_multiplier", 3.0) or 3.0
+        )
+        self.event_manager.runtime_flags["horde_active"] = True
+        if not already_active:
+            add_notification("Alerte: horde hostile active pour 2 heures.")
+            self.log_world_event("horde", "Debut d'une horde hostile (2h).")
+
+    def _update_horde_state(self):
+        if not self.is_horde_active():
+            self.event_manager.runtime_flags["horde_active"] = False
+            return
+        now = self._game_minutes_absolute()
+        ends = float(self.horde_state.get("ends_at_minute", 0.0) or 0.0)
+        if now < ends:
+            return
+        self.horde_state["active"] = False
+        self.horde_state["ends_at_minute"] = 0.0
+        self.event_manager.runtime_flags["horde_active"] = False
+        add_notification("Fin de la horde hostile.")
+        self.log_world_event("horde", "Fin de la horde hostile.")
+
+    def _structure_is_attackable(self, cell) -> bool:
+        if not isinstance(cell, dict):
+            return False
+        if not cell.get("craft_id") and cell.get("state") != "building":
+            return False
+        if cell.get("state") == "destroyed":
+            return False
+        return True
+
+    def _find_nearest_attackable_structure(self, attacker, max_radius: int = 8):
+        if not self.world or attacker is None:
+            return None
+        ex, ey = int(getattr(attacker, "x", 0)), int(getattr(attacker, "y", 0))
+        width, height = self.world.width, self.world.height
+        for r in range(1, max_radius + 1):
+            best = None
+            best_dist = 10**9
+            x0 = max(0, ex - r)
+            x1 = min(width - 1, ex + r)
+            y0 = max(0, ey - r)
+            y1 = min(height - 1, ey + r)
+            for j in range(y0, y1 + 1):
+                for i in range(x0, x1 + 1):
+                    if max(abs(i - ex), abs(j - ey)) != r:
+                        continue
+                    cell = self._get_construction_cell(i, j)
+                    if not self._structure_is_attackable(cell):
+                        continue
+                    dist = abs(i - ex) + abs(j - ey)
+                    if dist < best_dist:
+                        best = (i, j)
+                        best_dist = dist
+            if best is not None:
+                return best
+        return None
+
+    def _damage_structure_at(self, i: int, j: int, damage: float, attacker=None) -> bool:
+        if not self.world:
+            return False
+        cell = self._get_construction_cell(i, j)
+        if not self._structure_is_attackable(cell):
+            return False
+
+        craft_id = cell.get("craft_id")
+        craft_def = self.craft_system.crafts.get(craft_id, {}) if craft_id else {}
+        max_hp = float(cell.get("max_hp", 0.0) or 0.0)
+        if max_hp <= 0:
+            max_hp = max(20.0, float(self.craft_system._compute_structure_hp(craft_def or {"cost": cell.get("cost", {})})))
+        hp = float(cell.get("hp", max_hp) or max_hp)
+        hp = max(0.0, hp - max(0.0, float(damage)))
+        cell["max_hp"] = max_hp
+        cell["hp"] = hp
+
+        if hp > 0.0:
+            self.world.overlay[j][i] = cell
+            return True
+
+        # Destruction
+        self.world.overlay[j][i] = 0
+        self.construction_sites.pop((int(i), int(j)), None)
+
+        refund_total = 0
+        if self.has_built_warehouse():
+            costs = dict(cell.get("cost") or craft_def.get("cost") or {})
+            for res_id, amount in costs.items():
+                try:
+                    qty = int(math.ceil(float(amount) * 0.3))
+                except Exception:
+                    qty = 0
+                if qty <= 0:
+                    continue
+                self.warehouse[res_id] = self.warehouse.get(res_id, 0) + qty
+                refund_total += qty
+
+        name = str(cell.get("name") or craft_id or "Structure")
+        if refund_total > 0:
+            add_notification(f"{name} detruit ({refund_total} ressources recuperees).")
+        else:
+            add_notification(f"{name} detruit.")
+        self.log_world_event("build", f"{name} a ete detruit.")
+        if craft_id == "Entrepot_primitif" and int(self._warehouse_built_count or 0) > 0:
+            self._warehouse_built_count = max(0, int(self._warehouse_built_count) - 1)
+        self._refresh_craft_gate_state(force=True)
+        return True
+
     def _focus_camera_on_nearest_species_member(self) -> bool:
         if not self.espece or not self.view:
             return False
@@ -889,6 +1308,7 @@ class Phase1:
         return False
 
     def _build_endgame_summary(self, reason: str) -> dict:
+        self._normalize_statistics_state()
         self._flush_daily_stats(int(getattr(self.day_night, "jour", 0) or 0), include_partial=True)
         espece_name = getattr(self.espece, "nom", "") if self.espece else ""
         species_level = int(getattr(self.espece, "species_level", 1) or 1) if self.espece else 1
@@ -1033,6 +1453,10 @@ class Phase1:
     def is_craft_unlocked(self, craft_id: str | None) -> bool:
         if not craft_id:
             return False
+        if craft_id == "Entrepot_primitif":
+            return True
+        if not self.has_built_warehouse():
+            return False
         return craft_id in self.unlocked_crafts
 
     def unlock_craft(self, craft_id: str | None):
@@ -1043,8 +1467,8 @@ class Phase1:
             craft_def = self.craft_system.crafts.get(craft_id, {})
             label = craft_def.get("name", craft_id)
             add_notification(f"Craft débloqué : {label}")
-            if self.bottom_hud:
-                self.bottom_hud.refresh_craft_buttons()
+        if self.bottom_hud:
+            self.bottom_hud.refresh_craft_buttons()
 
     # ---------- FAUNE ----------
     def _rabbit_definition(self) -> PassiveFaunaDefinition:
@@ -1105,8 +1529,12 @@ class Phase1:
                     self._init_fauna_species()
                     self._perf_enter_mark(perf, "Espece faune initialisee depuis sauvegarde")
                 self._attach_phase_to_entities()
+                if self.espece and getattr(self.espece, "main_class", None):
+                    self.class_state["main_class"] = getattr(self.espece, "main_class", None)
                 self._bootstrap_run_statistics()
+                self._normalize_statistics_state()
                 self._ensure_weather_system()
+                self._refresh_craft_gate_state(force=True)
                 self._gameplay_ready = True
                 self._endgame_debug(
                     f"enter(load) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
@@ -1278,14 +1706,37 @@ class Phase1:
         self._set_cursor(self.default_cursor_path)
         self._perf_enter_mark(perf, "Curseur initialise")
         self._ensure_weather_system()
+        self._refresh_craft_gate_state(force=False)
         self._gameplay_ready = True
         self._endgame_debug(
             f"enter(new) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
             f"living={self._count_living_species_members()} pending={self._game_end_pending}"
         )
 
+    def _control_key(self, path: str, fallback: int) -> int:
+        settings = getattr(self.app, "settings", None)
+        if settings is None:
+            return int(fallback)
+        raw = settings.get(path, fallback)
+        try:
+            return int(raw)
+        except Exception:
+            return int(fallback)
+
+    def _control_keys(self) -> dict[str, int]:
+        return {
+            "props_transparency": self._control_key("controls.props_transparency", pygame.K_h),
+            "inspect_mode": self._control_key("controls.inspect_mode", pygame.K_i),
+            "focus_nearest": self._control_key("controls.focus_nearest", pygame.K_SPACE),
+        }
+
     # ---------- INPUT ----------
     def handle_input(self, events):
+        controls = self._control_keys()
+        key_props = controls["props_transparency"]
+        key_inspect = controls["inspect_mode"]
+        key_focus = controls["focus_nearest"]
+
         if self.espece and self.espece.lvl_up.active:
             for e in events:
                 self.espece.lvl_up.handle_event(e, self.screen)
@@ -1335,17 +1786,17 @@ class Phase1:
                         self.paused = not self.paused
                         if not self.paused:
                             self._pause_achievements_open = False
-                elif e.key == pygame.K_SPACE:
+                elif e.key == key_focus:
                     self._focus_camera_on_nearest_species_member()
                 elif e.key == pygame.K_F6:
                     self._ensure_weather_system()
                     if self.weather_system:
                         self.weather_system.force_weather("rain", duration_minutes=30.0)
                         add_notification("Meteo forcee : pluie")
-                elif e.key == pygame.K_h:
+                elif e.key == key_props:
                     self.props_transparency_active = True
                     self.view.set_props_transparency(True)
-                elif e.key == pygame.K_i:
+                elif e.key == key_inspect:
                     self.inspect_mode_active = True
                     self._set_cursor(self.inspect_cursor_path)
                 elif e.key == pygame.K_n:
@@ -1357,10 +1808,10 @@ class Phase1:
                     if ent is not None:
                         self.start_rename_target(ent)
 
-            elif e.type == pygame.KEYUP and e.key == pygame.K_h:
+            elif e.type == pygame.KEYUP and e.key == key_props:
                 self.props_transparency_active = False
                 self.view.set_props_transparency(False)
-            elif e.type == pygame.KEYUP and e.key == pygame.K_i:
+            elif e.type == pygame.KEYUP and e.key == key_inspect:
                 self.inspect_mode_active = False
                 self._set_cursor(self.default_cursor_path)
 
@@ -1422,7 +1873,7 @@ class Phase1:
                         self._reset_drag_selection()
                         continue
 
-                    if keys_state[pygame.K_i]:
+                    if keys_state[key_inspect]:
                         hit = self.view.pick_at(mx, my)
                         if hit and hit[0] == "prop":
                             self._describe_craft_prop(hit[1])
@@ -1539,6 +1990,8 @@ class Phase1:
             return
         if self.paused or self.ui_menu_open:
             # Meme en pause on continue les timers d'evenements
+            if self.quest_manager:
+                self.quest_manager.update(dt)
             self.event_manager.update(dt, self)
             mark("Sortie rapide pause/menu")
             if self._perf_trace_frames > 0:
@@ -1548,6 +2001,9 @@ class Phase1:
         self.session_time_seconds += dt
 
         self._update_frame_id += 1
+        if self.quest_manager:
+            self.quest_manager.update(dt)
+        mark("Quest manager update")
         self.event_manager.update(dt, self)
         mark("Event manager update")
 
@@ -1563,6 +2019,7 @@ class Phase1:
                 int(self.joueur.x),
                 int(self.joueur.y),
             )
+        self._update_horde_state()
         self._update_weather_vfx(dt)
         mark("Day/night update")
 
@@ -1646,6 +2103,10 @@ class Phase1:
             return
 
         self._update_construction_sites()
+        self._warehouse_gate_probe_cd = max(0.0, float(self._warehouse_gate_probe_cd) - dt)
+        if self._warehouse_gate_probe_cd <= 0.0:
+            self._refresh_craft_gate_state()
+            self._warehouse_gate_probe_cd = 0.75
         mark("Construction sites update")
 
         if self.save_message_timer > 0:
@@ -2206,10 +2667,47 @@ class Phase1:
             return fallback
         return None
 
+    def _entity_low_health(self, ent) -> bool:
+        hp = float(getattr(ent, "jauges", {}).get("sante", 0) or 0)
+        max_hp = float(getattr(ent, "max_sante", 100) or 100)
+        if max_hp <= 0:
+            return True
+        return hp / max_hp <= 0.35
+
+    def _auto_find_nearest_hunt_target(self, ent, max_radius: int = 20):
+        best = None
+        best_d2 = None
+        ex, ey = float(ent.x), float(ent.y)
+        max_d2 = float(max_radius * max_radius)
+        for other in self.entities:
+            if other is ent:
+                continue
+            if not getattr(other, "is_fauna", False):
+                continue
+            if getattr(other, "_dead_processed", False):
+                continue
+            if getattr(other, "jauges", {}).get("sante", 0) <= 0:
+                continue
+            dx = float(other.x) - ex
+            dy = float(other.y) - ey
+            d2 = dx * dx + dy * dy
+            if d2 > max_d2:
+                continue
+            if best is None or d2 < best_d2:
+                best = other
+                best_d2 = d2
+        return best
+
+    def _auto_order_hunt(self, ent, target_ent) -> bool:
+        if target_ent is None or target_ent not in self.entities:
+            return False
+        return self._start_entity_combat(ent, target_ent)
+
     def _update_entity_auto_mode(self, ent, dt: float):
         if not hasattr(ent, "ia") or not isinstance(ent.ia, dict):
             return
-        if ent.ia.get("auto_mode") != "harvest":
+        auto_mode = str(ent.ia.get("auto_mode") or "").strip().lower()
+        if auto_mode not in {"harvest", "hunt"}:
             return
         if getattr(ent, "is_fauna", False):
             return
@@ -2221,6 +2719,8 @@ class Phase1:
         ent.ia["auto_next_decision_in"] = 0.2
 
         force_deposit = bool(ent.ia.get("auto_need_deposit")) or self._entity_inventory_is_full(ent)
+        if auto_mode == "hunt" and self._entity_low_health(ent):
+            force_deposit = True
         if force_deposit:
             ent.ia["auto_need_deposit"] = True
 
@@ -2271,10 +2771,16 @@ class Phase1:
         if etat not in ("idle", "se_deplace"):
             return
 
-        harvest_target = self._auto_find_nearest_harvestable_prop(ent)
-        if harvest_target and self._auto_order_harvest(ent, harvest_target):
-            ent.ia["auto_next_decision_in"] = 0.45
-            return
+        if auto_mode == "harvest":
+            harvest_target = self._auto_find_nearest_harvestable_prop(ent)
+            if harvest_target and self._auto_order_harvest(ent, harvest_target):
+                ent.ia["auto_next_decision_in"] = 0.45
+                return
+        else:
+            hunt_target = self._auto_find_nearest_hunt_target(ent)
+            if hunt_target and self._auto_order_hunt(ent, hunt_target):
+                ent.ia["auto_next_decision_in"] = 0.35
+                return
 
         step_tile = self._auto_next_step_tile(ent)
         if step_tile:
@@ -3037,6 +3543,10 @@ class Phase1:
             cell = self._get_construction_cell(*key)
             if meta and cell not in (None, 0, False):
                 add_notification(f"{meta.get('name', 'Construction')} terminée.")
+                if str(meta.get("craft_id") or "") == "Entrepot_primitif":
+                    self._warehouse_built_count = int(self._warehouse_built_count or 0) + 1
+        if finished:
+            self._refresh_craft_gate_state(force=True)
 
     def _draw_construction_bars(self, screen):
         if not self.construction_sites:

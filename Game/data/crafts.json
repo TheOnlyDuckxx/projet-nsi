@@ -184,7 +184,8 @@
     "output": {
       "type": "prop",
       "pid": 103
-    }
+    },
+    "locked": true
   },
 
   "Feu_de_joie": {

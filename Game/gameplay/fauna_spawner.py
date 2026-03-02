@@ -102,6 +102,11 @@ class FaunaSpawner:
 
         anchor_scan = max(1, int(self._config["anchor_scan_per_cycle"]))
         max_spawn = max(1, int(self._config["max_spawn_per_cycle"]))
+        if hasattr(phase, "get_horde_spawn_cycle_multiplier"):
+            try:
+                max_spawn = max(1, int(round(max_spawn * float(phase.get_horde_spawn_cycle_multiplier()))))
+            except Exception:
+                pass
         attempts_per_anchor = max(1, int(self._config["spawn_attempts_per_anchor"]))
         local_target = max(1, int(self._config["local_target_per_anchor"]))
         local_radius = max(4.0, float(self._config["local_count_radius_tiles"]))
@@ -130,7 +135,7 @@ class FaunaSpawner:
                 if candidate is None:
                     continue
                 tx, ty, biome_name = candidate
-                species_id = self._pick_species_for_biome(biome_name)
+                species_id = self._pick_species_for_biome(biome_name, phase=phase)
                 if not species_id:
                     continue
                 ent = self._spawn_entity(phase, species_id, tx, ty)
@@ -285,20 +290,36 @@ class FaunaSpawner:
             pool.append((species, weight))
         return pool
 
-    def _pick_species_for_biome(self, biome_name: str) -> str | None:
+    def _pick_species_for_biome(self, biome_name: str, phase=None) -> str | None:
         pool = self._biome_pools.get(str(biome_name).lower()) or self._default_pool
         if not pool:
             return None
-        total = sum(weight for _, weight in pool)
+        weighted_pool = list(pool)
+        if phase is not None and hasattr(phase, "get_horde_aggressive_spawn_multiplier"):
+            mult = float(phase.get_horde_aggressive_spawn_multiplier() or 1.0)
+            if mult > 1.0:
+                boosted = []
+                for species, weight in weighted_pool:
+                    boosted_weight = float(weight)
+                    try:
+                        definition = phase.get_fauna_definition(species)
+                    except Exception:
+                        definition = None
+                    if definition is not None and bool(getattr(definition, "is_aggressive", False)):
+                        boosted_weight *= mult
+                    boosted.append((species, boosted_weight))
+                weighted_pool = boosted
+
+        total = sum(weight for _, weight in weighted_pool)
         if total <= 0:
-            return pool[0][0]
+            return weighted_pool[0][0]
         roll = self._rng.uniform(0.0, total)
         acc = 0.0
-        for species, weight in pool:
+        for species, weight in weighted_pool:
             acc += weight
             if roll <= acc:
                 return species
-        return pool[-1][0]
+        return weighted_pool[-1][0]
 
     def _anchors(self, phase) -> list:
         return [

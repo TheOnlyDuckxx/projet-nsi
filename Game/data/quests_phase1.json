@@ -1,0 +1,160 @@
+{
+  "quests": [
+    {
+      "id": "craft_build_warehouse",
+      "title": "Installer un entrepot",
+      "description": "Construire au moins un Entrepot primitif.",
+      "start_active": true,
+      "track": {
+        "type": "warehouse_built",
+        "target": 1
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 50
+        },
+        {
+          "type": "unlock_non_tech_crafts"
+        }
+      ],
+      "next": [
+        "craft_stock_variety"
+      ]
+    },
+    {
+      "id": "craft_stock_variety",
+      "title": "Diversifier le stock",
+      "description": "Avoir 5 ressources differentes dans l'entrepot.",
+      "track": {
+        "type": "warehouse_resource_variety",
+        "target": 5
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 20
+        },
+        {
+          "type": "modify_species_stat",
+          "category": "base_mental",
+          "stat": "intelligence",
+          "amount": 1
+        }
+      ],
+      "next": [
+        "craft_unlock_first_tech"
+      ]
+    },
+    {
+      "id": "craft_unlock_first_tech",
+      "title": "Premiere innovation",
+      "description": "Debloquer au moins une technologie.",
+      "track": {
+        "type": "tech_unlocked_count",
+        "target": 1
+      },
+      "rewards": [
+        {
+          "type": "unlock_craft",
+          "craft_id": "Statue_de_canard"
+        }
+      ]
+    },
+    {
+      "id": "class_reach_five_same",
+      "title": "Classe dominante",
+      "description": "Atteindre 5 individus vivants de la meme classe.",
+      "start_active": true,
+      "track": {
+        "type": "class_count_same",
+        "target": 5
+      },
+      "rewards": [
+        {
+          "type": "trigger_class_choice_event"
+        }
+      ]
+    },
+    {
+      "id": "class_placeholder_savant",
+      "title": "Voie du Savant",
+      "description": "Quete placeholder: maintenir 6 Savants vivants.",
+      "activation": {
+        "type": "main_class_is",
+        "class": "savant"
+      },
+      "track": {
+        "type": "living_class_count",
+        "class": "savant",
+        "target": 6
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "id": "class_placeholder_pacifiste",
+      "title": "Voie du Pacifiste",
+      "description": "Quete placeholder: maintenir 6 Pacifistes vivants.",
+      "activation": {
+        "type": "main_class_is",
+        "class": "pacifiste"
+      },
+      "track": {
+        "type": "living_class_count",
+        "class": "pacifiste",
+        "target": 6
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "id": "class_placeholder_croyant",
+      "title": "Voie du Croyant",
+      "description": "Quete placeholder: maintenir 6 Croyants vivants.",
+      "activation": {
+        "type": "main_class_is",
+        "class": "croyant"
+      },
+      "track": {
+        "type": "living_class_count",
+        "class": "croyant",
+        "target": 6
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 10
+        }
+      ]
+    },
+    {
+      "id": "class_placeholder_belligerant",
+      "title": "Voie du Belligerant",
+      "description": "Quete placeholder: maintenir 6 Belligerants vivants.",
+      "activation": {
+        "type": "main_class_is",
+        "class": "belligerant"
+      },
+      "track": {
+        "type": "living_class_count",
+        "class": "belligerant",
+        "target": 6
+      },
+      "rewards": [
+        {
+          "type": "add_xp",
+          "amount": 10
+        }
+      ]
+    }
+  ]
+}

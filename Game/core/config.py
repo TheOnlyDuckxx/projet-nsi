@@ -27,6 +27,11 @@ DEFAULTS = {
     "debug": {
         "perf_logs": True,
         "perf_slow_frame_ms": 120
+    },
+    "controls": {
+        "props_transparency": int(pygame.K_h),
+        "inspect_mode": int(pygame.K_i),
+        "focus_nearest": int(pygame.K_SPACE),
     }
 }
 
