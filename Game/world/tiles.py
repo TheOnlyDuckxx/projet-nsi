@@ -23,6 +23,7 @@ ROCK = 17
 ALPINE = 18
 VOLCANIC = 19
 MYSTIC = 20
+CORRUPT = 21
 
 # --------------- CATALOGUE ---------------
 _DEFAULT_GROUND_SPRITES = {
@@ -47,6 +48,7 @@ _DEFAULT_GROUND_SPRITES = {
     ALPINE:    "tile_alpine",
     VOLCANIC:  "tile_volcanic",
     MYSTIC:    "tile_mystic",
+    CORRUPT:   "tile_corrupt",
 }
 
 _DEFAULT_NAME_TO_ID = {
@@ -71,6 +73,7 @@ _DEFAULT_NAME_TO_ID = {
     "alpine": ALPINE,
     "volcanic": VOLCANIC,
     "mystic": MYSTIC,
+    "corrupt": CORRUPT,
 }
 
 # --------------- HELPER ---------------

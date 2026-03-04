@@ -32,6 +32,7 @@ DEFAULTS = {
         "props_transparency": int(pygame.K_h),
         "inspect_mode": int(pygame.K_i),
         "focus_nearest": int(pygame.K_SPACE),
+        "map_toggle": int(pygame.K_m),
     }
 }
 

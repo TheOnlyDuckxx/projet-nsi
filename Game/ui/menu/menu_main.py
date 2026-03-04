@@ -172,6 +172,7 @@ class OptionsMenu(BaseMenu):
             ("Transparence props", "controls.props_transparency"),
             ("Mode inspection", "controls.inspect_mode"),
             ("Focus individu proche", "controls.focus_nearest"),
+            ("Afficher mini-map", "controls.map_toggle"),
         ]
         bind_style = ButtonStyle(
             draw_background=True,
@@ -1011,7 +1012,8 @@ class WorldCreationMenu(BaseMenu):
         try:
             with open(preset_path, "r", encoding="utf-8") as f:
                 presets = json.load(f)
-                self.params = presets.get("presets", {}).get("Custom", {})
+                raw_custom = presets.get("presets", {}).get("Custom", {})
+                self.params = self._normalize_world_params(raw_custom)
         except (FileNotFoundError, json.JSONDecodeError):
             self.params = {}
 
@@ -1033,25 +1035,26 @@ class WorldCreationMenu(BaseMenu):
         self.param_defs = [
             ("world_size", "Taille", ["Petite", "Moyenne", "Grande", "Gigantesque"]),
             ("water_coverage", "Eau", ["Aride", "Tempéré", "Océanique"]),
-            ("temperature", "Température", ["Glaciaire", "Froid", "Tempéré", "Chaud", "Ardent"]),
-            ("atmosphere_density", "Atmosphère", ["Faible", "Normale", "Épaisse"]),
-            ("resource_density", "Ressources", ["Pauvre", "Moyenne", "Riche", "Instable"]),
-            ("biodiversity", "Biodiversité", ["Faible", "Moyenne", "Élevée", "Extrême"]),
-            ("tectonic_activity", "Tectonique", ["Stable", "Moyenne", "Instable", "Chaotique"]),
-            ("weather", "Météo", ["Calme", "Variable", "Extrême"]),
+            ("temperature", "Température", ["Glaciaire", "Froid", "Tempéré", "Chaud", "Tropical", "Aride"]),
+            ("resource_density", "Ressources", ["Faible", "Moyenne", "Élevée", "Haute"]),
+            ("biodiversity", "Biodiversité", ["Faible", "Moyenne", "Élevée"]),
+            ("tectonic_activity", "Tectonique", ["Stable", "Modérée", "Instable", "Violente"]),
             ("gravity", "Gravité", ["Faible", "Moyenne", "Forte"]),
-            ("cosmic_radiation", "Radiations", ["Faible", "Moyenne", "Forte"]),
-            ("orbit", "Orbite", ["Circulaire", "Eliptique", "Très Eliptique"]),
-            ("orbital_period", "Période", ["32", "48", "64", "80"]),
-            ("mystic_influence", "Mystique", ["Nulle", "Faible", "Moyenne", "Forte"]),
-            ("dimensional_stability", "Stabilité", ["Stable", "Fissuré", "Instable"]),
         ]
+        self._param_default_values = {
+            "world_size": "Moyenne",
+            "water_coverage": "Tempéré",
+            "temperature": "Tempéré",
+            "resource_density": "Moyenne",
+            "biodiversity": "Moyenne",
+            "tectonic_activity": "Modérée",
+            "gravity": "Moyenne",
+        }
 
         # Boutons (paramètres + navigation)
         self._param_buttons = []
         for key, label, options in self.param_defs:
-            default_idx = len(options) // 2
-            default_val = options[default_idx]
+            default_val = self._param_default_values.get(key, options[len(options) // 2])
             cur = self.params.get(key, default_val)
             if cur not in options:
                 cur = default_val
@@ -1074,6 +1077,45 @@ class WorldCreationMenu(BaseMenu):
         # Layout cache
         self._last_size = None
         self._layout = {}
+
+    def _normalize_world_params(self, raw_params):
+        if not isinstance(raw_params, dict):
+            return {}
+
+        size_map = {256: "Petite", 384: "Moyenne", 512: "Grande", 768: "Gigantesque"}
+        temp_alias = {"Ardent": "Chaud"}
+        resource_alias = {"Pauvre": "Faible", "Riche": "Élevée", "Instable": "Moyenne", "Normale": "Moyenne"}
+        biodiv_alias = {"Extrême": "Élevée", "Haute": "Élevée"}
+        tect_alias = {"Moyenne": "Modérée", "Chaotique": "Violente"}
+        gravity_alias = {"Basse": "Faible", "Haute": "Forte", "Élevée": "Forte"}
+
+        normalized = {
+            "world_name": str(raw_params.get("world_name", "") or "").strip(),
+            "seed": raw_params.get("seed", "Aléatoire"),
+            "world_size": raw_params.get("world_size", raw_params.get("Taille", "Moyenne")),
+            "water_coverage": raw_params.get(
+                "water_coverage",
+                raw_params.get("Niveau_des_océans", raw_params.get("Niveau des océans", "Tempéré")),
+            ),
+            "temperature": raw_params.get("temperature", raw_params.get("Climat", "Tempéré")),
+            "resource_density": raw_params.get("resource_density", raw_params.get("Ressources", "Moyenne")),
+            "biodiversity": raw_params.get("biodiversity", "Moyenne"),
+            "tectonic_activity": raw_params.get("tectonic_activity", "Stable"),
+            "gravity": raw_params.get("gravity", "Moyenne"),
+        }
+
+        if isinstance(normalized["world_size"], (int, float)):
+            normalized["world_size"] = size_map.get(int(normalized["world_size"]), "Moyenne")
+        if isinstance(normalized["water_coverage"], (int, float)):
+            w = int(normalized["water_coverage"])
+            normalized["water_coverage"] = "Aride" if w <= 33 else ("Océanique" if w >= 67 else "Tempéré")
+
+        normalized["temperature"] = temp_alias.get(normalized["temperature"], normalized["temperature"])
+        normalized["resource_density"] = resource_alias.get(normalized["resource_density"], normalized["resource_density"])
+        normalized["biodiversity"] = biodiv_alias.get(normalized["biodiversity"], normalized["biodiversity"])
+        normalized["tectonic_activity"] = tect_alias.get(normalized["tectonic_activity"], normalized["tectonic_activity"])
+        normalized["gravity"] = gravity_alias.get(normalized["gravity"], normalized["gravity"])
+        return normalized
 
     # ----------------- UI helpers -----------------
 
@@ -1447,13 +1489,15 @@ class WorldCreationMenu(BaseMenu):
     # ----------------- Save / next -----------------
 
     def _go_to_species_creation(self):
-        self.params["world_name"] = (self.world_name.strip() or "Monde sans nom")
-
+        custom_params = {
+            "world_name": (self.world_name.strip() or "Monde sans nom"),
+            "seed": self.params.get("seed", "Aléatoire"),
+        }
         for b in self._param_buttons:
-            self.params[b.key] = b.value()
+            custom_params[b.key] = b.value()
 
-        if "seed" not in self.params:
-            self.params["seed"] = "Aléatoire"
+        if "chunk_noise_step" in self.params:
+            custom_params["chunk_noise_step"] = self.params.get("chunk_noise_step")
 
         preset_path = os.path.join("Game", "data", "world_presets.json")
         try:
@@ -1464,7 +1508,8 @@ class WorldCreationMenu(BaseMenu):
 
         if "presets" not in presets:
             presets["presets"] = {}
-        presets["presets"]["Custom"] = self.params
+        presets["presets"]["Custom"] = custom_params
+        self.params = dict(custom_params)
 
         with open(preset_path, "w", encoding="utf-8") as f:
             json.dump(presets, f, indent=4, ensure_ascii=False)

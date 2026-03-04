@@ -24,7 +24,6 @@ import hashlib
 import json
 import math
 import os
-import time
 import random
 from array import array
 from collections import OrderedDict
@@ -85,14 +84,134 @@ _PROP_ID_MAP = {
 def get_prop_id(name: str) -> int:
     return _PROP_ID_MAP.get(name, _PROP_ID_MAP["tree_2"])
 
-ATMOSPHERE_MAP = {
-    "Basse": 0.7,
-    "Faible": 0.7,
-    "Normale": 1.0,
-    "Moyenne": 1.0,
-    "Haute": 1.3,
-    "Épaisse": 1.3,
+_RANDOM_SEED_LABELS = {"", "Aléatoire", "Aleatoire", "Random", "random"}
+
+_SIZE_LABEL_TO_TAILLE = {
+    "petite": 256,
+    "moyenne": 384,
+    "grande": 512,
+    "gigantesque": 768,
 }
+_CLIMATE_LABEL_TO_CLIMAT = {
+    "glaciaire": "Glaciaire",
+    "froid": "Froid",
+    "tempere": "Tempéré",
+    "tempéré": "Tempéré",
+    "chaud": "Chaud",
+    "tropical": "Tropical",
+    "aride": "Aride",
+    "ardent": "Chaud",  # compat anciennes valeurs de menu
+}
+_WATER_LABEL_TO_OCEANS = {
+    "aride": 25,
+    "tempere": 50,
+    "tempéré": 50,
+    "oceanique": 75,
+    "océanique": 75,
+}
+_RESOURCE_LABEL_TO_CANON = {
+    "faible": "Faible",
+    "pauvre": "Faible",  # compat ancien menu
+    "moyenne": "Moyenne",
+    "normale": "Moyenne",
+    "elevee": "Élevée",
+    "élevée": "Élevée",
+    "haute": "Haute",
+    "riche": "Élevée",   # compat ancien menu
+    "instable": "Moyenne",  # compat ancien menu
+}
+_BIODIV_LABEL_TO_CANON = {
+    "faible": "Faible",
+    "moyenne": "Moyenne",
+    "elevee": "Élevée",
+    "élevée": "Élevée",
+    "haute": "Élevée",
+    "extreme": "Élevée",
+    "extrême": "Élevée",  # compat ancien menu
+}
+_TECTONIC_LABEL_TO_CANON = {
+    "stable": "Stable",
+    "moderee": "Modérée",
+    "modérée": "Modérée",
+    "moyenne": "Modérée",   # compat ancien menu
+    "instable": "Instable",
+    "chaotique": "Violente",  # compat ancien menu
+    "violente": "Violente",
+}
+_GRAVITY_LABEL_TO_CANON = {
+    "faible": "Faible",
+    "basse": "Faible",
+    "moyenne": "Moyenne",
+    "forte": "Forte",
+    "elevee": "Forte",
+    "élevée": "Forte",
+    "haute": "Forte",
+}
+
+_TEMPERATURE_BIAS = {
+    "Glaciaire": -0.35,
+    "Froid": -0.20,
+    "Tempéré": 0.0,
+    "Chaud": 0.20,
+    "Aride": 0.25,
+    "Tropical": 0.18,
+}
+_BIODIVERSITY_MUL = {"Faible": 0.65, "Moyenne": 1.0, "Élevée": 1.25}
+_TECTONIC_RUGGED = {"Stable": 0.9, "Modérée": 1.0, "Instable": 1.2, "Violente": 1.35}
+_RESOURCE_MUL = {"Faible": 0.75, "Moyenne": 1.0, "Élevée": 1.2, "Haute": 1.2}
+
+
+def _norm_label(v: Any) -> str:
+    return str(v or "").strip().casefold()
+
+
+def _parse_seed_value(raw: Any) -> Optional[int]:
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw.strip() in _RANDOM_SEED_LABELS:
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _normalize_taille(raw: Any) -> int:
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    s = str(raw or "").strip()
+    if s.isdigit():
+        return int(s)
+    return _SIZE_LABEL_TO_TAILLE.get(_norm_label(raw), 384)
+
+
+def _normalize_climat(raw: Any) -> str:
+    return _CLIMATE_LABEL_TO_CLIMAT.get(_norm_label(raw), "Tempéré")
+
+
+def _normalize_oceans(raw: Any) -> int:
+    if isinstance(raw, (int, float)):
+        return max(0, min(100, int(raw)))
+    s = str(raw or "").strip()
+    if s.isdigit():
+        return max(0, min(100, int(s)))
+    return _WATER_LABEL_TO_OCEANS.get(_norm_label(raw), 50)
+
+
+def _normalize_resource(raw: Any) -> str:
+    return _RESOURCE_LABEL_TO_CANON.get(_norm_label(raw), "Moyenne")
+
+
+def _normalize_biodiversity(raw: Any) -> str:
+    return _BIODIV_LABEL_TO_CANON.get(_norm_label(raw), "Moyenne")
+
+
+def _normalize_tectonic(raw: Any) -> str:
+    return _TECTONIC_LABEL_TO_CANON.get(_norm_label(raw), "Stable")
+
+
+def _normalize_gravity(raw: Any) -> str:
+    return _GRAVITY_LABEL_TO_CANON.get(_norm_label(raw), "Moyenne")
 
 # --------------------------------------------------------------------------------------
 # World parameters
@@ -101,58 +220,44 @@ ATMOSPHERE_MAP = {
 @dataclass
 class WorldParams:
     seed: Optional[int]
-
-    # Historique / compat : vous aviez ces clés dans vos presets.
-    # On les garde pour ne pas casser les loaders.
-    Taille: int  # peut être : 256/384/512/... (symbolique) OU une taille en km (ex: 28000)
+    Taille: int
     Climat: str
-    Niveau_des_océans: int  # 0..100
+    Niveau_des_océans: int
     Ressources: str
-    age: int
-
-    # Nouveau / menu
-    world_name: str = "Nouveau Monde"
-    atmosphere_density: float = 1.0
 
     biodiversity: str = "Moyenne"
     tectonic_activity: str = "Stable"
-    weather: str = "Variable"
     gravity: str = "Moyenne"
-    cosmic_radiation: str = "Faible"
-    orbit: str = "Circulaire"
-    orbital_period: str = "64"
-    mystic_influence: str = "Nulle"
-    dimensional_stability: str = "Stable"
+    world_name: str = "Nouveau Monde"
 
-    # Perf/qualité : 1 = génération détaillée (lente), 16 = génération optimisée (recommandé)
     chunk_noise_step: int = 16
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "WorldParams":
-        raw = d.get("atmosphere_density", 1.0)
-        if isinstance(raw, str):
-            atmosphere_density = ATMOSPHERE_MAP.get(raw, 1.0)
-        else:
-            atmosphere_density = float(raw)
+        raw_seed = d.get("seed", None)
+        raw_size = d.get("world_size", d.get("Taille", 384))
+        raw_climate = d.get("temperature", d.get("Climat", "Tempéré"))
+        raw_oceans = d.get("water_coverage", d.get("Niveau des océans", d.get("Niveau_des_océans", 50)))
+        raw_resources = d.get("resource_density", d.get("Ressources", "Moyenne"))
+        raw_biodiv = d.get("biodiversity", "Moyenne")
+        raw_tectonic = d.get("tectonic_activity", "Stable")
+        raw_gravity = d.get("gravity", "Moyenne")
+        raw_noise_step = d.get("chunk_noise_step", 16)
+        try:
+            noise_step = max(1, int(raw_noise_step or 16))
+        except Exception:
+            noise_step = 16
         return WorldParams(
-            seed=d.get("seed", None),
-            Taille=int(d.get("Taille", 256)),
-            Climat=str(d.get("Climat", "Tempéré")),
-            Niveau_des_océans=int(d.get("Niveau des océans", d.get("Niveau_des_océans", 50))),
-            Ressources=str(d.get("Ressources", "Moyenne")),
-            age=int(d.get("age", 2000)),
+            seed=_parse_seed_value(raw_seed),
+            Taille=_normalize_taille(raw_size),
+            Climat=_normalize_climat(raw_climate),
+            Niveau_des_océans=_normalize_oceans(raw_oceans),
+            Ressources=_normalize_resource(raw_resources),
+            biodiversity=_normalize_biodiversity(raw_biodiv),
+            tectonic_activity=_normalize_tectonic(raw_tectonic),
+            gravity=_normalize_gravity(raw_gravity),
             world_name=str(d.get("world_name", "Nouveau Monde")),
-            atmosphere_density=atmosphere_density,
-            biodiversity=str(d.get("biodiversity", "Moyenne")),
-            tectonic_activity=str(d.get("tectonic_activity", "Stable")),
-            weather=str(d.get("weather", "Variable")),
-            gravity=str(d.get("gravity", "Moyenne")),
-            cosmic_radiation=str(d.get("cosmic_radiation", "Faible")),
-            orbit=str(d.get("orbit", "Circulaire")),
-            orbital_period=str(d.get("orbital_period", "64")),
-            mystic_influence=str(d.get("mystic_influence", "Nulle")),
-            dimensional_stability=str(d.get("dimensional_stability", "Stable")),
-            chunk_noise_step=int(d.get("chunk_noise_step", 16) or 16),
+            chunk_noise_step=noise_step,
         )
 
 
@@ -165,11 +270,7 @@ def load_world_params_from_preset(
     path: str = "Game/data/world_presets.json",
     overrides: Optional[Dict[str, Any]] = None,
 ) -> WorldParams:
-    """
-    Charge un preset en acceptant :
-      - ancien format : Taille, Climat, 'Niveau des océans', Ressources...
-      - format menu : world_size, temperature, water_coverage, resource_density, etc.
-    """
+    """Charge un preset et le normalise vers le schéma de génération courant."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Preset file not found: {path}")
 
@@ -183,166 +284,13 @@ def load_world_params_from_preset(
     d: Dict[str, Any] = dict(preset)
     if overrides:
         d.update(overrides)
-
-    # --- World name
-    if "world_name" not in d:
-        d["world_name"] = d.get("world_name", preset_name)
-
-    # --- Taille
-    # Si world_size est un label, on le transforme en symbolique (256/384/512/768).
-    if "Taille" not in d:
-        raw_size = d.get("world_size", "Moyenne")
-        if isinstance(raw_size, (int, float)):
-            d["Taille"] = int(raw_size)
-        else:
-            s = str(raw_size).lower()
-            if "petit" in s:
-                d["Taille"] = 256
-            elif "moyen" in s:
-                d["Taille"] = 384
-            elif "grand" in s:
-                d["Taille"] = 512
-            elif "gigan" in s:
-                d["Taille"] = 768
-            else:
-                d["Taille"] = 384
-
-    # --- Climat
-    if "Climat" not in d:
-        raw_temp = d.get("temperature", "Tempéré")
-        t = str(raw_temp).lower()
-        if "glacia" in t:
-            d["Climat"] = "Glaciaire"
-        elif "froid" in t:
-            d["Climat"] = "Froid"
-        elif "arid" in t:
-            d["Climat"] = "Aride"
-        elif "trop" in t or "chaud" in t:
-            d["Climat"] = "Tropical"
-        else:
-            d["Climat"] = "Tempéré"
-
-    # --- Niveau des océans
-    if "Niveau des océans" not in d and "Niveau_des_océans" not in d:
-        raw_cov = d.get("water_coverage", "Tempéré")
-        if isinstance(raw_cov, (int, float)):
-            d["Niveau_des_océans"] = int(raw_cov)
-        else:
-            c = str(raw_cov).lower()
-            if "aride" in c or "sec" in c:
-                d["Niveau_des_océans"] = 25
-            elif "océan" in c or "ocean" in c or "beaucoup" in c:
-                d["Niveau_des_océans"] = 75
-            else:
-                d["Niveau_des_océans"] = 50
-
-    # --- Ressources
-    if "Ressources" not in d:
-        d["Ressources"] = str(d.get("resource_density", "Moyenne"))
-
-    # --- age
-    if "age" not in d:
-        d["age"] = int(d.get("age", 2000))
-
-    # --- atmosphere_density (menu -> float)
-    if "atmosphere_density" not in d:
-        raw = d.get("atmosphere_density", "Normale")
-        if isinstance(raw, (int, float)):
-            d["atmosphere_density"] = float(raw)
-        else:
-            s = str(raw).lower()
-            if "faible" in s or "thin" in s:
-                d["atmosphere_density"] = 0.8
-            elif "épais" in s or "dense" in s or "thick" in s:
-                d["atmosphere_density"] = 1.2
-            else:
-                d["atmosphere_density"] = 1.0
-
-    # autres champs menu (si absents)
-    d.setdefault("biodiversity", d.get("biodiversity", "Moyenne"))
-    d.setdefault("tectonic_activity", d.get("tectonic_activity", "Stable"))
-    d.setdefault("weather", d.get("weather", "Variable"))
-    d.setdefault("gravity", d.get("gravity", "Moyenne"))
-    d.setdefault("cosmic_radiation", d.get("cosmic_radiation", "Faible"))
-    d.setdefault("orbit", d.get("orbit", "Circulaire"))
-    d.setdefault("orbital_period", str(d.get("orbital_period", "64")))
-    d.setdefault("mystic_influence", d.get("mystic_influence", "Nulle"))
-    d.setdefault("dimensional_stability", d.get("dimensional_stability", "Stable"))
-
+    d.setdefault("world_name", preset_name)
     return WorldParams.from_dict(d)
 
 
 def load_world_params_from_menu_dict(menu_dict: Dict[str, Any]) -> WorldParams:
-    """
-    Construit un WorldParams à partir du JSON du menu (format 'Custom' que tu as donné).
-    """
-    raw_seed = menu_dict.get("seed", None)
-    if raw_seed in (None, "", "Aléatoire", "Aleatoire", "Random", "random"):
-        seed = None
-    else:
-        try:
-            seed = int(raw_seed)
-        except Exception:
-            seed = None
-
-    size_label = str(menu_dict.get("world_size", "Moyenne"))
-    s = size_label.lower()
-    if "petit" in s:
-        taille = 256
-    elif "grand" in s:
-        taille = 512
-    elif "gigan" in s:
-        taille = 768
-    else:
-        taille = 384
-
-    # water_coverage, temperature etc restent en label mais on les mappe sur votre ancien format
-    water_label = str(menu_dict.get("water_coverage", "Tempéré")).lower()
-    if "aride" in water_label:
-        oceans = 25
-    elif "océan" in water_label or "ocean" in water_label:
-        oceans = 75
-    else:
-        oceans = 50
-
-    temp_label = str(menu_dict.get("temperature", "Tempéré")).lower()
-    if "glacia" in temp_label:
-        climat = "Glaciaire"
-    elif "froid" in temp_label:
-        climat = "Froid"
-    elif "arid" in temp_label:
-        climat = "Aride"
-    elif "chaud" in temp_label or "trop" in temp_label:
-        climat = "Tropical"
-    else:
-        climat = "Tempéré"
-
-    raw = menu_dict.get("atmosphere_density", "Normale")
-    if isinstance(raw, str):
-        atmo = ATMOSPHERE_MAP.get(raw, 1.0)
-    else:
-        atmo = float(raw)
-
-
-    return WorldParams(
-        seed=seed,
-        Taille=taille,
-        Climat=climat,
-        Niveau_des_océans=oceans,
-        Ressources=str(menu_dict.get("resource_density", "Moyenne")),
-        age=int(menu_dict.get("age", 2000)),
-        world_name=str(menu_dict.get("world_name", "Nouveau Monde")),
-        atmosphere_density=float(atmo),
-        biodiversity=str(menu_dict.get("biodiversity", "Moyenne")),
-        tectonic_activity=str(menu_dict.get("tectonic_activity", "Stable")),
-        weather=str(menu_dict.get("weather", "Variable")),
-        gravity=str(menu_dict.get("gravity", "Moyenne")),
-        cosmic_radiation=str(menu_dict.get("cosmic_radiation", "Faible")),
-        orbit=str(menu_dict.get("orbit", "Circulaire")),
-        orbital_period=str(menu_dict.get("orbital_period", "64")),
-        mystic_influence=str(menu_dict.get("mystic_influence", "Nulle")),
-        dimensional_stability=str(menu_dict.get("dimensional_stability", "Stable")),
-    )
+    """Compat API: normalise un dict de menu vers `WorldParams`."""
+    return WorldParams.from_dict(menu_dict)
 
 
 # --------------------------------------------------------------------------------------
@@ -355,7 +303,7 @@ def _seed_int(v: Any) -> int:
 
     if isinstance(v, str):
         s = v.strip()
-        if s in ("", "Aléatoire", "Aleatoire", "Random", "random"):
+        if s in _RANDOM_SEED_LABELS:
             return random.getrandbits(63)
         try:
             return int(s) & 0x7FFF_FFFF_FFFF_FFFF
@@ -370,25 +318,10 @@ def _seed_int(v: Any) -> int:
 
 
 def make_final_seed(base_seed: int, params: WorldParams) -> int:
-    """
-    Seed final = hash(base_seed + paramètres).
-    Important : on n'interprète pas Taille comme km ici, on garde la valeur brute.
-    """
-    raw_atmo = getattr(params, "atmosphere_density", 1.0)
-    if isinstance(raw_atmo, str):
-        atmo_val = ATMOSPHERE_MAP.get(raw_atmo, 1.0)
-    else:
-        try:
-            atmo_val = float(raw_atmo)
-        except Exception:
-            atmo_val = 1.0
-
+    """Seed finale = hash(seed de base + paramètres ayant un effet direct sur la génération)."""
     sig = (
-        f"{int(base_seed)}|{params.world_name}|{params.Taille}|{params.Climat}|"
-        f"{int(params.Niveau_des_océans)}|{params.Ressources}|{int(params.age)}|"
-        f"{atmo_val:.3f}|{getattr(params,'biodiversity','Moyenne')}|"
-        f"{getattr(params,'tectonic_activity','Stable')}|{getattr(params,'weather','Variable')}|{getattr(params,'gravity','Moyenne')}|"
-        f"{getattr(params,'cosmic_radiation','Faible')}|{getattr(params,'mystic_influence','Nulle')}|{getattr(params,'dimensional_stability','Stable')}"
+        f"{int(base_seed)}|{int(params.Taille)}|{params.Climat}|{int(params.Niveau_des_océans)}|"
+        f"{params.Ressources}|{params.biodiversity}|{params.tectonic_activity}|{params.gravity}|{int(params.chunk_noise_step)}"
     ).encode("utf-8")
     h = hashlib.blake2b(sig, digest_size=8).digest()
     return int.from_bytes(h, "little", signed=False)
@@ -559,6 +492,7 @@ BIOME_ROCK = 20
 BIOME_ALPINE = 21
 BIOME_VOLCANIC = 22
 BIOME_MYSTIC = 23
+BIOME_CORRUPT = 24
 
 BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_OCEAN: "ocean",
@@ -579,6 +513,7 @@ BIOME_ID_TO_NAME: Dict[int, str] = {
     BIOME_ALPINE: "alpine",
     BIOME_VOLCANIC: "volcanic",
     BIOME_MYSTIC: "mystic",
+    BIOME_CORRUPT: "corrupt",
 }
 
 def _safe_ground_gid(name: str) -> int:
@@ -606,12 +541,14 @@ _BIOME_TO_GROUND_NAME = {
     BIOME_ALPINE: "alpine",
     BIOME_VOLCANIC: "volcanic",
     BIOME_MYSTIC: "mystic",
+    BIOME_CORRUPT: "corrupt",
 }
 
 _GID_OCEAN = _safe_ground_gid("ocean")
 _GID_LAKE = _safe_ground_gid("lake")
 _GID_RIVER = _safe_ground_gid("river")
 _GID_GRASS = _safe_ground_gid("grass")
+_GID_CORRUPT = _safe_ground_gid("corrupt")
 
 _BIOME_TO_GROUND_GID = {bid: _safe_ground_gid(name) for bid, name in _BIOME_TO_GROUND_NAME.items()}
 
@@ -721,6 +658,8 @@ class ChunkedWorld:
         # overlay overrides: ne stocke que les modifications
         self._NO = object()
         self._overlay_overrides: Dict[Tuple[int, int], Any] = {}
+        self._ground_overrides: Dict[Tuple[int, int], int] = {}
+        self._biome_overrides: Dict[Tuple[int, int], int] = {}
 
         # Proxies pour compat (world.ground_id[y][x], etc.)
         self.heightmap = _GridProxy(self.width, self.height, self.get_height01)
@@ -750,6 +689,14 @@ class ChunkedWorld:
             self._progress = None
         if "_progress_phases_reported" not in self.__dict__:
             self._progress_phases_reported = set()
+        if "_NO" not in self.__dict__:
+            self._NO = object()
+        if "_overlay_overrides" not in self.__dict__:
+            self._overlay_overrides = {}
+        if "_ground_overrides" not in self.__dict__:
+            self._ground_overrides = {}
+        if "_biome_overrides" not in self.__dict__:
+            self._biome_overrides = {}
 
 
     # ------------------- tile ids safe -------------------
@@ -779,54 +726,27 @@ class ChunkedWorld:
 
     def _knobs(self):
         p = self.params
-        # temp bias
         temp_label = str(getattr(p, "Climat", "Tempéré"))
-        temp_bias = {
-            "Glaciaire": -0.38,
-            "Froid": -0.22,
-            "Tempéré": 0.0,
-            "Chaud": 0.20,
-            "Aride": 0.28,
-            "Tropical": 0.18,
-        }.get(temp_label, 0.0)
+        temp_bias = _TEMPERATURE_BIAS.get(temp_label, 0.0)
 
         water_v = float(getattr(p, "Niveau_des_océans", 50))
         water_bias = (water_v - 50.0) / 100.0  # -0.5..+0.5
 
         biodiv = str(getattr(p, "biodiversity", "Moyenne"))
-        biodiv_mul = {"Faible": 0.65, "Moyenne": 1.0, "Élevée": 1.25, "Haute": 1.25}.get(biodiv, 1.0)
+        biodiv_mul = _BIODIVERSITY_MUL.get(biodiv, 1.0)
 
         tect = str(getattr(p, "tectonic_activity", "Stable"))
-        rugged = {"Stable": 0.9, "Modérée": 1.0, "Instable": 1.25, "Violente": 1.45}.get(tect, 1.0)
+        rugged = _TECTONIC_RUGGED.get(tect, 1.0)
 
         res_label = str(getattr(p, "Ressources", "Moyenne"))
-        res_mul = {"Faible": 0.75, "Moyenne": 1.0, "Normale": 1.0, "Élevée": 1.2, "Haute": 1.2, "Riche": 1.35}.get(res_label, 1.0)
-
-        atmo = float(getattr(p, "atmosphere_density", 1.0))
-        atmo = max(0.6, min(1.6, atmo))
-
-        weather = str(getattr(p, "weather", "Variable"))
-        # plus variable = plus d'écarts d'humidité
-        weather_var = {"Calme": 0.85, "Stable": 0.9, "Variable": 1.0, "Extrême": 1.25}.get(weather, 1.0)
-
-        grav = str(getattr(p, "gravity", "Moyenne"))
-        grav_relief = {"Faible": 1.12, "Basse": 1.12, "Moyenne": 1.0, "Forte": 0.92, "Élevée": 0.92}.get(grav, 1.0)
-
-        rad = str(getattr(p, "cosmic_radiation", "Faible"))
-        rad_mul = {"Nulle": 1.05, "Faible": 1.0, "Moyenne": 0.92, "Forte": 0.82}.get(rad, 1.0)
-
-        myst = str(getattr(p, "mystic_influence", "Nulle"))
-        myst_mul = {"Nulle": 0.0, "Faible": 0.35, "Moyenne": 0.65, "Forte": 1.0}.get(myst, 0.0)
+        res_mul = _RESOURCE_MUL.get(res_label, 1.0)
 
         return {
             "temp_bias": temp_bias,
             "water_bias": water_bias,
-            "biodiv_mul": biodiv_mul * rad_mul,
-            "rugged": rugged * grav_relief * (0.85 + 0.25 * atmo),
+            "biodiv_mul": biodiv_mul,
+            "rugged": rugged,
             "res_mul": res_mul,
-            "atmo": atmo,
-            "weather_var": weather_var,
-            "myst_mul": myst_mul,
         }
 
     # ------------------- overlay (writable) -------------------
@@ -847,6 +767,36 @@ class ChunkedWorld:
         self._overlay_overrides[(x, y)] = value
         return value
 
+    def set_ground_id(self, x: int, y: int, gid: int) -> int:
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        self._ground_overrides[(x, y)] = int(gid)
+        return int(gid)
+
+    def set_biome_id(self, x: int, y: int, bid: int) -> int:
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        self._biome_overrides[(x, y)] = int(bid)
+        return int(bid)
+
+    def set_tile_corrupt(self, x: int, y: int, clear_natural_props: bool = True) -> bool:
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+
+        current_bid = int(self.get_biome_id(x, y))
+        if current_bid in (BIOME_OCEAN, BIOME_LAKE, BIOME_RIVER):
+            return False
+
+        self.set_biome_id(x, y, BIOME_CORRUPT)
+        self.set_ground_id(x, y, _GID_CORRUPT)
+
+        if clear_natural_props:
+            cell = self.get_overlay(x, y)
+            if isinstance(cell, int) and 0 < int(cell) < 100:
+                self.set_overlay(x, y, None)
+
+        return True
+
     # ------------------- getters (read-only) -------------------
 
     def get_height01(self, x: int, y: int) -> float:
@@ -866,11 +816,21 @@ class ChunkedWorld:
         return int(ch.levels_u8[ch.idx(lx, ly)])
 
     def get_ground_id(self, x: int, y: int) -> int:
-        ch, lx, ly = self._get_chunk_xy(x, y)
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        ov = self._ground_overrides.get((x, y), self._NO)
+        if ov is not self._NO:
+            return int(ov)
+        ch, lx, ly = self._get_chunk(x, y)
         return int(ch.ground_u16[ch.idx(lx, ly)])
 
     def get_biome_id(self, x: int, y: int) -> int:
-        ch, lx, ly = self._get_chunk_xy(x, y)
+        x = _wrap_lon_x(int(x), self.width)
+        y = _clamp_lat_y(int(y), self.height)
+        ov = self._biome_overrides.get((x, y), self._NO)
+        if ov is not self._NO:
+            return int(ov)
+        ch, lx, ly = self._get_chunk(x, y)
         return int(ch.biome_u8[ch.idx(lx, ly)])
 
     def get_biome_name(self, x: int, y: int) -> str:
@@ -922,11 +882,15 @@ class ChunkedWorld:
             overlay = None if pid == 0 else pid
         else:
             overlay = ov
+        g_ov = self._ground_overrides.get((x, y), self._NO)
+        b_ov = self._biome_overrides.get((x, y), self._NO)
+        ground = int(ch.ground_u16[k]) if g_ov is self._NO else int(g_ov)
+        biome = int(ch.biome_u8[k]) if b_ov is self._NO else int(b_ov)
         return (
             int(ch.levels_u8[k]),
-            int(ch.ground_u16[k]),
+            ground,
             overlay,
-            int(ch.biome_u8[k]),
+            biome,
         )
 
     def ensure_chunk_at(self, x: int, y: int) -> None:
@@ -982,21 +946,21 @@ class ChunkedWorld:
         if actual_w <= 0 or actual_h <= 0:
             return ch
 
-        # -------- paramètres -> multiplicateurs (comme avant) --------
+        # -------- paramètres -> multiplicateurs --------
         temp_label = str(getattr(self.params, "Climat", "Tempéré"))
-        temp_bias = {"Glaciaire": -0.35, "Froid": -0.20, "Tempéré": 0.0, "Chaud": 0.20, "Aride": 0.25, "Tropical": 0.18}.get(temp_label, 0.0)
+        temp_bias = _TEMPERATURE_BIAS.get(temp_label, 0.0)
 
         water_v = float(getattr(self.params, "Niveau_des_océans", 50))
         water_bias = (water_v - 50.0) / 100.0  # -0.5..+0.5
 
         biodiv = str(getattr(self.params, "biodiversity", "Moyenne"))
-        biodiv_mul = {"Faible": 0.65, "Moyenne": 1.0, "Élevée": 1.25, "Haute": 1.25}.get(biodiv, 1.0)
+        biodiv_mul = _BIODIVERSITY_MUL.get(biodiv, 1.0)
 
         tect = str(getattr(self.params, "tectonic_activity", "Stable"))
-        rugged = {"Stable": 0.9, "Modérée": 1.0, "Instable": 1.2, "Violente": 1.35}.get(tect, 1.0)
+        rugged = _TECTONIC_RUGGED.get(tect, 1.0)
 
         res_label = str(getattr(self.params, "Ressources", "Moyenne"))
-        res_mul = {"Faible": 0.75, "Moyenne": 1.0, "Normale": 1.0, "Élevée": 1.2, "Haute": 1.2}.get(res_label, 1.0)
+        res_mul = _RESOURCE_MUL.get(res_label, 1.0)
 
         base = int(self.seed)
 
@@ -1613,10 +1577,18 @@ class ChunkedWorld:
         ov = []
         for (x, y), v in self._overlay_overrides.items():
             ov.append((int(x), int(y), v))
+        gov = []
+        for (x, y), v in self._ground_overrides.items():
+            gov.append((int(x), int(y), int(v)))
+        bov = []
+        for (x, y), v in self._biome_overrides.items():
+            bov.append((int(x), int(y), int(v)))
         return {
             "seed": self.seed,
             "params": self.params.to_dict(),
             "overlay_overrides": ov,
+            "ground_overrides": gov,
+            "biome_overrides": bov,
         }
 
     def apply_world_state_minimal(self, blob: Dict[str, Any]) -> None:
@@ -1626,6 +1598,22 @@ class ChunkedWorld:
             try:
                 x, y, v = item
                 self._overlay_overrides[(int(x), int(y))] = v
+            except Exception:
+                continue
+        gov = blob.get("ground_overrides", []) or []
+        self._ground_overrides.clear()
+        for item in gov:
+            try:
+                x, y, v = item
+                self._ground_overrides[(int(x), int(y))] = int(v)
+            except Exception:
+                continue
+        bov = blob.get("biome_overrides", []) or []
+        self._biome_overrides.clear()
+        for item in bov:
+            try:
+                x, y, v = item
+                self._biome_overrides[(int(x), int(y))] = int(v)
             except Exception:
                 continue
 
@@ -1674,12 +1662,12 @@ class PlanetWorldGenerator:
         }
         w, h = size_map.get(label, (3072, 1536))
 
-        # gravity influence dimensions (perf)
+        # gravité : impacte la taille totale à générer (perf + densité de jeu)
         grav = str(getattr(params, "gravity", "Moyenne"))
-        if grav in ("Forte", "Élevée", "Haute"):
+        if grav == "Forte":
             w = int(w * 0.92)
             h = int(h * 0.92)
-        elif grav in ("Faible", "Basse"):
+        elif grav == "Faible":
             w = int(w * 1.05)
             h = int(h * 1.05)
 

@@ -458,6 +458,7 @@ class SaveManager:
             "day_night": day_night_data,   # <-- NEW
             "events": getattr(getattr(phase1, "event_manager", None), "to_dict", lambda: {})(),
             "weather_state": getattr(getattr(phase1, "weather_system", None), "to_dict", lambda: None)(),
+            "corruption_state": getattr(phase1, "export_corruption_state", lambda: None)(),
             "quest_state": getattr(getattr(phase1, "quest_manager", None), "to_dict", lambda: {})(),
             "world_history": list(getattr(phase1, "world_history", []) or []),
             "class_state": dict(getattr(phase1, "class_state", {}) or {}),
@@ -470,6 +471,10 @@ class SaveManager:
             "species_death_count": getattr(phase1, "species_death_count", 0),
             "unlocked_crafts": list(getattr(phase1, "unlocked_crafts", []) or []),
             "food_reserve_capacity": getattr(phase1, "food_reserve_capacity", None),
+            "food_target_per_individual": getattr(phase1, "food_target_per_individual", None),
+            "water_target_per_individual": getattr(phase1, "water_target_per_individual", None),
+            "food_consumption_per_individual_per_sec": getattr(phase1, "food_consumption_per_individual_per_sec", None),
+            "water_consumption_per_individual_per_sec": getattr(phase1, "water_consumption_per_individual_per_sec", None),
             "tech_tree": getattr(getattr(phase1, "tech_tree", None), "to_dict", lambda: {})(),
             "run_stats": getattr(phase1, "_run_stats", {}),
             "daily_stats": getattr(phase1, "_daily_stats", []),
@@ -749,11 +754,39 @@ class SaveManager:
                     ws.from_dict(weather_state)
             log_step("Meteo restauree")
 
+            if "corruption_state" in data:
+                import_corruption = getattr(phase1, "import_corruption_state", None)
+                if callable(import_corruption):
+                    import_corruption(data.get("corruption_state"))
+            else:
+                disable_corruption = getattr(phase1, "disable_corruption_runtime", None)
+                if callable(disable_corruption):
+                    disable_corruption()
+            log_step("Corruption restauree")
+
             phase1.happiness = data.get("happiness", getattr(phase1, "happiness", 10.0))
             phase1.death_response_mode = data.get("death_response_mode")
             phase1.death_event_ready = data.get("death_event_ready", False)
             phase1.species_death_count = data.get("species_death_count", 0)
             phase1.food_reserve_capacity = data.get("food_reserve_capacity", getattr(phase1, "food_reserve_capacity", 100))
+            phase1.food_target_per_individual = float(
+                data.get("food_target_per_individual", getattr(phase1, "food_target_per_individual", 3.0)) or 3.0
+            )
+            phase1.water_target_per_individual = float(
+                data.get("water_target_per_individual", getattr(phase1, "water_target_per_individual", 4.0)) or 4.0
+            )
+            phase1.food_consumption_per_individual_per_sec = float(
+                data.get(
+                    "food_consumption_per_individual_per_sec",
+                    getattr(phase1, "food_consumption_per_individual_per_sec", 1.0 / 120.0),
+                ) or (1.0 / 120.0)
+            )
+            phase1.water_consumption_per_individual_per_sec = float(
+                data.get(
+                    "water_consumption_per_individual_per_sec",
+                    getattr(phase1, "water_consumption_per_individual_per_sec", 1.0 / 100.0),
+                ) or (1.0 / 100.0)
+            )
             phase1._run_stats = dict(data.get("run_stats") or getattr(phase1, "_run_stats", {}))
             phase1._daily_stats = list(data.get("daily_stats") or [])
             phase1._stats_current_day = dict(data.get("stats_current_day") or getattr(phase1, "_stats_current_day", {}))

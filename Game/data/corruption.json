@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "initial_seed_count": 5,
+  "min_spawn_distance_from_player": 160,
+  "tick_interval_sec": 1.5,
+  "spread_attempts_per_tick": 16,
+  "infection_chance": 0.35,
+  "max_new_tiles_per_tick": 4,
+  "speed_multiplier": 1.0,
+  "clear_natural_props": true,
+  "water_blocks_spread": true,
+  "active_on_new_games_only": true
+}

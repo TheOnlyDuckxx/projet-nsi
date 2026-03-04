@@ -485,6 +485,12 @@ class Comportement:
             speed = 0.8 + 0.12 * float(self.e.mental.get("dexterite", 5)) \
                 + 0.06 * float(self.e.physique.get("force", 5)) \
                 + 0.05 * float(self.e.mental.get("intelligence", 5))
+            phase = getattr(self.e, "phase", None)
+            if phase and hasattr(phase, "get_individual_supply_work_multiplier"):
+                try:
+                    speed *= float(phase.get_individual_supply_work_multiplier(self.e))
+                except Exception:
+                    pass
             speed = max(0.2, min(6.0, speed))
 
             cell["work_done"] = float(cell.get("work_done", 0.0)) + dt * speed
@@ -641,7 +647,16 @@ class Comportement:
 
             frame_id = int(getattr(phase, "_update_frame_id", 0))
             if int(job.get("last_frame", -1)) != frame_id:
-                worker_mult = max(1, len(active_workers))
+                worker_mult = 0.0
+                for worker in active_workers:
+                    mult = 1.0
+                    if phase and hasattr(phase, "get_individual_supply_work_multiplier"):
+                        try:
+                            mult = float(phase.get_individual_supply_work_multiplier(worker))
+                        except Exception:
+                            mult = 1.0
+                    worker_mult += max(0.1, mult)
+                worker_mult = max(0.25, worker_mult)
                 job["t"] = float(job.get("t", 0.0)) + dt * worker_mult
                 t_need = max(1e-6, float(job.get("t_need", 1.0)))
                 job["progress"] = min(1.0, float(job["t"]) / t_need)
@@ -655,7 +670,14 @@ class Comportement:
                 self._resolve_shared_harvest(shared_key, world)
             return
 
-        w["t"] += dt
+        worker_mult = 1.0
+        phase = getattr(self.e, "phase", None)
+        if phase and hasattr(phase, "get_individual_supply_work_multiplier"):
+            try:
+                worker_mult = float(phase.get_individual_supply_work_multiplier(self.e))
+            except Exception:
+                worker_mult = 1.0
+        w["t"] += dt * max(0.1, worker_mult)
         w["progress"] = min(1.0, w["t"] / w["t_need"])
 
         if w["t"] < w["t_need"]:

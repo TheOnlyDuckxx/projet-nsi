@@ -46,6 +46,7 @@ def get_prop_sprite_name(pid: int):
         104: "craft_taniere",
         105: "craft_farm",
         106: "craft_spike",
+        150: "base_blob_dead",
         # 107: "craft_entrepot",
         # 108: "craft_entrepot",
         # 109: "craft_entrepot",

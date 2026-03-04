@@ -56,14 +56,21 @@ class HistoryMenu:
             elif e.type == pygame.KEYDOWN and e.key in (pygame.K_UP, pygame.K_PAGEUP):
                 self._scroll(-40)
 
-    def _entry_text(self, entry: dict) -> tuple[str, str]:
+    def _entry_text(self, entry: dict) -> str:
         day = int(entry.get("day", 0) or 0)
         hour = int(entry.get("hour", 0) or 0)
         minute = int(entry.get("minute", 0) or 0)
         category = str(entry.get("category", "event"))
         message = str(entry.get("message", ""))
-        title = f"Jour {day} - {hour:02d}:{minute:02d} [{category}]"
-        return title, message
+        return f"Jour {day} - {hour:02d}:{minute:02d} [{category}] {message}"
+
+    def _fit_line(self, text: str, max_width: int) -> str:
+        out = str(text or "")
+        if self.text_font.size(out)[0] <= max_width:
+            return out
+        while out and self.text_font.size(out + "...")[0] > max_width:
+            out = out[:-1]
+        return (out + "...").strip()
 
     def draw(self, screen):
         if not self.active:
@@ -90,7 +97,9 @@ class HistoryMenu:
         history = list(getattr(self.phase, "world_history", []) or [])
         history.reverse()  # plus recent en haut
 
-        content = pygame.Surface((panel_rect.width - 20, max(1, panel_rect.height - 20)), pygame.SRCALPHA)
+        line_h = max(self.text_font.get_linesize(), self.small_font.get_linesize())
+        content_h = max(1, max(panel_rect.height - 20, 10 + len(history[:500]) * (line_h + 8)))
+        content = pygame.Surface((panel_rect.width - 20, content_h), pygame.SRCALPHA)
         y = 6
 
         if not history:
@@ -98,20 +107,18 @@ class HistoryMenu:
             content.blit(empty, (10, y))
             y += empty.get_height() + 10
         else:
-            for entry in history[:500]:
-                card = pygame.Rect(6, y, content.get_width() - 12, 56)
-                pygame.draw.rect(content, (40, 48, 62), card, border_radius=8)
-                pygame.draw.rect(content, (90, 112, 145), card, 1, border_radius=8)
-
-                title, msg = self._entry_text(entry)
-                t1 = self.small_font.render(title, True, (190, 210, 238))
-                t2 = self.text_font.render(msg, True, (230, 235, 242))
-                content.blit(t1, (card.x + 8, card.y + 6))
-                content.blit(t2, (card.x + 8, card.y + 24))
-                y += card.height + 8
+            max_w = content.get_width() - 20
+            for idx, entry in enumerate(history[:500]):
+                line = self._fit_line(self._entry_text(entry), max_w)
+                col = (220, 230, 242) if idx % 2 == 0 else (196, 210, 228)
+                text = self.text_font.render(line, True, col)
+                content.blit(text, (10, y))
+                y += line_h + 6
+                pygame.draw.line(content, (65, 78, 98), (10, y), (content.get_width() - 10, y), 1)
+                y += 2
 
         visible_h = panel_rect.height - 20
-        self.max_scroll = max(0, y - visible_h)
+        self.max_scroll = max(0, content_h - visible_h)
         self.scroll = max(0, min(self.scroll, self.max_scroll))
 
         prev_clip = screen.get_clip()

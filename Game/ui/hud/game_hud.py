@@ -288,20 +288,39 @@ def draw_inspection_panel(self, screen):
         return
 
     # === TITRE ===
-    title = title_font.render(f"{ent.nom}", True, (220, 240, 255))
-    panel_surf.blit(title, (10, y_offset))
+    rename_button = layout.get("rename_button")
+    btn_rect = None
+    if rename_button:
+        btn_rect = rename_button.move(-panel_x, -panel_y)
+
+    title_x = 10
     role_id = str(getattr(ent, "role_class", "") or "").strip().lower()
     if role_id:
-        icon_rect = pygame.Rect(panel_width - 40, y_offset - 1, 22, 22)
+        # Place l'icone de classe avant le nom.
+        icon_rect = pygame.Rect(10, y_offset - 1, 22, 22)
         icon_bg = _ROLE_COLORS.get(role_id, (120, 135, 160))
         pygame.draw.rect(panel_surf, icon_bg, icon_rect, border_radius=5)
         pygame.draw.rect(panel_surf, (220, 230, 240), icon_rect, 1, border_radius=5)
         initial = role_id[:1].upper()
         icon_text = text_font.render(initial, True, (245, 245, 245))
         panel_surf.blit(icon_text, icon_text.get_rect(center=icon_rect.center))
-    rename_button = layout.get("rename_button")
-    if rename_button:
-        btn_rect = rename_button.move(-panel_x, -panel_y)
+        title_x = icon_rect.right + 8
+
+    # Evite que le nom passe sous le bouton Renommer.
+    title_raw = str(getattr(ent, "nom", "") or "")
+    title_max_right = panel_width - 10
+    if btn_rect is not None:
+        title_max_right = min(title_max_right, btn_rect.x - 8)
+    title_max_w = max(40, title_max_right - title_x)
+    title_text = title_raw
+    while title_text and title_font.size(title_text)[0] > title_max_w:
+        title_text = title_text[:-1]
+    if title_text != title_raw and title_text:
+        title_text = title_text[:-1] + "..."
+    title = title_font.render(title_text or title_raw, True, (220, 240, 255))
+    panel_surf.blit(title, (title_x, y_offset))
+
+    if btn_rect is not None:
         locked = getattr(ent, "name_locked", False)
         label = "Verrouillé" if locked else "Renommer"
         bg = (60, 70, 90) if locked else (70, 90, 120)
@@ -335,8 +354,6 @@ def draw_inspection_panel(self, screen):
 
     jauges_display = [
         ("Santé", ent.jauges.get("sante", 0), 100, (220, 50, 50)),
-        ("Faim", ent.jauges.get("faim", 0), 100, (255, 180, 50)),
-        ("Soif", ent.jauges.get("soif", 0), 100, (100, 180, 255)),
     ]
 
     for label, value, max_val, color in jauges_display:

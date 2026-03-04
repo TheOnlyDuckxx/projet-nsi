@@ -10,9 +10,9 @@ import json
 import hashlib
 import math
 import time
-from typing import Optional
+from typing import Any, Optional
 from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
-from world.world_gen import load_world_params_from_preset, WorldGenerator
+from world.world_gen import BIOME_CORRUPT, load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.species.species import Espece, ROLE_CLASS_LABELS
@@ -66,6 +66,42 @@ _AUTO_HARVESTABLE_PROP_IDS = {
     21, 22, 23, 29, 30, 31, 32, 33, 34,
     35, 36, 37, 38, 39, 40,
 }
+_SPECIES_CORPSE_PROP_ID = 150
+_FOOD_STOCK_KEYS = ("food", "berries", "meat")
+_WATER_STOCK_KEYS = ("water",)
+_DEFAULT_CORRUPTION_CONFIG = {
+    "enabled": True,
+    "initial_seed_count": 5,
+    "min_spawn_distance_from_player": 160,
+    "tick_interval_sec": 1.5,
+    "spread_attempts_per_tick": 16,
+    "infection_chance": 0.35,
+    "max_new_tiles_per_tick": 4,
+    "speed_multiplier": 1.0,
+    "clear_natural_props": True,
+    "water_blocks_spread": True,
+    "active_on_new_games_only": True,
+}
+_MINIMAP_BIOME_COLORS: dict[int, tuple[int, int, int]] = {
+    1: (24, 72, 150),    # ocean
+    3: (34, 92, 180),    # lake
+    4: (48, 128, 212),   # river
+    10: (78, 140, 70),   # plains
+    11: (34, 96, 50),    # forest
+    12: (24, 110, 56),   # rainforest
+    13: (166, 154, 68),  # savanna
+    14: (206, 180, 92),  # desert
+    15: (76, 110, 80),   # taiga
+    16: (170, 170, 164), # tundra
+    17: (226, 230, 234), # snow
+    18: (58, 92, 74),    # swamp
+    19: (66, 110, 84),   # mangrove
+    20: (120, 116, 110), # rock
+    21: (138, 134, 126), # alpine
+    22: (96, 74, 64),    # volcanic
+    23: (96, 82, 126),   # mystic
+    24: (132, 42, 42),   # corrupt
+}
 
 
 # --------------- CLASSE PRINCIPALE ---------------
@@ -112,6 +148,15 @@ class Phase1:
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
+        self._corruption_config = self._load_corruption_config()
+        self._corruption_active = False
+        self._corruption_timer = 0.0
+        self._corruption_rng = random.Random()
+        self._corruption_frontier: list[tuple[int, int]] = []
+        self._corruption_frontier_set: set[tuple[int, int]] = set()
+        self._corruption_infected_count = 0
+        self._corruption_speed_multiplier = float(self._corruption_config.get("speed_multiplier", 1.0) or 1.0)
+        self._corruption_dry_ticks = 0
         self.world_history: list[dict] = []
         self.class_state: dict = {"main_class": None, "chosen_day": None}
         self.horde_state: dict = {
@@ -146,6 +191,18 @@ class Phase1:
         self._pause_ach_back_rect = None
         self.ui_menu_open = False
         self.right_hud = LeftHUD(self)
+        self.minimap_visible = False
+        self._minimap_sample_size = 56
+        self._minimap_world_span = 420
+        self._minimap_world_span_min = 120
+        self._minimap_world_span_max = 1200
+        self._minimap_display_size = 220
+        self._minimap_refresh_interval = 0.30
+        self._minimap_refresh_cd = 0.0
+        self._minimap_last_center: tuple[int, int] | None = None
+        self._minimap_cache_center: tuple[int, int] | None = None
+        self._minimap_base_surface: pygame.Surface | None = None
+        self._minimap_scaled_surface: pygame.Surface | None = None
 
 
         # Transparence des props (activée via touche H)
@@ -181,6 +238,19 @@ class Phase1:
         self.death_event_ready = False
         self.death_response_mode: str | None = None
         self.food_reserve_capacity = 100
+        self.food_target_per_individual = 3.0
+        self.water_target_per_individual = 4.0
+        self.food_consumption_per_individual_per_sec = 1.0 / 120.0
+        self.water_consumption_per_individual_per_sec = 1.0 / 100.0
+        self._group_supply_food_buffer = 0.0
+        self._group_supply_water_buffer = 0.0
+        self._group_supply_damage_timer = 0.0
+        self._supply_cached_population = 1
+        self._supply_cached_food_units_per_ind = 0.0
+        self._supply_cached_water_units_per_ind = 0.0
+        self._supply_cached_food_ratio = 0.0
+        self._supply_cached_water_ratio = 0.0
+        self._supply_cached_debuff_mult = 1.0
 
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
@@ -227,6 +297,294 @@ class Phase1:
         if not enabled:
             return
         print(f"[EndGameDebug] {msg}")
+
+    def _normalize_corruption_config(self, raw: Any) -> dict[str, Any]:
+        cfg = dict(_DEFAULT_CORRUPTION_CONFIG)
+        if isinstance(raw, dict):
+            for key in cfg.keys():
+                if key in raw:
+                    cfg[key] = raw[key]
+
+        def _to_int(key: str, minimum: int) -> int:
+            try:
+                return max(minimum, int(cfg.get(key, minimum)))
+            except Exception:
+                return minimum
+
+        def _to_float(key: str, minimum: float) -> float:
+            try:
+                return max(minimum, float(cfg.get(key, minimum)))
+            except Exception:
+                return minimum
+
+        cfg["enabled"] = bool(cfg.get("enabled", True))
+        cfg["initial_seed_count"] = _to_int("initial_seed_count", 0)
+        cfg["min_spawn_distance_from_player"] = _to_int("min_spawn_distance_from_player", 0)
+        cfg["tick_interval_sec"] = _to_float("tick_interval_sec", 0.05)
+        cfg["spread_attempts_per_tick"] = _to_int("spread_attempts_per_tick", 1)
+        cfg["infection_chance"] = min(1.0, max(0.0, float(cfg.get("infection_chance", 0.35) or 0.35)))
+        cfg["max_new_tiles_per_tick"] = _to_int("max_new_tiles_per_tick", 1)
+        cfg["speed_multiplier"] = _to_float("speed_multiplier", 0.1)
+        cfg["clear_natural_props"] = bool(cfg.get("clear_natural_props", True))
+        cfg["water_blocks_spread"] = bool(cfg.get("water_blocks_spread", True))
+        cfg["active_on_new_games_only"] = bool(cfg.get("active_on_new_games_only", True))
+        return cfg
+
+    def _load_corruption_config(self, path: str = "Game/data/corruption.json") -> dict[str, Any]:
+        raw = {}
+        try:
+            with open(resource_path(path), "r", encoding="utf-8") as f:
+                raw = json.load(f) or {}
+        except Exception:
+            raw = {}
+        return self._normalize_corruption_config(raw)
+
+    def _reset_corruption_runtime(self) -> None:
+        self._corruption_active = False
+        self._corruption_timer = float(self._corruption_config.get("tick_interval_sec", 1.5) or 1.5)
+        seed = int(getattr(getattr(self, "world", None), "seed", 0) or 0) ^ 0xC0A512D
+        self._corruption_rng = random.Random(seed)
+        self._corruption_frontier = []
+        self._corruption_frontier_set = set()
+        self._corruption_infected_count = 0
+        self._corruption_speed_multiplier = float(self._corruption_config.get("speed_multiplier", 1.0) or 1.0)
+        self._corruption_dry_ticks = 0
+
+    def disable_corruption_runtime(self) -> None:
+        self._reset_corruption_runtime()
+        self._corruption_active = False
+
+    def export_corruption_state(self) -> dict[str, Any] | None:
+        if getattr(self, "world", None) is None:
+            return None
+        return {
+            "active": bool(self._corruption_active),
+            "timer": float(self._corruption_timer),
+            "speed_multiplier": float(self._corruption_speed_multiplier),
+            "frontier": [(int(x), int(y)) for (x, y) in self._corruption_frontier],
+            "infected_count": int(self._corruption_infected_count),
+            "dry_ticks": int(self._corruption_dry_ticks),
+            "rng_state": self._corruption_rng.getstate(),
+        }
+
+    def import_corruption_state(self, data: dict[str, Any] | None) -> None:
+        self._reset_corruption_runtime()
+        if not isinstance(data, dict):
+            self._corruption_active = False
+            return
+
+        self._corruption_timer = max(0.0, float(data.get("timer", self._corruption_timer) or self._corruption_timer))
+        self._corruption_speed_multiplier = max(
+            0.1, float(data.get("speed_multiplier", self._corruption_speed_multiplier) or self._corruption_speed_multiplier)
+        )
+        self._corruption_infected_count = max(0, int(data.get("infected_count", 0) or 0))
+        self._corruption_dry_ticks = max(0, int(data.get("dry_ticks", 0) or 0))
+
+        frontier = data.get("frontier") or []
+        for item in frontier:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            self._add_corruption_frontier(int(item[0]), int(item[1]))
+
+        rng_state = data.get("rng_state")
+        if rng_state is not None:
+            try:
+                self._corruption_rng.setstate(rng_state)
+            except Exception:
+                pass
+
+        if self._corruption_infected_count <= 0:
+            self._corruption_infected_count = self._estimate_corruption_infected_count()
+        self._corruption_active = bool(data.get("active", False)) and bool(self._corruption_frontier)
+
+    def _estimate_corruption_infected_count(self) -> int:
+        world = getattr(self, "world", None)
+        if world is None:
+            return 0
+        overrides = getattr(world, "_biome_overrides", None)
+        if isinstance(overrides, dict):
+            count = 0
+            for bid in overrides.values():
+                try:
+                    if int(bid) == int(BIOME_CORRUPT):
+                        count += 1
+                except Exception:
+                    continue
+            return count
+        return 0
+
+    def _norm_world_xy(self, x: int, y: int) -> tuple[int, int]:
+        world = self.world
+        if world is None:
+            return int(x), int(y)
+        w = max(1, int(world.width))
+        h = max(1, int(world.height))
+        nx = int(x) % w
+        ny = max(0, min(h - 1, int(y)))
+        return nx, ny
+
+    def _add_corruption_frontier(self, x: int, y: int) -> None:
+        world = self.world
+        if world is None:
+            return
+        x, y = self._norm_world_xy(x, y)
+        key = (x, y)
+        if key in self._corruption_frontier_set:
+            return
+        self._corruption_frontier_set.add(key)
+        self._corruption_frontier.append(key)
+
+    def _corruption_neighbors(self, x: int, y: int) -> list[tuple[int, int]]:
+        world = self.world
+        if world is None:
+            return []
+        w = max(1, int(world.width))
+        h = max(1, int(world.height))
+        x = int(x) % w
+        y = max(0, min(h - 1, int(y)))
+        out = [((x + 1) % w, y), ((x - 1) % w, y)]
+        if y > 0:
+            out.append((x, y - 1))
+        if y + 1 < h:
+            out.append((x, y + 1))
+        return out
+
+    def _can_corrupt_tile(self, x: int, y: int) -> bool:
+        world = self.world
+        if world is None:
+            return False
+        x, y = self._norm_world_xy(x, y)
+        try:
+            bid = int(world.get_biome_id(x, y))
+        except Exception:
+            return False
+        if bid == int(BIOME_CORRUPT):
+            return False
+        if bool(self._corruption_config.get("water_blocks_spread", True)) and bid in _WATER_BIOME_IDS:
+            return False
+        return True
+
+    def _seed_corruption_for_new_world(self) -> None:
+        world = self.world
+        self._reset_corruption_runtime()
+        if world is None:
+            return
+        if not bool(self._corruption_config.get("enabled", True)):
+            return
+        if not hasattr(world, "set_tile_corrupt"):
+            return
+
+        seed_count = max(0, int(self._corruption_config.get("initial_seed_count", 0) or 0))
+        if seed_count <= 0:
+            return
+
+        try:
+            spawn_x, spawn_y = world.spawn
+        except Exception:
+            spawn_x, spawn_y = (world.width // 2, world.height // 2)
+        spawn_x, spawn_y = self._norm_world_xy(int(spawn_x), int(spawn_y))
+        min_dist = max(0, int(self._corruption_config.get("min_spawn_distance_from_player", 0) or 0))
+        min_dist2 = min_dist * min_dist
+        clear_props = bool(self._corruption_config.get("clear_natural_props", True))
+
+        attempts = 0
+        max_attempts = max(800, seed_count * 400)
+        seeded = 0
+        width = int(world.width)
+        height = int(world.height)
+        while seeded < seed_count and attempts < max_attempts:
+            attempts += 1
+            x = self._corruption_rng.randrange(0, max(1, width))
+            y = self._corruption_rng.randrange(0, max(1, height))
+            x, y = self._norm_world_xy(x, y)
+
+            dx = abs(x - spawn_x)
+            dx = min(dx, width - dx)
+            dy = abs(y - spawn_y)
+            if (dx * dx + dy * dy) < min_dist2:
+                continue
+            if not self._can_corrupt_tile(x, y):
+                continue
+            try:
+                ok = bool(world.set_tile_corrupt(x, y, clear_natural_props=clear_props))
+            except Exception:
+                ok = False
+            if not ok:
+                continue
+            self._add_corruption_frontier(x, y)
+            seeded += 1
+            self._corruption_infected_count += 1
+
+        self._corruption_active = bool(self._corruption_frontier)
+
+    def _run_corruption_tick(self) -> None:
+        world = self.world
+        if world is None or not self._corruption_active or not self._corruption_frontier:
+            self._corruption_active = False
+            return
+
+        chance = min(1.0, max(0.0, float(self._corruption_config.get("infection_chance", 0.35) or 0.35)))
+        if chance <= 0.0:
+            return
+        clear_props = bool(self._corruption_config.get("clear_natural_props", True))
+        speed = max(0.1, float(self._corruption_speed_multiplier or 1.0))
+        attempts = max(1, int(round(float(self._corruption_config.get("spread_attempts_per_tick", 16) or 16) * speed)))
+        max_new = max(1, int(round(float(self._corruption_config.get("max_new_tiles_per_tick", 4) or 4) * speed)))
+
+        new_tiles = 0
+        for _ in range(attempts):
+            if new_tiles >= max_new or not self._corruption_frontier:
+                break
+            sx, sy = self._corruption_rng.choice(self._corruption_frontier)
+            neighbors = self._corruption_neighbors(sx, sy)
+            self._corruption_rng.shuffle(neighbors)
+            for nx, ny in neighbors:
+                if not self._can_corrupt_tile(nx, ny):
+                    continue
+                if self._corruption_rng.random() > chance:
+                    continue
+                try:
+                    ok = bool(world.set_tile_corrupt(nx, ny, clear_natural_props=clear_props))
+                except Exception:
+                    ok = False
+                if not ok:
+                    continue
+                self._add_corruption_frontier(nx, ny)
+                self._corruption_infected_count += 1
+                new_tiles += 1
+                break
+
+        if new_tiles > 0:
+            self._corruption_dry_ticks = 0
+            return
+
+        self._corruption_dry_ticks += 1
+        if self._corruption_dry_ticks < 30:
+            return
+
+        has_targets = False
+        probe_count = min(64, len(self._corruption_frontier))
+        for _ in range(probe_count):
+            sx, sy = self._corruption_rng.choice(self._corruption_frontier)
+            for nx, ny in self._corruption_neighbors(sx, sy):
+                if self._can_corrupt_tile(nx, ny):
+                    has_targets = True
+                    break
+            if has_targets:
+                break
+        if not has_targets:
+            self._corruption_active = False
+
+    def _update_corruption(self, dt: float) -> None:
+        if not self._corruption_active:
+            return
+        interval = max(0.05, float(self._corruption_config.get("tick_interval_sec", 1.5) or 1.5))
+        self._corruption_timer -= float(dt)
+        ticks = 0
+        while self._corruption_timer <= 0.0 and ticks < 8 and self._corruption_active:
+            self._corruption_timer += interval
+            self._run_corruption_tick()
+            ticks += 1
 
     def _reset_session_state(self):
         """
@@ -304,6 +662,19 @@ class Phase1:
         self.death_event_ready = False
         self.death_response_mode = None
         self.food_reserve_capacity = 100
+        self.food_target_per_individual = 3.0
+        self.water_target_per_individual = 4.0
+        self.food_consumption_per_individual_per_sec = 1.0 / 120.0
+        self.water_consumption_per_individual_per_sec = 1.0 / 100.0
+        self._group_supply_food_buffer = 0.0
+        self._group_supply_water_buffer = 0.0
+        self._group_supply_damage_timer = 0.0
+        self._supply_cached_population = 1
+        self._supply_cached_food_units_per_ind = 0.0
+        self._supply_cached_water_units_per_ind = 0.0
+        self._supply_cached_food_ratio = 0.0
+        self._supply_cached_water_ratio = 0.0
+        self._supply_cached_debuff_mult = 1.0
         self.weather_system = None
         if self.weather_vfx:
             self.weather_vfx.reset()
@@ -318,6 +689,14 @@ class Phase1:
         self._game_end_summary = None
         self._game_end_xp = 0
         self._gameplay_ready = False
+        self._corruption_config = self._load_corruption_config()
+        self._reset_corruption_runtime()
+        self.minimap_visible = False
+        self._minimap_refresh_cd = 0.0
+        self._minimap_last_center = None
+        self._minimap_cache_center = None
+        self._minimap_base_surface = None
+        self._minimap_scaled_surface = None
 
         self._stats_last_day = int(getattr(self.day_night, "jour", 0) or 0)
         self._daily_stats = []
@@ -823,6 +1202,9 @@ class Phase1:
             water_mult = max(0.75, min(0.98, 0.85 + (swim - 5.0) * 0.02))
             speed *= water_mult
 
+        if self._is_player_species_entity(ent):
+            speed *= self._supply_debuff_multiplier()
+
         return max(0.2, speed)
 
     def _clear_entity_combat_refs(self, ent):
@@ -835,13 +1217,20 @@ class Phase1:
         return start_entity_combat(self, attacker, target)
 
     def _combat_attack_interval(self, attacker) -> float:
-        return combat_attack_interval(attacker)
+        interval = float(combat_attack_interval(attacker))
+        if self._is_player_species_entity(attacker):
+            mult = max(0.35, self._supply_debuff_multiplier())
+            interval /= mult
+        return interval
 
     def _combat_attack_range(self, attacker) -> float:
         return combat_attack_range(attacker)
 
     def _combat_damage(self, attacker, target) -> float:
-        return combat_damage(attacker, target)
+        damage = float(combat_damage(attacker, target))
+        if self._is_player_species_entity(attacker):
+            damage *= self._supply_debuff_multiplier()
+        return damage
 
     def _grant_fauna_combat_rewards(self, attacker, target):
         grant_fauna_combat_rewards(self, attacker, target)
@@ -995,10 +1384,163 @@ class Phase1:
         if mode:
             add_notification(f"Gestion des corps choisie : {mode}.")
 
+    def _is_species_corpse_overlay(self, cell) -> bool:
+        if isinstance(cell, dict):
+            if str(cell.get("state", "")).strip().lower() == "corpse":
+                return True
+            pid = cell.get("pid")
+            try:
+                return int(pid) == int(_SPECIES_CORPSE_PROP_ID)
+            except Exception:
+                return False
+        if isinstance(cell, int):
+            return int(cell) == int(_SPECIES_CORPSE_PROP_ID)
+        return False
+
+    def _drop_species_corpse(self, i: int, j: int) -> bool:
+        if not self.world:
+            return False
+        if i < 0 or j < 0 or i >= self.world.width or j >= self.world.height:
+            return False
+        current = self._get_construction_cell(i, j, generate=True)
+        if current and not self._is_species_corpse_overlay(current):
+            return False
+        corpse = {
+            "pid": int(_SPECIES_CORPSE_PROP_ID),
+            "state": "corpse",
+            "name": "Cadavre",
+        }
+        self.world.overlay[j][i] = corpse
+        return True
+
+    def _clear_species_corpse(self, i: int, j: int) -> bool:
+        if not self.world:
+            return False
+        if i < 0 or j < 0 or i >= self.world.width or j >= self.world.height:
+            return False
+        current = self._get_construction_cell(i, j, generate=False)
+        if not self._is_species_corpse_overlay(current):
+            return False
+        self.world.overlay[j][i] = 0
+        return True
+
+    def _sum_warehouse_stock(self, resource_keys: tuple[str, ...]) -> float:
+        total = 0.0
+        for key in resource_keys:
+            try:
+                total += max(0.0, float(self.warehouse.get(key, 0) or 0))
+            except Exception:
+                continue
+        return total
+
+    def _food_stock_units(self) -> float:
+        return self._sum_warehouse_stock(_FOOD_STOCK_KEYS)
+
+    def _water_stock_units(self) -> float:
+        return self._sum_warehouse_stock(_WATER_STOCK_KEYS)
+
+    def _food_units_per_individual(self) -> float:
+        return float(getattr(self, "_supply_cached_food_units_per_ind", 0.0))
+
+    def _water_units_per_individual(self) -> float:
+        return float(getattr(self, "_supply_cached_water_units_per_ind", 0.0))
+
     def _food_stock_ratio(self) -> float:
-        capacity = max(1.0, float(self.food_reserve_capacity))
-        stock = float(self.warehouse.get("food", 0)) + float(self.warehouse.get("meat", 0))
-        return stock / capacity
+        return float(getattr(self, "_supply_cached_food_ratio", 0.0))
+
+    def _water_stock_ratio(self) -> float:
+        return float(getattr(self, "_supply_cached_water_ratio", 0.0))
+
+    def _supply_debuff_multiplier(self) -> float:
+        return float(getattr(self, "_supply_cached_debuff_mult", 1.0))
+
+    def get_individual_supply_work_multiplier(self, ent) -> float:
+        if not self._is_player_species_entity(ent):
+            return 1.0
+        return self._supply_debuff_multiplier()
+
+    def _take_from_warehouse_pool(self, resource_keys: tuple[str, ...], quantity: int) -> int:
+        remaining = max(0, int(quantity))
+        if remaining <= 0:
+            return 0
+        taken = 0
+        for key in resource_keys:
+            stock = int(self.warehouse.get(key, 0) or 0)
+            if stock <= 0:
+                continue
+            used = min(stock, remaining)
+            self.warehouse[key] = stock - used
+            remaining -= used
+            taken += used
+            if remaining <= 0:
+                break
+        return taken
+
+    def _update_group_supply(self, dt: float) -> None:
+        pop = int(self._count_living_species_members())
+        if pop <= 0:
+            self._group_supply_food_buffer = 0.0
+            self._group_supply_water_buffer = 0.0
+            self._group_supply_damage_timer = 0.0
+            self._supply_cached_population = 1
+            self._supply_cached_food_units_per_ind = 0.0
+            self._supply_cached_water_units_per_ind = 0.0
+            self._supply_cached_food_ratio = 0.0
+            self._supply_cached_water_ratio = 0.0
+            self._supply_cached_debuff_mult = 1.0
+            return
+
+        self._group_supply_food_buffer += max(0.0, float(self.food_consumption_per_individual_per_sec)) * pop * float(dt)
+        self._group_supply_water_buffer += max(0.0, float(self.water_consumption_per_individual_per_sec)) * pop * float(dt)
+
+        food_need = int(self._group_supply_food_buffer)
+        if food_need > 0:
+            self._group_supply_food_buffer -= float(food_need)
+            self._take_from_warehouse_pool(_FOOD_STOCK_KEYS, food_need)
+
+        water_need = int(self._group_supply_water_buffer)
+        if water_need > 0:
+            self._group_supply_water_buffer -= float(water_need)
+            self._take_from_warehouse_pool(_WATER_STOCK_KEYS, water_need)
+
+        self._supply_cached_population = max(1, pop)
+        self._supply_cached_food_units_per_ind = self._food_stock_units() / float(self._supply_cached_population)
+        self._supply_cached_water_units_per_ind = self._water_stock_units() / float(self._supply_cached_population)
+
+        food_target = max(0.1, float(self.food_target_per_individual))
+        water_target = max(0.1, float(self.water_target_per_individual))
+        self._supply_cached_food_ratio = self._supply_cached_food_units_per_ind / food_target
+        self._supply_cached_water_ratio = self._supply_cached_water_units_per_ind / water_target
+        ratio = min(self._supply_cached_food_ratio, self._supply_cached_water_ratio)
+
+        if ratio >= 1.0:
+            self._supply_cached_debuff_mult = 1.0
+        elif ratio >= 0.66:
+            self._supply_cached_debuff_mult = 0.90
+        elif ratio >= 0.33:
+            self._supply_cached_debuff_mult = 0.75
+        else:
+            self._supply_cached_debuff_mult = 0.60
+
+        critical_ratio = ratio
+        if critical_ratio >= 0.20:
+            self._group_supply_damage_timer = 0.0
+            return
+
+        self._group_supply_damage_timer += float(dt)
+        while self._group_supply_damage_timer >= 5.0:
+            self._group_supply_damage_timer -= 5.0
+            for ent in self.entities:
+                if getattr(ent, "is_egg", False):
+                    continue
+                if getattr(ent, "espece", None) != self.espece:
+                    continue
+                if getattr(ent, "_dead_processed", False):
+                    continue
+                hp = float(getattr(ent, "jauges", {}).get("sante", 0) or 0)
+                if hp <= 0:
+                    continue
+                ent.jauges["sante"] = max(0.0, hp - 1.0)
 
     def _apply_death_morale_effects(self):
         mode = self.death_response_mode
@@ -1402,6 +1944,8 @@ class Phase1:
     def _handle_entity_death(self, ent):
         if getattr(ent, "_dead_processed", False):
             return
+        death_i = int(getattr(ent, "x", 0) or 0)
+        death_j = int(getattr(ent, "y", 0) or 0)
         ent._dead_processed = True
         self._stop_entity_combat(ent, stop_motion=False)
 
@@ -1432,6 +1976,7 @@ class Phase1:
         add_notification(f"{getattr(ent, 'nom', 'Un individu')} est mort.")
 
         if getattr(ent, "espece", None) == self.espece:
+            self._drop_species_corpse(death_i, death_j)
             self.species_death_count += 1
             self._stats_current_day["deaths"] = int(self._stats_current_day.get("deaths", 0) or 0) + 1
             survivors = self._count_living_species_members()
@@ -1606,6 +2151,7 @@ class Phase1:
                 self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
             self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")            
             self._ensure_weather_system()
+            self._seed_corruption_for_new_world()
             self._gameplay_ready = True
             self._endgame_debug(
                 f"enter(pre_world) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
@@ -1706,6 +2252,7 @@ class Phase1:
         self._set_cursor(self.default_cursor_path)
         self._perf_enter_mark(perf, "Curseur initialise")
         self._ensure_weather_system()
+        self._seed_corruption_for_new_world()
         self._refresh_craft_gate_state(force=False)
         self._gameplay_ready = True
         self._endgame_debug(
@@ -1728,6 +2275,7 @@ class Phase1:
             "props_transparency": self._control_key("controls.props_transparency", pygame.K_h),
             "inspect_mode": self._control_key("controls.inspect_mode", pygame.K_i),
             "focus_nearest": self._control_key("controls.focus_nearest", pygame.K_SPACE),
+            "map_toggle": self._control_key("controls.map_toggle", pygame.K_m),
         }
 
     # ---------- INPUT ----------
@@ -1736,6 +2284,7 @@ class Phase1:
         key_props = controls["props_transparency"]
         key_inspect = controls["inspect_mode"]
         key_focus = controls["focus_nearest"]
+        key_map = controls["map_toggle"]
 
         if self.espece and self.espece.lvl_up.active:
             for e in events:
@@ -1788,6 +2337,11 @@ class Phase1:
                             self._pause_achievements_open = False
                 elif e.key == key_focus:
                     self._focus_camera_on_nearest_species_member()
+                elif e.key == key_map:
+                    self.minimap_visible = not self.minimap_visible
+                    if self.minimap_visible:
+                        self._minimap_refresh_cd = 0.0
+                        self._update_minimap_cache(0.0, force=True)
                 elif e.key == pygame.K_F6:
                     self._ensure_weather_system()
                     if self.weather_system:
@@ -1816,8 +2370,13 @@ class Phase1:
                 self._set_cursor(self.default_cursor_path)
 
             if not self.paused:
-                if e.type == pygame.MOUSEWHEEL and self._ui_captures_click(pygame.mouse.get_pos()):
-                    continue
+                if e.type == pygame.MOUSEWHEEL:
+                    mouse_pos = pygame.mouse.get_pos()
+                    if self._is_point_over_minimap(mouse_pos):
+                        self._zoom_minimap(int(getattr(e, "y", 0) or 0))
+                        continue
+                    if self._ui_captures_click(mouse_pos):
+                        continue
                 self.view.handle_event(e)
 
                 # --- CLIC GAUCHE ---
@@ -1849,6 +2408,7 @@ class Phase1:
                             if not self._tile_is_visible(tile):
                                 add_notification("Tuile hors du champ de vision.")
                                 return
+                            self._clear_species_corpse(int(tile[0]), int(tile[1]))
                             result = self.craft_system.craft_item(
                                 craft_id=self.selected_craft,
                                 builder=self.joueur,
@@ -2021,6 +2581,7 @@ class Phase1:
             )
         self._update_horde_state()
         self._update_weather_vfx(dt)
+        self._update_corruption(dt)
         mark("Day/night update")
 
         if self.tech_tree:
@@ -2041,6 +2602,7 @@ class Phase1:
 
         keys = pygame.key.get_pressed()
         self.view.update(dt, keys)
+        self._update_minimap_cache(dt)
         mark("Vue update")
 
         def get_radius(ent):
@@ -2074,18 +2636,15 @@ class Phase1:
             self.fauna_spawner.update(dt, self)
         mark("Fauna spawner update")
 
+        self._update_group_supply(dt)
+        mark("Group supply update")
+
         dead_entities: list = []
         for e in list(self.entities):
             if getattr(e, "is_egg", False):
                 continue
             self._ensure_move_runtime(e)
             self._update_entity_movement(e, dt)
-            e.faim_timer += dt
-            if e.faim_timer >= 5.0:
-                e.faim_timer = 0
-                e.jauges["faim"] -= 1
-                if e.jauges["faim"] < 20:
-                    e.comportement.try_eating()
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
             self._update_entity_combat(e, dt)
@@ -2355,8 +2914,10 @@ class Phase1:
         self._draw_weather_effects(screen)
         #2bis)
         if not self.paused and not self.ui_menu_open:
+            self._draw_group_supply_hud(screen)
             self._draw_weather_hud(screen)
-        
+            self._draw_species_minimap(screen)
+
         # 2bis) Sélection rectangle (drag)
         self._draw_selection_box(screen)
 
@@ -2476,6 +3037,8 @@ class Phase1:
 
     def _ui_captures_click(self, pos: tuple[int, int]) -> bool:
         if inspection_panel_contains_point(self, pos, self.screen):
+            return True
+        if self._is_point_over_minimap(pos):
             return True
         if self.bottom_hud:
             if self.bottom_hud.context_menu and self.bottom_hud.context_menu.get("rect"):
@@ -3024,7 +3587,7 @@ class Phase1:
             if snap is None:
                 return False
             _lvl, gid, overlay, bid = snap
-            if overlay:
+            if overlay and not self._is_species_corpse_overlay(overlay):
                 return False
             if int(bid) in _WATER_BIOME_IDS:
                 return self._entity_can_walk_on_water(ent)
@@ -3037,7 +3600,7 @@ class Phase1:
         # Fallback pour mondes qui n'exposent pas get_tile_snapshot.
         try:
             pid = w.overlay[j][i]
-            if pid:
+            if pid and not self._is_species_corpse_overlay(pid):
                 return False
         except Exception:
             pass
@@ -3570,6 +4133,258 @@ class Phase1:
             s.fill((0, 0, 0, 170))
             screen.blit(s, (bg.x, bg.y))
             pygame.draw.rect(screen, (200, 210, 120), fg, border_radius=2)
+
+    # ---------- MINI-MAP ----------
+    def _get_minimap_map_size(self) -> int:
+        if self._minimap_scaled_surface is not None:
+            try:
+                return int(self._minimap_scaled_surface.get_width())
+            except Exception:
+                pass
+        return max(120, int(self._minimap_display_size))
+
+    def _get_minimap_panel_rect(self) -> pygame.Rect | None:
+        if not self.minimap_visible:
+            return None
+        sw, _sh = self.screen.get_size()
+        map_size = self._get_minimap_map_size()
+        panel_w = map_size + 20
+        panel_h = map_size + 44
+        panel_x = sw - panel_w - 20
+        panel_y = 125
+        return pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+    def _get_minimap_map_rect(self) -> pygame.Rect | None:
+        panel_rect = self._get_minimap_panel_rect()
+        if panel_rect is None:
+            return None
+        map_size = self._get_minimap_map_size()
+        return pygame.Rect(panel_rect.x + 10, panel_rect.y + 24, map_size, map_size)
+
+    def _is_point_over_minimap(self, pos: tuple[int, int]) -> bool:
+        panel_rect = self._get_minimap_panel_rect()
+        if panel_rect is None:
+            return False
+        return bool(panel_rect.collidepoint(pos))
+
+    def _zoom_minimap(self, wheel_delta: int) -> None:
+        if not self.minimap_visible or self.world is None:
+            return
+        d = int(wheel_delta)
+        if d == 0:
+            return
+        # Molette haut => zoom in (span plus petit), bas => zoom out.
+        factor = 0.86 if d > 0 else 1.16
+        current = float(max(1, int(self._minimap_world_span)))
+        new_span = int(round(current * factor))
+        min_span = int(max(32, int(self._minimap_world_span_min)))
+        max_span = int(max(min_span + 1, int(self._minimap_world_span_max)))
+        new_span = max(min_span, min(max_span, new_span))
+        if new_span == int(self._minimap_world_span):
+            return
+        self._minimap_world_span = int(new_span)
+        self._minimap_refresh_cd = 0.0
+        self._update_minimap_cache(0.0, force=True)
+
+    def _minimap_focus_tile(self) -> tuple[int, int]:
+        world = self.world
+        if world is None:
+            return (0, 0)
+        width = max(1, int(world.width))
+        height = max(1, int(world.height))
+        if self.joueur is not None:
+            return (int(self.joueur.x) % width, max(0, min(height - 1, int(self.joueur.y))))
+        if self.entities:
+            for ent in self.entities:
+                if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+                    continue
+                if getattr(ent, "espece", None) is not self.espece:
+                    continue
+                return (int(ent.x) % width, max(0, min(height - 1, int(ent.y))))
+        try:
+            sx, sy = world.spawn
+            return (int(sx) % width, max(0, min(height - 1, int(sy))))
+        except Exception:
+            return (width // 2, height // 2)
+
+    def _wrap_dx(self, x: int, cx: int, width: int) -> int:
+        if width <= 0:
+            return int(x) - int(cx)
+        return int((int(x) - int(cx) + width // 2) % width) - width // 2
+
+    def _sample_minimap_color(self, snap) -> tuple[int, int, int]:
+        if snap is None:
+            return (12, 16, 22)
+        _lvl, _gid, overlay, bid = snap
+        try:
+            biome_id = int(bid)
+        except Exception:
+            biome_id = -1
+        base = _MINIMAP_BIOME_COLORS.get(biome_id, (72, 86, 72))
+        if overlay:
+            # Case occupée par une structure/prop: petit boost de luminosité
+            return (
+                min(255, base[0] + 14),
+                min(255, base[1] + 14),
+                min(255, base[2] + 14),
+            )
+        return base
+
+    def _rebuild_minimap_cache(self, center: tuple[int, int]) -> None:
+        world = self.world
+        if world is None:
+            return
+        sample = max(32, int(self._minimap_sample_size))
+        span = max(64, int(self._minimap_world_span))
+        half = span * 0.5
+        width = max(1, int(world.width))
+        height = max(1, int(world.height))
+        cx, cy = center
+
+        base = pygame.Surface((sample, sample))
+        step = span / float(sample)
+        for py in range(sample):
+            wy = int(cy - half + (py + 0.5) * step)
+            wy = max(0, min(height - 1, wy))
+            for px in range(sample):
+                wx = int(cx - half + (px + 0.5) * step) % width
+                snap = world.get_tile_snapshot(wx, wy, generate=False) if hasattr(world, "get_tile_snapshot") else None
+                base.set_at((px, py), self._sample_minimap_color(snap))
+
+        display_size = max(120, int(self._minimap_display_size))
+        self._minimap_base_surface = base
+        self._minimap_scaled_surface = pygame.transform.scale(base, (display_size, display_size))
+        self._minimap_cache_center = (int(cx), int(cy))
+
+    def _update_minimap_cache(self, dt: float, force: bool = False) -> None:
+        if not self.minimap_visible or self.world is None:
+            return
+
+        center = self._minimap_focus_tile()
+        need_rebuild = force or self._minimap_scaled_surface is None or self._minimap_cache_center is None
+        if not need_rebuild:
+            last_x, last_y = self._minimap_cache_center
+            dx = abs(self._wrap_dx(center[0], last_x, int(self.world.width)))
+            dy = abs(int(center[1]) - int(last_y))
+            if dx + dy >= 8:
+                need_rebuild = True
+
+        self._minimap_refresh_cd -= float(dt)
+        if self._minimap_refresh_cd <= 0.0:
+            need_rebuild = True
+
+        if need_rebuild:
+            self._rebuild_minimap_cache(center)
+            self._minimap_last_center = center
+            self._minimap_refresh_cd = float(self._minimap_refresh_interval)
+
+    def _draw_species_minimap(self, screen: pygame.Surface) -> None:
+        if not self.minimap_visible or self.world is None:
+            return
+        self._update_minimap_cache(0.0)
+        if self._minimap_scaled_surface is None or self._minimap_cache_center is None:
+            return
+
+        panel_rect = self._get_minimap_panel_rect()
+        map_rect = self._get_minimap_map_rect()
+        if panel_rect is None or map_rect is None:
+            return
+        panel_x, panel_y = panel_rect.x, panel_rect.y
+        panel_w, panel_h = panel_rect.w, panel_rect.h
+
+        bg = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        bg.fill((15, 22, 30, 210))
+        pygame.draw.rect(bg, (88, 112, 146), bg.get_rect(), 2, border_radius=10)
+        screen.blit(bg, panel_rect.topleft)
+
+        title = self.small_font.render("Mini-map", True, (210, 220, 240))
+        screen.blit(title, (panel_x + 12, panel_y + 6))
+        screen.blit(self._minimap_scaled_surface, map_rect.topleft)
+
+        center_x, center_y = self._minimap_cache_center
+        span = float(max(64, int(self._minimap_world_span)))
+        half = span * 0.5
+        world_w = max(1, int(self.world.width))
+        world_h = max(1, int(self.world.height))
+
+        # Indicateur du joueur principal (ou centre caméra de minimap)
+        cpx = map_rect.x + map_rect.width // 2
+        cpy = map_rect.y + map_rect.height // 2
+        pygame.draw.rect(screen, (245, 245, 255), pygame.Rect(cpx - 1, cpy - 1, 3, 3))
+
+        for ent in self.entities:
+            if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+                continue
+            if getattr(ent, "espece", None) is not self.espece:
+                continue
+            ex = int(ent.x) % world_w
+            ey = max(0, min(world_h - 1, int(ent.y)))
+            dx = float(self._wrap_dx(ex, center_x, world_w))
+            dy = float(ey - center_y)
+            if abs(dx) > half or abs(dy) > half:
+                continue
+            rx = (dx + half) / span
+            ry = (dy + half) / span
+            px = map_rect.x + int(rx * (map_rect.width - 1))
+            py = map_rect.y + int(ry * (map_rect.height - 1))
+            color = (250, 238, 120)
+            if ent is self.joueur:
+                color = (255, 255, 255)
+            pygame.draw.rect(screen, color, pygame.Rect(px - 1, py - 1, 3, 3))
+
+        pygame.draw.rect(screen, (130, 150, 180), map_rect, 1)
+
+    def _draw_group_supply_hud(self, screen: pygame.Surface) -> None:
+        if self.paused or self.ui_menu_open:
+            return
+        if self.espece is None:
+            return
+
+        pop = max(1, int(getattr(self, "_supply_cached_population", 1)))
+        food_units = self._food_units_per_individual()
+        water_units = self._water_units_per_individual()
+        food_ratio = self._food_stock_ratio()
+        water_ratio = self._water_stock_ratio()
+        debuff_mult = self._supply_debuff_multiplier()
+
+        panel_w = 260
+        panel_h = 88
+        panel_x = 20
+        panel_y = 24
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        panel.fill((14, 20, 28, 210))
+        pygame.draw.rect(panel, (96, 114, 142), panel.get_rect(), 2, border_radius=10)
+        screen.blit(panel, panel_rect.topleft)
+
+        title = self.small_font.render(f"Ravitaillement ({pop} ind.)", True, (220, 230, 245))
+        screen.blit(title, (panel_x + 10, panel_y + 6))
+
+        def draw_bar(y: int, label: str, ratio: float, units_per_ind: float, color: tuple[int, int, int]) -> None:
+            bar_x = panel_x + 92
+            bar_y = y
+            bar_w = 152
+            bar_h = 12
+            clamped = max(0.0, min(1.0, float(ratio)))
+            fill_w = int(bar_w * clamped)
+
+            label_surf = self.small_font.render(label, True, (196, 206, 226))
+            screen.blit(label_surf, (panel_x + 10, bar_y - 2))
+            pygame.draw.rect(screen, (38, 46, 62), (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+            if fill_w > 0:
+                pygame.draw.rect(screen, color, (bar_x, bar_y, fill_w, bar_h), border_radius=3)
+            pygame.draw.rect(screen, (110, 126, 154), (bar_x, bar_y, bar_w, bar_h), 1, border_radius=3)
+            value = self.small_font.render(f"{units_per_ind:.1f}/ind", True, (224, 230, 240))
+            screen.blit(value, (bar_x + bar_w - value.get_width(), bar_y - 14))
+
+        draw_bar(panel_y + 30, "Nourriture", food_ratio, food_units, (224, 174, 76))
+        draw_bar(panel_y + 56, "Eau", water_ratio, water_units, (98, 176, 235))
+
+        if debuff_mult < 0.999:
+            debuff_pct = int(round((1.0 - debuff_mult) * 100.0))
+            alert = self.small_font.render(f"Debuff actif: -{debuff_pct}%", True, (255, 128, 128))
+            screen.blit(alert, (panel_x + 10, panel_y + panel_h - 16))
 
     def apply_day_night_lighting(self, surface: pygame.Surface):
         light = self.day_night.get_light_level(min_light=0.45)

@@ -79,24 +79,90 @@ class QuestMenu:
                 labels.append(rtype or "reward")
         return "Recompenses: " + ", ".join(labels)
 
+    def _wrap_lines(self, font, text: str, max_width: int, max_lines: int | None = None):
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+        words = raw.split()
+        if not words:
+            return []
+
+        lines = []
+        cur = words[0]
+        for word in words[1:]:
+            test = f"{cur} {word}"
+            if font.size(test)[0] <= max_width:
+                cur = test
+                continue
+            lines.append(cur)
+            cur = word
+            if max_lines is not None and len(lines) >= max_lines:
+                break
+
+        if max_lines is None or len(lines) < max_lines:
+            lines.append(cur)
+
+        if max_lines is not None and len(lines) > max_lines:
+            lines = lines[:max_lines]
+
+        if max_lines is not None and len(lines) == max_lines:
+            # Ellipse sur la derniere ligne si du contenu est coupe.
+            joined = " ".join(words)
+            visible = " ".join(lines)
+            if len(visible) < len(joined):
+                last = lines[-1]
+                while last and font.size(last + "...")[0] > max_width:
+                    last = last[:-1]
+                lines[-1] = (last + "...").strip()
+        return lines
+
+    def _measure_quest_card(self, title, description, reward_line, card_width: int):
+        text_w = max(120, int(card_width) - 20)
+        title_lines = self._wrap_lines(self.text_font, title, text_w, max_lines=2)
+        desc_lines = self._wrap_lines(self.small_font, description, text_w, max_lines=2)
+        reward_lines = self._wrap_lines(self.small_font, reward_line, text_w, max_lines=2)
+
+        h = 8
+        h += len(title_lines) * self.text_font.get_linesize()
+        h += 4
+        h += len(desc_lines) * self.small_font.get_linesize()
+        h += 8
+        h += len(reward_lines) * self.small_font.get_linesize()
+        h += 8
+        h += 10  # bar
+        h += 12  # valeur progression
+        h += 8
+        return max(108, int(h))
+
     def _draw_quest_card(self, screen, rect, title, description, progress, target, reward_line, completed=False):
         bg = (44, 68, 52) if completed else (46, 52, 68)
         border = (96, 165, 120) if completed else (96, 120, 170)
         pygame.draw.rect(screen, bg, rect, border_radius=10)
         pygame.draw.rect(screen, border, rect, 2, border_radius=10)
 
+        text_w = max(120, rect.width - 20)
+        title_lines = self._wrap_lines(self.text_font, title, text_w, max_lines=2)
+        desc_lines = self._wrap_lines(self.small_font, description, text_w, max_lines=2)
+        reward_lines = self._wrap_lines(self.small_font, reward_line, text_w, max_lines=2)
+
         y = rect.y + 8
-        title_surf = self.text_font.render(title, True, (240, 245, 250))
-        screen.blit(title_surf, (rect.x + 10, y))
-        y += title_surf.get_height() + 4
+        for line in title_lines:
+            title_surf = self.text_font.render(line, True, (240, 245, 250))
+            screen.blit(title_surf, (rect.x + 10, y))
+            y += self.text_font.get_linesize()
+        y += 4
 
-        desc_surf = self.small_font.render(description, True, (205, 215, 230))
-        screen.blit(desc_surf, (rect.x + 10, y))
-        y += desc_surf.get_height() + 8
+        for line in desc_lines:
+            desc_surf = self.small_font.render(line, True, (205, 215, 230))
+            screen.blit(desc_surf, (rect.x + 10, y))
+            y += self.small_font.get_linesize()
+        y += 8
 
-        reward_surf = self.small_font.render(reward_line, True, (180, 198, 220))
-        screen.blit(reward_surf, (rect.x + 10, y))
-        y += reward_surf.get_height() + 6
+        for line in reward_lines:
+            reward_surf = self.small_font.render(line, True, (180, 198, 220))
+            screen.blit(reward_surf, (rect.x + 10, y))
+            y += self.small_font.get_linesize()
+        y += 8
 
         ratio = 1.0 if completed else max(0.0, min(1.0, float(progress) / max(1.0, float(target))))
         bar_rect = pygame.Rect(rect.x + 10, y, rect.width - 20, 10)
@@ -109,7 +175,7 @@ class QuestMenu:
 
         value_txt = "Terminee" if completed else f"{int(progress)}/{int(target)}"
         value_surf = self.small_font.render(value_txt, True, (220, 230, 240))
-        screen.blit(value_surf, (bar_rect.right - value_surf.get_width(), bar_rect.y - 16))
+        screen.blit(value_surf, (bar_rect.right - value_surf.get_width(), bar_rect.y - value_surf.get_height() - 2))
 
     def draw(self, screen):
         if not self.active:
@@ -142,20 +208,51 @@ class QuestMenu:
             active = qmgr.get_active_quests()
             completed = qmgr.get_completed_quests()
 
-            content = pygame.Surface((panel_rect.width - 20, max(1, panel_rect.height - 20)), pygame.SRCALPHA)
+            active_rows = []
+            card_width = max(120, panel_rect.width - 32)
+            for q in active:
+                rewards = (qmgr.definitions.get(q.quest_id, {}) or {}).get("rewards", []) or []
+                reward_line = self._reward_text(rewards)
+                card_h = self._measure_quest_card(q.title, q.description, reward_line, card_width)
+                active_rows.append((q, reward_line, card_h))
+
+            completed_rows = []
+            for q in completed[-12:]:
+                rewards = (qmgr.definitions.get(q.quest_id, {}) or {}).get("rewards", []) or []
+                reward_line = self._reward_text(rewards)
+                card_h = self._measure_quest_card(q.title, q.description, reward_line, card_width)
+                completed_rows.append((q, reward_line, card_h))
+
+            # Mesure de la hauteur totale du contenu (pour eviter les superpositions/coupes).
+            y = 4
+            y += self.section_font.get_height() + 8
+            if not active_rows:
+                y += self.small_font.get_height() + 10
+            else:
+                for _q, _line, card_h in active_rows:
+                    y += card_h + 10
+            y += 8
+            y += self.section_font.get_height() + 8
+            if not completed_rows:
+                y += self.small_font.get_height() + 10
+            else:
+                for _q, _line, card_h in completed_rows:
+                    y += card_h + 10
+
+            content_h = max(1, max(panel_rect.height - 20, y + 6))
+            content = pygame.Surface((panel_rect.width - 20, content_h), pygame.SRCALPHA)
             y = 4
 
             sec_active = self.section_font.render("Quetes actives", True, (210, 230, 255))
             content.blit(sec_active, (6, y))
             y += sec_active.get_height() + 8
-            if not active:
+            if not active_rows:
                 empty = self.small_font.render("Aucune quete active.", True, (170, 180, 195))
                 content.blit(empty, (10, y))
                 y += empty.get_height() + 10
             else:
-                for q in active:
-                    card = pygame.Rect(6, y, content.get_width() - 12, 96)
-                    rewards = (qmgr.definitions.get(q.quest_id, {}) or {}).get("rewards", []) or []
+                for q, reward_line, card_h in active_rows:
+                    card = pygame.Rect(6, y, content.get_width() - 12, card_h)
                     self._draw_quest_card(
                         content,
                         card,
@@ -163,23 +260,22 @@ class QuestMenu:
                         q.description,
                         q.progress,
                         q.target,
-                        self._reward_text(rewards),
+                        reward_line,
                         completed=False,
                     )
-                    y += card.height + 8
+                    y += card.height + 10
 
             y += 8
             sec_done = self.section_font.render("Quetes terminees", True, (190, 230, 190))
             content.blit(sec_done, (6, y))
             y += sec_done.get_height() + 8
-            if not completed:
+            if not completed_rows:
                 empty = self.small_font.render("Aucune quete terminee.", True, (170, 180, 195))
                 content.blit(empty, (10, y))
                 y += empty.get_height() + 10
             else:
-                for q in completed[-12:]:
-                    card = pygame.Rect(6, y, content.get_width() - 12, 96)
-                    rewards = (qmgr.definitions.get(q.quest_id, {}) or {}).get("rewards", []) or []
+                for q, reward_line, card_h in completed_rows:
+                    card = pygame.Rect(6, y, content.get_width() - 12, card_h)
                     self._draw_quest_card(
                         content,
                         card,
@@ -187,13 +283,13 @@ class QuestMenu:
                         q.description,
                         q.target,
                         q.target,
-                        self._reward_text(rewards),
+                        reward_line,
                         completed=True,
                     )
-                    y += card.height + 8
+                    y += card.height + 10
 
             visible_h = panel_rect.height - 20
-            self.max_scroll = max(0, y - visible_h)
+            self.max_scroll = max(0, content_h - visible_h)
             self.scroll = max(0, min(self.scroll, self.max_scroll))
 
             prev_clip = screen.get_clip()

@@ -6,17 +6,10 @@
             "world_size": "Petite",
             "water_coverage": "Océanique",
             "temperature": "Chaud",
-            "atmosphere_density": "Faible",
-            "resource_density": "Instable",
+            "resource_density": "Moyenne",
             "biodiversity": "Élevée",
-            "tectonic_activity": "Chaotique",
-            "weather": "Extrême",
-            "gravity": "Forte",
-            "cosmic_radiation": "Forte",
-            "mystic_influence": "Forte",
-            "dimensional_stability": "Stable",
-            "orbit": "Très Eliptique",
-            "orbital_period": "32"
+            "tectonic_activity": "Violente",
+            "gravity": "Forte"
         }
     }
 }
