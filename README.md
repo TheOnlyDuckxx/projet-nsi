@@ -209,6 +209,7 @@ Progression joueur (hors run):
 Contrôles par défaut:
 - `H`: transparence des props (maintien)
 - `I`: mode inspection (maintien)
+- `M` : affichage de la map
 - `ESPACE`: focus caméra sur un individu proche
 - `ECHAP`: pause/menu
 
@@ -233,54 +234,9 @@ Changelog: `[LIEN_CHANGELOG]`
 
 ---
 
-## Qualité et debug
-
-Vérification syntaxe Python:
-
-```bash
-python -m py_compile $(rg --files Game -g '*.py')
-```
-
-Logs utiles:
-- logs perf `Phase1` (chargement/update),
-- logs debug endgame,
-- notifications runtime in-game.
-
-Bonnes pratiques recommandées:
-- valider les JSON de `Game/data/` avant commit,
-- tester une nouvelle partie + chargement d’une save,
-- vérifier les impacts UI sur plusieurs résolutions.
-
----
-
-## Contribuer
-
-Workflow proposé:
-1. Créer une branche feature/fix.
-2. Implémenter et tester localement.
-3. Vérifier qu’aucune régression de sauvegarde n’est introduite.
-4. Ouvrir une Pull Request avec:
-   - contexte,
-   - changements,
-   - impacts gameplay,
-   - captures ou logs si pertinent.
-
-Template PR: `[LIEN_TEMPLATE_PR]`
-
-Conventions recommandées:
-- commits atomiques,
-- messages de commit explicites,
-- éviter les changements non liés dans une même PR.
-
----
-
 ## Crédits
 
 Équipe projet:
-- `[NOM_MEMBRE_1]`
-- `[NOM_MEMBRE_2]`
-- `[NOM_MEMBRE_3]`
-
-Remerciements:
-- `[MENTION_PROF / ENCADRANT]`
-- `[SOURCE_ASSETS / LIBRAIRIES / INSPIRATIONS]`
+- TheOnlyDuckxx
+- Anchorclaws
+- Cyan186
