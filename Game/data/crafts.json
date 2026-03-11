@@ -65,7 +65,7 @@
   "Defense_primitive": {
     "name": "Defense primitive",
     "description": "Pieux et barricades simples pour ralentir les menaces proches.",
-    "image": "craft_spike",
+    "image": "btn_spike",
     "sprite": "craft_spike",
     "cost": {
       "wood": 5
@@ -127,8 +127,8 @@
   "Jardin": {
     "name": "Jardin",
     "description": "Petite zone cultivée. Produit un peu de nourriture régulièrement.",
-    "image": "jardin",
-    "sprite": "prop_garden",
+    "image": "btn_jardin",
+    "sprite": "craft_farm",
     "cost": {
       "wood": 8,
       "stone": 4,
@@ -170,7 +170,7 @@
   "Statue_de_canard": {
     "name": "Statue de canard",
     "description": "Totem décoratif. Augmente légèrement le moral/joie du clan (et c'est un canard).",
-    "image": "craft_duck",
+    "image": "btn_duck",
     "sprite": "craft_duck",
     "cost": {
       "stone": 6,
@@ -269,6 +269,26 @@
     "output": {
       "type": "prop",
       "pid": 113
+    }
+  },
+
+  "Recuperateur_eau": {
+    "name": "Recuperateur d'eau",
+    "description": "Collecte l'eau de pluie et l'ajoute periodiquement a l'entrepot pendant les episodes pluvieux.",
+    "image": "btn_water_collector",
+    "sprite": "craft_water_collector",
+    "cost": {
+      "wood": 7,
+      "stone": 4
+    },
+    "conditions":[],
+    "interaction": {
+      "type": "craft_water_collector",
+      "message": "Recuperateur : collecte automatique d'eau sous la pluie."
+    },
+    "output": {
+      "type": "prop",
+      "pid": 115
     }
   },
 

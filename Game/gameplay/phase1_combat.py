@@ -72,6 +72,8 @@ def start_entity_combat(phase, attacker, target) -> bool:
     attacker._combat_attack_cd = 0.0
     attacker._combat_repath_cd = 0.0
     attacker._combat_anchor = (float(attacker.x), float(attacker.y))
+    attacker._combat_recent_timer = max(0.0, float(getattr(attacker, "_combat_recent_timer", 0.0) or 0.0), 4.0)
+    target._combat_recent_timer = max(0.0, float(getattr(target, "_combat_recent_timer", 0.0) or 0.0), 4.0)
     return True
 
 
@@ -223,6 +225,8 @@ def update_entity_combat(phase, ent, dt: float):
         else:
             target.jauges["sante"] = max(0.0, float(target.jauges.get("sante", 0)) - damage)
         target._last_attacker = ent
+        ent._combat_recent_timer = max(0.0, float(getattr(ent, "_combat_recent_timer", 0.0) or 0.0), 6.0)
+        target._combat_recent_timer = max(0.0, float(getattr(target, "_combat_recent_timer", 0.0) or 0.0), 6.0)
         ent._combat_attack_cd = combat_attack_interval(ent)
         if hasattr(ent, "attack_anim_ms"):
             ent._attack_anim_until_ms = pygame.time.get_ticks() + int(ent.attack_anim_ms)

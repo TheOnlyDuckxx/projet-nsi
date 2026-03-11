@@ -3,12 +3,12 @@
         "Custom": {
             "world_name": "Alpha",
             "seed": "Aléatoire",
-            "world_size": "Petite",
+            "world_size": "Moyenne",
             "water_coverage": "Océanique",
             "temperature": "Chaud",
             "resource_density": "Moyenne",
             "biodiversity": "Élevée",
-            "tectonic_activity": "Violente",
+            "tectonic_activity": "Stable",
             "gravity": "Forte"
         }
     }

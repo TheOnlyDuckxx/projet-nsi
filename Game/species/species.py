@@ -23,6 +23,9 @@ MAIN_CLASS_PHYSIQUE_BONUS = {
     "vitesse": 1,
 }
 
+def _clamp(value: float, low: float, high: float) -> float:
+    return low if value < low else high if value > high else value
+
 
 class Espece:
     """
@@ -34,35 +37,38 @@ class Espece:
 
         # === Stats de base d'espèce ===
         self.base_physique = {
-            "taille": 5, "force": 5, "endurance": 5,
-            "vitesse": 5, "vitesse de nage": 5, "stockage_energetique": 5,
-            "temperature_corporelle": 37.0, "esperance_vie": 5, "weight_limit": 20
+            "taille": 5,
+            "force": 5,
+            "endurance": 5,
+            "vitesse": 5,
+            "vitesse de nage": 5,
+            "stockage_energetique": 5,
+            "weight_limit": 20,
         }
 
         self.base_sens = {
-            "vision": 5, "ouie": 5, "odorat": 5, "echolocalisation": 0,
-            "vision_nocturne": 0, "toucher": 1,
+            "vision": 5,
+            "vision_nocturne": 0,
         }
 
         self.base_mental = {
-            "intelligence": 5, "dexterite": 5,
-            "agressivite": 5, "courage": 5, "sociabilite": 5, "independance": 5,
-            "empathie": 5, "creativite": 5, "intimidation": 5,
+            "intelligence": 5,
+            "dexterite": 5,
+            "agressivite": 5,
         }
 
         self.base_environnement = {
-            "resistance_froid": 5, "resistance_chaleur": 5, "resistance_secheresse": 5,
-            "resistance_toxines": 5, "discretion": 5, "adaptabilite": 5,
-            "resistance_aux_maladies": 5,
-            # detection / detection_visuelle seront recalculées côté Individu
+            "resistance_froid": 5,
+            "resistance_chaleur": 5,
+            "adaptabilite": 5,
         }
 
         self.base_social = {
-            "communication": 5, "charisme": 5, "cohesion": 5, "fidelite": 5,
+            # Réservé pour une future phase sociale. On garde un dict pour compat saves/menus.
         }
 
         self.genetique = {
-            "taux_reproduction": 1.0, "mutation_rate": 0.10,
+            "mutation_rate": 0.10,
         }
         self.mutation_interval = 1  # intervalle actuel entre deux mutations gagnées
         self.next_mutation_level = 2  # premier niveau où une mutation est proposée
@@ -180,6 +186,11 @@ class Espece:
             if stat not in physique or not isinstance(physique.get(stat), (int, float)):
                 physique[stat] = 0
             physique[stat] += delta
+        if hasattr(individu, "recompute_derived_stats"):
+            try:
+                individu.recompute_derived_stats(adjust_current=True)
+            except Exception:
+                pass
         individu._main_class_bonus_applied = True
 
 
@@ -208,22 +219,12 @@ class Individu:
         self.genetique = deepcopy(espece.genetique)
         # environnement et combat dépendent de self.sens / self.physique
         self.environnement = {
-            "resistance_froid": espece.base_environnement["resistance_froid"],
-            "resistance_chaleur": espece.base_environnement["resistance_chaleur"],
-            "resistance_secheresse": espece.base_environnement["resistance_secheresse"],
-            "resistance_toxines": espece.base_environnement["resistance_toxines"],
-            "discretion": espece.base_environnement["discretion"],
-            "adaptabilite": espece.base_environnement["adaptabilite"],
-            "resistance_aux_maladies": espece.base_environnement["resistance_aux_maladies"],
-            "detection": self.sens["ouie"] * 5 + self.sens["odorat"] * 2 + self.sens["toucher"],
-            "detection_visuelle": self.sens["vision"] * 5,
+            "resistance_froid": float(espece.base_environnement.get("resistance_froid", 5) or 5),
+            "resistance_chaleur": float(espece.base_environnement.get("resistance_chaleur", 5) or 5),
+            "adaptabilite": float(espece.base_environnement.get("adaptabilite", 5) or 5),
         }
         self.combat = {
-            "attaque_melee": 10
-                + self.physique["force"] * 4
-                + self.physique["vitesse"] * 2
-                + self.mental["agressivite"],
-            "attaque_distance": 0,
+            "attaque_melee": 0,
             "defense": 5,
             "agilite": 5,
         }
@@ -235,6 +236,7 @@ class Individu:
             "bonheur": 10,
             "sante": 100,
         }
+        self.max_sante = 100.0
 
         # --- IA et état local ---
         self.ia = {
@@ -258,9 +260,50 @@ class Individu:
         # === Rendu ===
         self.renderer = EspeceRenderer(self, assets)
 
+        self.recompute_derived_stats(adjust_current=False)
+        self.jauges["sante"] = float(self.max_sante)
+
         # Enregistrer l'individu dans l'espèce
         self.espece.individus.append(self)
         self.espece.population = len(self.espece.individus)
+
+    def recompute_derived_stats(self, *, adjust_current: bool = True) -> None:
+        """
+        Recalcule les stats dérivées:
+        - points de vie max (self.max_sante)
+        - attaque_melee (dépend de force/vitesse/agressivite)
+        """
+        phys = self.physique if isinstance(getattr(self, "physique", None), dict) else {}
+        ment = self.mental if isinstance(getattr(self, "mental", None), dict) else {}
+        comb = self.combat if isinstance(getattr(self, "combat", None), dict) else {}
+
+        force = float(phys.get("force", 5) or 5)
+        endurance = float(phys.get("endurance", 5) or 5)
+        vitesse = float(phys.get("vitesse", 5) or 5)
+        taille = float(phys.get("taille", 5) or 5)
+        stockage = float(phys.get("stockage_energetique", 5) or 5)
+        agress = float(ment.get("agressivite", 5) or 5)
+
+        prev_max = float(getattr(self, "max_sante", 100.0) or 100.0)
+        new_max = 40.0 + endurance * 7.0 + taille * 3.0 + force * 2.0 + stockage * 2.0
+        new_max = _clamp(float(new_max), 30.0, 320.0)
+        self.max_sante = float(new_max)
+
+        # Met à jour l'attaque mêlée “de base”
+        comb["attaque_melee"] = 10.0 + force * 4.0 + vitesse * 2.0 + agress
+
+        if not isinstance(getattr(self, "jauges", None), dict):
+            return
+        cur = float(self.jauges.get("sante", self.max_sante) or 0.0)
+        if cur <= 0:
+            self.jauges["sante"] = cur
+            return
+        if not adjust_current or prev_max <= 0:
+            self.jauges["sante"] = min(self.max_sante, cur)
+            return
+
+        ratio = _clamp(cur / prev_max, 0.0, 1.0)
+        self.jauges["sante"] = max(1.0, min(self.max_sante, ratio * self.max_sante))
 
     def set_name(self, name: str, *, locked: bool = False) -> None:
         cleaned = (name or "").strip()

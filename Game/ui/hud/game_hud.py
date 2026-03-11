@@ -1,5 +1,6 @@
 import pygame
 from Game.ui.hud.notification import add_notification
+from Game.core.utils import resource_path
 
 
 _AI_BUTTON_SPECS = (
@@ -14,6 +15,32 @@ _ROLE_COLORS = {
     "croyant": (214, 188, 96),
     "belligerant": (222, 112, 112),
 }
+
+_ROLE_ICON_FILES = {
+    "pacifiste": "Game/assets/ui/pacifist.png",
+    "croyant": "Game/assets/ui/faith.png",
+    "belligerant": "Game/assets/ui/fighter.png",
+    "savant": "Game/assets/ui/scientist.png",
+}
+_ROLE_ICON_CACHE: dict[str, pygame.Surface] = {}
+_ROLE_ICON_SCALED_CACHE: dict[tuple[str, int, int], pygame.Surface] = {}
+
+
+def _get_role_icon(role_id: str, size: tuple[int, int]) -> pygame.Surface | None:
+    role_id = str(role_id or "").strip().lower()
+    path = _ROLE_ICON_FILES.get(role_id)
+    if not path:
+        return None
+    base = _ROLE_ICON_CACHE.get(role_id)
+    if base is None:
+        base = pygame.image.load(resource_path(path)).convert_alpha()
+        _ROLE_ICON_CACHE[role_id] = base
+    key = (role_id, int(size[0]), int(size[1]))
+    scaled = _ROLE_ICON_SCALED_CACHE.get(key)
+    if scaled is None:
+        scaled = pygame.transform.smoothscale(base, (int(size[0]), int(size[1])))
+        _ROLE_ICON_SCALED_CACHE[key] = scaled
+    return scaled
 
 _INSPECTION_PANEL_DEFAULT_RATIO = 0.35
 _INSPECTION_PANEL_MIN_HEIGHT = 190
@@ -296,15 +323,11 @@ def draw_inspection_panel(self, screen):
     title_x = 10
     role_id = str(getattr(ent, "role_class", "") or "").strip().lower()
     if role_id:
-        # Place l'icone de classe avant le nom.
         icon_rect = pygame.Rect(10, y_offset - 1, 22, 22)
-        icon_bg = _ROLE_COLORS.get(role_id, (120, 135, 160))
-        pygame.draw.rect(panel_surf, icon_bg, icon_rect, border_radius=5)
-        pygame.draw.rect(panel_surf, (220, 230, 240), icon_rect, 1, border_radius=5)
-        initial = role_id[:1].upper()
-        icon_text = text_font.render(initial, True, (245, 245, 245))
-        panel_surf.blit(icon_text, icon_text.get_rect(center=icon_rect.center))
-        title_x = icon_rect.right + 8
+        icon = _get_role_icon(role_id, (icon_rect.width, icon_rect.height))
+        if icon is not None:
+            panel_surf.blit(icon, icon.get_rect(center=icon_rect.center))
+            title_x = icon_rect.right + 8
 
     # Evite que le nom passe sous le bouton Renommer.
     title_raw = str(getattr(ent, "nom", "") or "")
@@ -352,8 +375,9 @@ def draw_inspection_panel(self, screen):
     panel_surf.blit(header, (10, y_offset))
     y_offset += 20
 
+    max_hp = float(getattr(ent, "max_sante", 100) or 100)
     jauges_display = [
-        ("Santé", ent.jauges.get("sante", 0), 100, (220, 50, 50)),
+        ("Santé", ent.jauges.get("sante", 0), max(1.0, max_hp), (220, 50, 50)),
     ]
 
     for label, value, max_val, color in jauges_display:

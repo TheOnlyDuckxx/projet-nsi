@@ -147,8 +147,8 @@ class MutationManager:
                         for stat, delta in d.items():
                             if not isinstance(delta, (int, float)):
                                 continue
-                            if stat not in cible_espece or cible_espece.get(stat) is None:
-                                cible_espece[stat] = 0
+                            if stat not in cible_espece:
+                                continue
                             if isinstance(cible_espece.get(stat), (int, float)):
                                 cible_espece[stat] += delta
                             else:
@@ -161,18 +161,24 @@ class MutationManager:
                     if not isinstance(cible_individu, dict):
                         # ex : combat peut ne pas exister dans certains cas
                         continue
+
+                    any_change = False
                     for stat, delta in d.items():
                         if not isinstance(delta, (int, float)):
                             continue
-                        if stat not in cible_individu or cible_individu.get(stat) is None:
+                        if categorie != "combat" and stat not in cible_individu:
+                            continue
+                        if stat not in cible_individu:
                             cible_individu[stat] = 0
                         if isinstance(cible_individu.get(stat), (int, float)):
                             cible_individu[stat] += delta
-                        # Garder compat : detection/detection_visuelle existent parfois dans environnement.
-                        if categorie == "sens" and stat in ("detection", "detection_visuelle"):
-                            env = getattr(individu, "environnement", None)
-                            if isinstance(env, dict) and isinstance(env.get(stat, 0), (int, float)):
-                                env[stat] = cible_individu.get(stat, env.get(stat))
+                            any_change = True
+
+                    if any_change and hasattr(individu, "recompute_derived_stats"):
+                        try:
+                            individu.recompute_derived_stats(adjust_current=True)
+                        except Exception:
+                            pass
 
 
     # -------------------------

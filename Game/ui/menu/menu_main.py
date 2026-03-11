@@ -1619,14 +1619,14 @@ class SpeciesCreationMenu(BaseMenu):
             ("physique", "vitesse", "Vitesse"),
             ("physique", "taille", "Taille"),
             ("physique", "stockage_energetique", "Stockage energie"),
+            ("physique", "weight_limit", "Charge max"),
             ("sens", "vision", "Vision"),
-            ("sens", "ouie", "Ouie"),
-            ("sens", "odorat", "Odorat"),
+            ("sens", "vision_nocturne", "Vision nocturne"),
             ("mental", "intelligence", "Intelligence"),
             ("mental", "dexterite", "Dexterite"),
             ("mental", "agressivite", "Agressivite"),
-            ("mental", "sociabilite", "Sociabilite"),
-            ("social", "cohesion", "Cohesion"),
+            ("environnement", "resistance_froid", "Resistance froid"),
+            ("environnement", "resistance_chaleur", "Resistance chaleur"),
             ("environnement", "adaptabilite", "Adaptabilite"),
         ]
 

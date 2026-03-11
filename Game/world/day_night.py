@@ -133,9 +133,9 @@ class DayNightCycle:
         Optionnel : teinte un peu plus bleue la nuit, plus chaude le jour.
         """
         # Utilise une version sans clamp extrême (min_light plus bas ici si tu veux)
-        light = self.get_light_level(min_light=0.55, max_light=1.0, smooth_passes=2)
+        light = self.get_light_level(min_light=0.30, max_light=1.0, smooth_passes=2)
         # Plus light est bas, plus on tire vers bleu.
-        night = 1.0 - _clamp((light - 0.55) / (1.0 - 0.55))
+        night = 1.0 - _clamp((light - 0.30) / (1.0 - 0.30))
 
         r = int(20 * night)
         g = int(35 * night)

@@ -209,14 +209,19 @@ class QuestManager:
             container = getattr(species, cat, None)
             if isinstance(container, dict):
                 if stat not in container or not isinstance(container.get(stat), (int, float)):
-                    container[stat] = 0
+                    return
                 container[stat] += amount
                 for ent in getattr(species, "individus", []) or []:
                     target = getattr(ent, cat.replace("base_", ""), None)
                     if isinstance(target, dict):
                         if stat not in target or not isinstance(target.get(stat), (int, float)):
-                            target[stat] = 0
+                            continue
                         target[stat] += amount
+                    if hasattr(ent, "recompute_derived_stats"):
+                        try:
+                            ent.recompute_derived_stats(adjust_current=True)
+                        except Exception:
+                            pass
             return
 
         if rtype == "trigger_class_choice_event":

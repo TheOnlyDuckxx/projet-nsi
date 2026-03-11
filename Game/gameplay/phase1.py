@@ -252,6 +252,18 @@ class Phase1:
         self._supply_cached_water_ratio = 0.0
         self._supply_cached_debuff_mult = 1.0
 
+        # Production passive d'eau (structures)
+        self._water_collector_tiles: set[tuple[int, int]] = set()
+        self._water_collector_water_buffer = 0.0
+        self._water_collector_probe_cd = 0.0
+
+        # Sources de lumière (feux de camp)
+        self._campfire_tiles: set[tuple[int, int]] = set()
+        self._campfire_probe_cd = 0.0
+
+        # Repos en tanière (max 1 individu / tanière)
+        self._shelter_occupants: dict[tuple[int, int], object] = {}
+
         # Sélection multi via clic + glisser
         self._drag_select_start: Optional[tuple[int, int]] = None
         self._drag_select_rect: Optional[pygame.Rect] = None
@@ -1049,14 +1061,249 @@ class Phase1:
 
     def has_built_warehouse(self, force_scan: bool = False) -> bool:
         count = int(getattr(self, "_warehouse_built_count", 0) or 0)
-        if force_scan and count <= 0:
+        if force_scan:
             detected = self._scan_warehouses_near_entities()
-            if detected > 0:
-                self._warehouse_built_count = int(detected)
-                count = int(detected)
+            self._warehouse_built_count = int(detected)
+            count = int(detected)
         built = count > 0
         self._warehouse_gate_cache = bool(built)
         return bool(built)
+
+    def _scan_water_collectors_near_entities(self, radius: int = 42) -> set[tuple[int, int]]:
+        """
+        Scan borné autour des entités vivantes pour retrouver les récupérateurs d'eau.
+        """
+        if not self.world or not getattr(self.world, "overlay", None):
+            return set()
+        w, h = int(self.world.width), int(self.world.height)
+        if w <= 0 or h <= 0:
+            return set()
+
+        centers: list[tuple[int, int]] = []
+        for ent in self.entities:
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "is_fauna", False):
+                continue
+            centers.append((int(getattr(ent, "x", 0)), int(getattr(ent, "y", 0))))
+            if len(centers) >= 6:
+                break
+        if not centers:
+            try:
+                sx, sy = self.world.spawn
+                centers.append((int(sx), int(sy)))
+            except Exception:
+                centers.append((w // 2, h // 2))
+
+        out: set[tuple[int, int]] = set()
+        seen: set[tuple[int, int]] = set()
+        rad = max(8, int(radius))
+        for cx, cy in centers:
+            x0 = max(0, cx - rad)
+            x1 = min(w - 1, cx + rad)
+            y0 = max(0, cy - rad)
+            y1 = min(h - 1, cy + rad)
+            for j in range(y0, y1 + 1):
+                row = self.world.overlay[j]
+                for i in range(x0, x1 + 1):
+                    if (i, j) in seen:
+                        continue
+                    seen.add((i, j))
+                    cell = row[i]
+                    if isinstance(cell, dict) and cell.get("state") == "built":
+                        if cell.get("craft_id") == "Recuperateur_eau" or int(cell.get("pid", 0) or 0) == 115:
+                            out.add((int(i), int(j)))
+        return out
+
+    def _scan_campfires_near_entities(self, radius: int = 48) -> set[tuple[int, int]]:
+        """
+        Scan borné autour des entités vivantes pour retrouver les feux de camp.
+        """
+        if not self.world or not getattr(self.world, "overlay", None):
+            return set()
+        w, h = int(self.world.width), int(self.world.height)
+        if w <= 0 or h <= 0:
+            return set()
+
+        centers: list[tuple[int, int]] = []
+        for ent in self.entities:
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "is_fauna", False):
+                continue
+            centers.append((int(getattr(ent, "x", 0)), int(getattr(ent, "y", 0))))
+            if len(centers) >= 6:
+                break
+        if not centers:
+            try:
+                sx, sy = self.world.spawn
+                centers.append((int(sx), int(sy)))
+            except Exception:
+                centers.append((w // 2, h // 2))
+
+        out: set[tuple[int, int]] = set()
+        seen: set[tuple[int, int]] = set()
+        rad = max(8, int(radius))
+        for cx, cy in centers:
+            x0 = max(0, cx - rad)
+            x1 = min(w - 1, cx + rad)
+            y0 = max(0, cy - rad)
+            y1 = min(h - 1, cy + rad)
+            for j in range(y0, y1 + 1):
+                row = self.world.overlay[j]
+                for i in range(x0, x1 + 1):
+                    if (i, j) in seen:
+                        continue
+                    seen.add((i, j))
+                    cell = row[i]
+                    if isinstance(cell, dict):
+                        pid = int(cell.get("pid", 0) or 0)
+                        if pid == 101 or cell.get("craft_id") == "Feu_de_camp":
+                            if str(cell.get("state") or "") in ("built", "building"):
+                                out.add((int(i), int(j)))
+                    elif isinstance(cell, int) and int(cell) == 101:
+                        out.add((int(i), int(j)))
+        return out
+
+    def _update_campfires(self, dt: float) -> None:
+        self._campfire_probe_cd = max(0.0, float(self._campfire_probe_cd) - float(dt))
+        if self._campfire_probe_cd <= 0.0 and not self._campfire_tiles:
+            self._campfire_tiles = set(self._scan_campfires_near_entities())
+            self._campfire_probe_cd = 10.0
+
+        if not self._campfire_tiles or not self.world or not getattr(self.world, "overlay", None):
+            return
+
+        to_remove: list[tuple[int, int]] = []
+        for i, j in self._campfire_tiles:
+            try:
+                cell = self.world.overlay[int(j)][int(i)]
+            except Exception:
+                cell = None
+            if isinstance(cell, dict):
+                pid = int(cell.get("pid", 0) or 0)
+                if pid != 101 and cell.get("craft_id") != "Feu_de_camp":
+                    to_remove.append((i, j))
+                    continue
+                state = str(cell.get("state") or "")
+                if state not in ("built", "building"):
+                    to_remove.append((i, j))
+                    continue
+            elif isinstance(cell, int):
+                if int(cell) != 101:
+                    to_remove.append((i, j))
+            else:
+                to_remove.append((i, j))
+
+        for key in to_remove:
+            self._campfire_tiles.discard(key)
+
+    def _is_valid_living_entity(self, ent) -> bool:
+        if ent is None:
+            return False
+        if getattr(ent, "_dead_processed", False):
+            return False
+        if getattr(ent, "jauges", {}).get("sante", 0) <= 0:
+            return False
+        return ent in getattr(self, "entities", [])
+
+    def _leave_shelter(self, ent) -> None:
+        if ent is None:
+            return
+        tile = getattr(ent, "_shelter_tile", None)
+        if tile:
+            occ = self._shelter_occupants.get(tuple(tile))
+            if occ is ent:
+                self._shelter_occupants.pop(tuple(tile), None)
+        try:
+            ent._shelter_tile = None
+            ent._shelter_resting = False
+        except Exception:
+            pass
+
+    def _can_enter_shelter(self, ent, shelter_tile: tuple[int, int]) -> bool:
+        if ent is None:
+            return False
+        if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+            return False
+        if getattr(ent, "espece", None) != self.espece:
+            return False
+        occ = self._shelter_occupants.get(tuple(shelter_tile))
+        if occ is None:
+            return True
+        if occ is ent:
+            return True
+        return not self._is_valid_living_entity(occ)
+
+    def _enter_shelter(self, ent, shelter_tile: tuple[int, int]) -> bool:
+        shelter_tile = (int(shelter_tile[0]), int(shelter_tile[1]))
+        if not self._can_enter_shelter(ent, shelter_tile):
+            return False
+
+        # Nettoyage occupant invalide
+        occ = self._shelter_occupants.get(shelter_tile)
+        if occ is not None and occ is not ent and not self._is_valid_living_entity(occ):
+            self._shelter_occupants.pop(shelter_tile, None)
+
+        self._shelter_occupants[shelter_tile] = ent
+        ent._shelter_tile = shelter_tile
+        ent._shelter_resting = True
+
+        # "Va dessus" : place l'individu au centre de la tanière.
+        try:
+            ent.x = float(shelter_tile[0]) + 0.5
+            ent.y = float(shelter_tile[1]) + 0.5
+        except Exception:
+            pass
+
+        if hasattr(ent, "ia") and isinstance(ent.ia, dict):
+            ent.ia["etat"] = "repos"
+            ent.ia["objectif"] = ("shelter", shelter_tile)
+            ent.ia["order_action"] = None
+            ent.ia["target_craft_id"] = None
+        ent.move_path = []
+        ent._move_from = (float(ent.x), float(ent.y))
+        ent._move_to = None
+        ent._move_t = 0.0
+        return True
+
+    def _update_water_collectors(self, dt: float) -> None:
+        # Cooldown de scan pour les saves / si on perd le cache.
+        self._water_collector_probe_cd = max(0.0, float(self._water_collector_probe_cd) - float(dt))
+        if self._water_collector_probe_cd <= 0.0 and not self._water_collector_tiles:
+            self._water_collector_tiles = set(self._scan_water_collectors_near_entities())
+            self._water_collector_probe_cd = 8.0
+
+        # Nettoyage: enlève les tuiles qui ne contiennent plus la structure.
+        if self._water_collector_tiles and self.world and getattr(self.world, "overlay", None):
+            to_remove: list[tuple[int, int]] = []
+            for i, j in self._water_collector_tiles:
+                try:
+                    cell = self.world.overlay[int(j)][int(i)]
+                except Exception:
+                    cell = None
+                if not (isinstance(cell, dict) and cell.get("state") == "built" and cell.get("craft_id") == "Recuperateur_eau"):
+                    to_remove.append((i, j))
+            for key in to_remove:
+                self._water_collector_tiles.discard(key)
+
+        if not self._water_collector_tiles or not self.weather_system:
+            return
+
+        cond = getattr(self.weather_system, "current_condition", None)
+        cid = str(getattr(cond, "id", "") or "")
+        # Pluie légère / forte / orage = collecte active.
+        rate_per_min = {"rain": 0.8, "heavy_rain": 1.6, "storm": 2.0}.get(cid, 0.0)
+        if rate_per_min <= 0.0:
+            return
+
+        dt_minutes = float(dt) / 60.0
+        self._water_collector_water_buffer += rate_per_min * len(self._water_collector_tiles) * dt_minutes
+        produced = int(self._water_collector_water_buffer)
+        if produced <= 0:
+            return
+        self._water_collector_water_buffer -= float(produced)
+        self.warehouse["water"] = int(self.warehouse.get("water", 0) or 0) + int(produced)
 
     def _refresh_craft_gate_state(self, force: bool = False):
         previous = self._warehouse_gate_cache
@@ -1069,6 +1316,30 @@ class Phase1:
             self.selected_craft = None
         if self.bottom_hud:
             self.bottom_hud.refresh_craft_buttons()
+
+    def _has_warehouse_under_construction(self) -> bool:
+        if not self.construction_sites:
+            return False
+        for (i, j) in self.construction_sites.keys():
+            cell = self._get_construction_cell(int(i), int(j), generate=False)
+            if isinstance(cell, dict) and str(cell.get("state") or "") == "building":
+                if str(cell.get("craft_id") or "") == "Entrepot_primitif" or int(cell.get("pid", 0) or 0) == 102:
+                    return True
+        return False
+
+    def warehouse_exists_or_planned(self, *, force_scan: bool = False) -> bool:
+        return bool(self.has_built_warehouse(force_scan=force_scan) or self._has_warehouse_under_construction())
+
+    def _grant_warehouse_starter_stock(self) -> None:
+        """
+        Donne un petit stock de départ à la construction du premier entrepôt.
+        Ne doit être appelé qu'au moment où l'entrepôt est effectivement construit.
+        """
+        if not isinstance(getattr(self, "warehouse", None), dict):
+            self.warehouse = {}
+        self.warehouse["berries"] = int(self.warehouse.get("berries", 0) or 0) + 12
+        self.warehouse["water"] = int(self.warehouse.get("water", 0) or 0) + 12
+        add_notification("Entrepôt approvisionné : +12 berries, +12 water.")
 
     def unlock_all_non_tech_crafts(self, skip: set[str] | None = None):
         skip = set(skip or set())
@@ -1129,6 +1400,108 @@ class Phase1:
         if not hasattr(ent, "_combat_attack_cd"): ent._combat_attack_cd = 0.0
         if not hasattr(ent, "_combat_repath_cd"): ent._combat_repath_cd = 0.0
         if not hasattr(ent, "_combat_anchor"): ent._combat_anchor = None
+        if not hasattr(ent, "_combat_recent_timer"): ent._combat_recent_timer = 0.0
+
+    def _temperature_debuff_multiplier(self, ent) -> float:
+        """
+        Retourne un multiplicateur 0.55..1.0 selon la température ambiante.
+        Les résistances froid/chaleur réduisent (voire annulent) le malus.
+        """
+        if ent is None or getattr(ent, "is_egg", False):
+            return 1.0
+        ws = getattr(self, "weather_system", None)
+        if ws is None:
+            return 1.0
+
+        try:
+            temp = float(ws.get_current_temperature(int(getattr(ent, "x", 0)), int(getattr(ent, "y", 0))))
+        except Exception:
+            return 1.0
+
+        comfort_low = 12.0
+        comfort_high = 26.0
+
+        cold_excess = max(0.0, comfort_low - temp)
+        heat_excess = max(0.0, temp - comfort_high)
+        if cold_excess <= 1e-6 and heat_excess <= 1e-6:
+            return 1.0
+
+        env = getattr(ent, "environnement", {}) or {}
+        if cold_excess >= heat_excess:
+            res = float(env.get("resistance_froid", 5) or 5)
+            excess = cold_excess
+        else:
+            res = float(env.get("resistance_chaleur", 5) or 5)
+            excess = heat_excess
+
+        # Résistances acceptent 0..10 (échelle actuelle) ou 0..100 (mutations anciennes).
+        if res > 20.0:
+            res01 = max(0.0, min(1.0, res / 100.0))
+        else:
+            res01 = max(0.0, min(1.0, res / 10.0))
+
+        severity = max(0.0, min(1.5, excess / 20.0))
+        effective = severity * (1.0 - res01)
+        malus = max(0.0, min(0.45, effective * 0.45))
+        return max(0.55, 1.0 - malus)
+
+    def _player_night_vision01(self) -> float:
+        ent = getattr(self, "joueur", None)
+        if ent is None:
+            return 0.0
+        sens = getattr(ent, "sens", {}) or {}
+        try:
+            value = float(sens.get("vision_nocturne", 0) or 0)
+        except Exception:
+            value = 0.0
+        # Supporte 0..10 (nouvelle échelle) ou 0..100 (ancienne).
+        if value > 20.0:
+            return max(0.0, min(1.0, value / 100.0))
+        return max(0.0, min(1.0, value / 10.0))
+
+    def _update_entity_passive_regen(self, ent, dt: float) -> None:
+        if getattr(ent, "is_egg", False):
+            return
+        if not hasattr(ent, "jauges") or not isinstance(ent.jauges, dict):
+            return
+        hp = float(ent.jauges.get("sante", 0) or 0)
+        if hp <= 0:
+            return
+
+        max_hp = float(getattr(ent, "max_sante", 100.0) or 100.0)
+        if max_hp <= 0:
+            max_hp = 100.0
+        if hp >= max_hp - 1e-3:
+            return
+
+        if float(getattr(ent, "_combat_recent_timer", 0.0) or 0.0) > 0.0:
+            return
+        if hasattr(ent, "ia") and isinstance(ent.ia, dict) and ent.ia.get("etat") == "combat":
+            return
+
+        phys = getattr(ent, "physique", {}) or {}
+        env = getattr(ent, "environnement", {}) or {}
+        endurance = float(phys.get("endurance", 5) or 5)
+        stockage = float(phys.get("stockage_energetique", 5) or 5)
+        adapt = float(env.get("adaptabilite", 5) or 5)
+
+        # Régénération lente (HP/s). Branchée sur plusieurs stats.
+        regen_per_sec = 0.05 + 0.02 * endurance + 0.008 * stockage + 0.008 * adapt
+        regen_per_sec = max(0.0, min(3.0, regen_per_sec))
+
+        if self._is_player_species_entity(ent):
+            regen_per_sec *= float(self._supply_debuff_multiplier())
+        regen_per_sec *= float(self._temperature_debuff_multiplier(ent))
+
+        # Regen minimum (évite les individus "de base" qui ne regénèrent jamais).
+        regen_per_sec = max(0.08, float(regen_per_sec))
+
+        # Tanière : récupération beaucoup plus rapide (max 1 individu/tanière géré ailleurs).
+        if getattr(ent, "_shelter_resting", False):
+            regen_per_sec = max(0.6, regen_per_sec * 6.0)
+            regen_per_sec = min(12.0, regen_per_sec)
+
+        ent.jauges["sante"] = min(max_hp, hp + regen_per_sec * float(dt))
 
     def _entity_can_walk_on_water(self, ent) -> bool:
         """Helper pour savoir si une entité peut marcher sur l'eau"""
@@ -1205,6 +1578,13 @@ class Phase1:
         if self._is_player_species_entity(ent):
             speed *= self._supply_debuff_multiplier()
 
+        if self.weather_system:
+            try:
+                speed *= float(self.weather_system.get_movement_multiplier())
+            except Exception:
+                pass
+        speed *= float(self._temperature_debuff_multiplier(ent))
+
         return max(0.2, speed)
 
     def _clear_entity_combat_refs(self, ent):
@@ -1214,13 +1594,24 @@ class Phase1:
         stop_entity_combat(self, ent, stop_motion=stop_motion)
 
     def _start_entity_combat(self, attacker, target) -> bool:
+        if getattr(attacker, "_shelter_resting", False):
+            self._leave_shelter(attacker)
+        if getattr(target, "_shelter_resting", False):
+            self._leave_shelter(target)
         return start_entity_combat(self, attacker, target)
 
     def _combat_attack_interval(self, attacker) -> float:
         interval = float(combat_attack_interval(attacker))
+        mult = 1.0
         if self._is_player_species_entity(attacker):
-            mult = max(0.35, self._supply_debuff_multiplier())
-            interval /= mult
+            mult *= float(self._supply_debuff_multiplier())
+        if self.weather_system:
+            try:
+                mult *= float(self.weather_system.get_movement_multiplier())
+            except Exception:
+                pass
+        mult *= float(self._temperature_debuff_multiplier(attacker))
+        interval /= max(0.35, mult)
         return interval
 
     def _combat_attack_range(self, attacker) -> float:
@@ -1229,7 +1620,13 @@ class Phase1:
     def _combat_damage(self, attacker, target) -> float:
         damage = float(combat_damage(attacker, target))
         if self._is_player_species_entity(attacker):
-            damage *= self._supply_debuff_multiplier()
+            damage *= float(self._supply_debuff_multiplier())
+        if self.weather_system:
+            try:
+                damage *= float(self.weather_system.get_movement_multiplier())
+            except Exception:
+                pass
+        damage *= float(self._temperature_debuff_multiplier(attacker))
         return damage
 
     def _grant_fauna_combat_rewards(self, attacker, target):
@@ -1455,9 +1852,18 @@ class Phase1:
         return float(getattr(self, "_supply_cached_debuff_mult", 1.0))
 
     def get_individual_supply_work_multiplier(self, ent) -> float:
-        if not self._is_player_species_entity(ent):
-            return 1.0
-        return self._supply_debuff_multiplier()
+        mult = 1.0
+        if ent is None or getattr(ent, "is_egg", False):
+            return mult
+        if self._is_player_species_entity(ent):
+            mult *= float(self._supply_debuff_multiplier())
+        if self.weather_system:
+            try:
+                mult *= float(self.weather_system.get_movement_multiplier())
+            except Exception:
+                pass
+        mult *= float(self._temperature_debuff_multiplier(ent))
+        return max(0.35, min(1.0, mult))
 
     def _take_from_warehouse_pool(self, resource_keys: tuple[str, ...], quantity: int) -> int:
         remaining = max(0, int(quantity))
@@ -1477,6 +1883,19 @@ class Phase1:
         return taken
 
     def _update_group_supply(self, dt: float) -> None:
+        # Le système de ravitaillement ne démarre qu'après la construction d'un entrepôt.
+        if not self.has_built_warehouse(force_scan=False):
+            self._group_supply_food_buffer = 0.0
+            self._group_supply_water_buffer = 0.0
+            self._group_supply_damage_timer = 0.0
+            self._supply_cached_population = max(1, int(self._count_living_species_members()))
+            self._supply_cached_food_units_per_ind = float(self.food_target_per_individual)
+            self._supply_cached_water_units_per_ind = float(self.water_target_per_individual)
+            self._supply_cached_food_ratio = 1.0
+            self._supply_cached_water_ratio = 1.0
+            self._supply_cached_debuff_mult = 1.0
+            return
+
         pop = int(self._count_living_species_members())
         if pop <= 0:
             self._group_supply_food_buffer = 0.0
@@ -1947,6 +2366,8 @@ class Phase1:
         death_i = int(getattr(ent, "x", 0) or 0)
         death_j = int(getattr(ent, "y", 0) or 0)
         ent._dead_processed = True
+        if getattr(ent, "_shelter_resting", False):
+            self._leave_shelter(ent)
         self._stop_entity_combat(ent, stop_motion=False)
 
         for other in list(self.entities):
@@ -2392,6 +2813,11 @@ class Phase1:
                             self.selected_craft = None
                             self._reset_drag_selection()
                             return
+                        if self.selected_craft == "Entrepot_primitif" and self.warehouse_exists_or_planned(force_scan=True):
+                            add_notification("Tu ne peux avoir qu'un seul entrepôt.")
+                            self.selected_craft = None
+                            self._reset_drag_selection()
+                            return
                         hit = self.view.pick_at(mx, my)
                         if hit:
                             kind, payload = hit
@@ -2612,7 +3038,10 @@ class Phase1:
             return max(2, int(1 + vision * 0.7))
 
         if self.fog:
-            light_level = self.day_night.get_light_level()
+            light_level = self.day_night.get_light_level(min_light=0.08)
+            nv01 = float(self._player_night_vision01())
+            if nv01 > 0:
+                light_level = min(1.0, float(light_level) + (1.0 - float(light_level)) * 0.35 * nv01)
 
             # Reduction de visibilite par la meteo
             if self.weather_system:
@@ -2636,6 +3065,8 @@ class Phase1:
             self.fauna_spawner.update(dt, self)
         mark("Fauna spawner update")
 
+        self._update_campfires(dt)
+        self._update_water_collectors(dt)
         self._update_group_supply(dt)
         mark("Group supply update")
 
@@ -2644,10 +3075,12 @@ class Phase1:
             if getattr(e, "is_egg", False):
                 continue
             self._ensure_move_runtime(e)
+            e._combat_recent_timer = max(0.0, float(getattr(e, "_combat_recent_timer", 0.0) or 0.0) - float(dt))
             self._update_entity_movement(e, dt)
             if hasattr(e, "comportement"):
                 e.comportement.update(dt, self.world)
             self._update_entity_combat(e, dt)
+            self._update_entity_passive_regen(e, dt)
             self._update_entity_auto_mode(e, dt)
             if e.jauges.get("sante", 0) <= 0:
                 dead_entities.append(e)
@@ -3871,6 +4304,8 @@ class Phase1:
     def _apply_entity_order(self, ent, target: tuple[int, int], etat: str, objectif, action_mode: str | None, craft_id: str | None):
         start_pos = (int(ent.x), int(ent.y))
         allow_partial = bool(etat == "se_deplace" and not objectif and not action_mode)
+        if getattr(ent, "_shelter_resting", False):
+            self._leave_shelter(ent)
         raw_path = self._astar_path(
             start_pos,
             target,
@@ -4106,8 +4541,17 @@ class Phase1:
             cell = self._get_construction_cell(*key)
             if meta and cell not in (None, 0, False):
                 add_notification(f"{meta.get('name', 'Construction')} terminée.")
-                if str(meta.get("craft_id") or "") == "Entrepot_primitif":
-                    self._warehouse_built_count = int(self._warehouse_built_count or 0) + 1
+                if isinstance(cell, dict) and str(cell.get("state") or "") == "built":
+                    craft_id = str(cell.get("craft_id") or "")
+                    if craft_id == "Entrepot_primitif":
+                        prev = int(self._warehouse_built_count or 0)
+                        self._warehouse_built_count = prev + 1
+                        if prev <= 0:
+                            self._grant_warehouse_starter_stock()
+                    if craft_id == "Recuperateur_eau":
+                        self._water_collector_tiles.add((int(key[0]), int(key[1])))
+                    if craft_id == "Feu_de_camp":
+                        self._campfire_tiles.add((int(key[0]), int(key[1])))
         if finished:
             self._refresh_craft_gate_state(force=True)
 
@@ -4339,6 +4783,8 @@ class Phase1:
             return
         if self.espece is None:
             return
+        if not self.has_built_warehouse(force_scan=False):
+            return
 
         pop = max(1, int(getattr(self, "_supply_cached_population", 1)))
         food_units = self._food_units_per_individual()
@@ -4387,13 +4833,26 @@ class Phase1:
             screen.blit(alert, (panel_x + 10, panel_y + panel_h - 16))
 
     def apply_day_night_lighting(self, surface: pygame.Surface):
-        light = self.day_night.get_light_level(min_light=0.45)
+        # Nuit plus marquée par défaut, mais la vision nocturne réduit le filtre sombre.
+        nv01 = float(self._player_night_vision01())
+        min_light = 0.08 + 0.30 * nv01  # 0.08 (très sombre) -> 0.38 (vision nocturne forte)
+        light = self.day_night.get_light_level(min_light=min_light)
 
         # 1) Brightness (gris) : 255 = normal, <255 = sombre
         m = int(255 * light)
         overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         overlay.fill((m, m, m, 255))
         surface.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # 1.5) Filtre noir additionnel (la vision nocturne l'atténue via 'light')
+        night_alpha = int(max(0.0, min(180.0, (1.0 - float(light)) * 180.0)))
+        if night_alpha > 0:
+            dark = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            dark.fill((0, 0, 0, night_alpha))
+            surface.blit(dark, (0, 0))
+
+        # 1.75) Lumières locales (feux de camp)
+        self._apply_campfire_lights(surface, light_level=light)
 
         # 2) Tint (couleur) léger par-dessus (optionnel mais joli)
         r, g, b = self.day_night.get_ambient_color()
@@ -4402,6 +4861,51 @@ class Phase1:
         # alpha faible sinon ça “salit” l’image
         tint.fill((r, g, b, 35))
         surface.blit(tint, (0, 0))
+
+    def _apply_campfire_lights(self, surface: pygame.Surface, *, light_level: float) -> None:
+        """
+        Ajoute un éclairage local autour des feux de camp (pid=101).
+        Utilise un blend additif pour "casser" l'obscurité.
+        """
+        if not self._campfire_tiles:
+            return
+        try:
+            light_level = float(light_level)
+        except Exception:
+            light_level = 1.0
+        darkness = max(0.0, min(1.0, 1.0 - light_level))
+        if darkness <= 0.02:
+            return
+
+        dx, dy, _wall_h = self.view._proj_consts()
+        base_radius = max(48, int(8.5 * float(dy)))
+        intensity = 0.35 + 0.85 * darkness
+        r0, g0, b0 = 255, 200, 120
+
+        layer = pygame.Surface(surface.get_size())
+        layer.fill((0, 0, 0))
+
+        for i, j in list(self._campfire_tiles):
+            poly = self.view.tile_surface_poly(int(i), int(j))
+            if not poly:
+                continue
+            cx = int(sum(p[0] for p in poly) / len(poly))
+            cy = int(sum(p[1] for p in poly) / len(poly) - float(dy) * 0.6)
+
+            # Si hors-écran, on évite de dessiner
+            if cx < -base_radius or cy < -base_radius:
+                continue
+            sw, sh = surface.get_size()
+            if cx > sw + base_radius or cy > sh + base_radius:
+                continue
+
+            for k, falloff in enumerate((1.0, 0.70, 0.45, 0.25)):
+                radius = int(base_radius * falloff)
+                strength = intensity * (0.65 ** k)
+                color = (int(r0 * strength), int(g0 * strength), int(b0 * strength))
+                pygame.draw.circle(layer, color, (cx, cy), radius)
+
+        surface.blit(layer, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
     def _draw_weather_hud(self, screen: pygame.Surface):
         if not self.weather_system or not self.joueur:
             return

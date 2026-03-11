@@ -9,7 +9,7 @@ from Game.world.tiles import get_ground_sprite_name
 def get_prop_sprite_name(pid: int):
     mapping = {
         8: "prop_tree_3",
-        9: "prop_tree_1",
+        9: "prop_tree_1_new",
         10: "prop_tree_2",
         12: "prop_tree_dead",
         13: "prop_rock",
@@ -46,6 +46,8 @@ def get_prop_sprite_name(pid: int):
         104: "craft_taniere",
         105: "craft_farm",
         106: "craft_spike",
+        113: "prop_well",
+        115: "craft_water_collector",
         150: "base_blob_dead",
         # 107: "craft_entrepot",
         # 108: "craft_entrepot",
@@ -54,7 +56,7 @@ def get_prop_sprite_name(pid: int):
         # 111: "craft_entrepot",
     }
     
-    return mapping.get(pid, "prop_tree_2")
+    return mapping.get(pid, "placeholder")
 
 class IsoMapView:
     def __init__(self, assets, screen_size: Tuple[int,int],zoom_step=0.1):
@@ -95,6 +97,7 @@ class IsoMapView:
         self._gray_prop_cache = {}
         self._missing_ground_ids: set[int] = set()
         self._missing_ground_sprites: set[str] = set()
+        self._missing_prop_sprites: set[str] = set()
 
         self.pan_keys_speed = 600
         self.mouse_pan_active = False
@@ -551,7 +554,16 @@ class IsoMapView:
             return surf
 
         name = get_prop_sprite_name(pid)
-        base = self.assets.get_image(name)
+        try:
+            base = self.assets.get_image(name)
+        except Exception:
+            if name not in self._missing_prop_sprites:
+                print(f"[Props] Sprite prop manquant: {name} (pid={pid}) -> fallback placeholder")
+                self._missing_prop_sprites.add(name)
+            try:
+                base = self.assets.get_image("placeholder")
+            except Exception:
+                base = self.assets.get_image("prop_tree_2")
 
         scale = (int(base.get_width() * self.zoom), int(base.get_height() * self.zoom))
         surf = pygame.transform.scale(base, scale).convert_alpha()

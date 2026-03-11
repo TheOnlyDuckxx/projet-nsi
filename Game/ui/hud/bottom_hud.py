@@ -117,6 +117,13 @@ class BottomHUD:
             if hasattr(self.phase, "is_craft_unlocked") and not self.phase.is_craft_unlocked(craft_id):
                 add_notification("Ce craft n'est pas encore débloqué.")
                 return
+            if craft_id == "Entrepot_primitif" and hasattr(self.phase, "warehouse_exists_or_planned"):
+                try:
+                    if bool(self.phase.warehouse_exists_or_planned(force_scan=True)):
+                        add_notification("Tu ne peux avoir qu'un seul entrepôt.")
+                        return
+                except Exception:
+                    pass
             self.phase.selected_craft = craft_id
             craft_def = self.crafts.get(craft_id, {})
             label = craft_def.get("name", craft_id)

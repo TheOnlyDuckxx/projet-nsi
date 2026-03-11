@@ -102,23 +102,33 @@ class Comportement:
                 {"id": "rope",  "min": 1, "max": 1, "p": 0.08}  # petit bonus rare
             ],
 
-            34: [  # mushroom
+            34: [  # mushroom I (champignon I)
                 {"id": "food",  "min": 1, "max": 2, "p": 0.70},
                 {"id": "water", "min": 1, "max": 1, "p": 0.10}
                 # (si vous gérez des statuts plus tard : 15% "poison" / maladie)
             ],
 
-            36: [  # nest (nid)
+            35: [  # mushroom II (champignon II)
+                {"id": "food",  "min": 1, "max": 2, "p": 0.70},
+                {"id": "water", "min": 1, "max": 1, "p": 0.10}
+            ],
+
+            36: [  # mushroom III (champignon III)
+                {"id": "food",  "min": 1, "max": 2, "p": 0.70},
+                {"id": "water", "min": 1, "max": 1, "p": 0.10}
+            ],
+
+            38: [  # nest (nid)
                 {"id": "seed",  "min": 1, "max": 4, "p": 0.85},
                 {"id": "food",  "min": 1, "max": 2, "p": 0.25}
             ],
 
-            37: [  # beehive (ruche)
+            39: [  # beehive (ruche)
                 {"id": "food",  "min": 2, "max": 5, "p": 0.50}
                 # (plus tard : déclenche event "piqûres" si pas équipé)
             ],
 
-            38: [  # freshwater_pool (mare)
+            40: [  # freshwater_pool (mare)
                 {"id": "water", "min": 2, "max": 6, "p": 1.0}
             ],
 
@@ -182,7 +192,7 @@ class Comportement:
             ],
 
             # --- Loot “squelette / chasse” ---
-            35: [  # bone_pile
+            37: [  # bone_pile (tas d'os)
                 {"id": "leather", "min": 1, "max": 2, "p": 0.35},
                 {"id": "flint",   "min": 1, "max": 1, "p": 0.10},
                 {"id": "stone",   "min": 1, "max": 2, "p": 0.30}
@@ -388,6 +398,14 @@ class Comportement:
         accel = (0.6 + 0.08 * force + 0.06 * dex + 0.04 * endu) / 5.0
         accel = max(0.3, min(3.0, accel))
         duration = max(0.4, base / accel)
+        phase = getattr(self.e, "phase", None)
+        if phase and hasattr(phase, "get_individual_supply_work_multiplier"):
+            try:
+                mult = float(phase.get_individual_supply_work_multiplier(self.e))
+            except Exception:
+                mult = 1.0
+            if mult > 0:
+                duration = max(0.4, duration / max(0.2, mult))
 
         jobs = self._phase_harvest_jobs()
         if jobs is not None:
@@ -547,6 +565,20 @@ class Comportement:
                     self.e.ia.pop("auto_need_deposit", None)
                 if moved > 0:
                     add_notification(f"{self.e.nom} a stocké {moved} ressources.")
+            elif interaction_type == "shelter" and phase and hasattr(phase, "_enter_shelter"):
+                ok = False
+                try:
+                    ok = bool(phase._enter_shelter(self.e, (int(w.get("i", 0)), int(w.get("j", 0)))))
+                except Exception:
+                    ok = False
+                self.e.work = None
+                if not ok:
+                    add_notification("Tanière occupée.")
+                    self.e.ia["etat"] = "idle"
+                    self.e.ia["objectif"] = None
+                    self.e.ia["order_action"] = None
+                    self.e.ia["target_craft_id"] = None
+                return
             elif callable(interaction_conf.get("on_complete")):
                 try:
                     interaction_conf["on_complete"](self.e, phase)
@@ -585,6 +617,20 @@ class Comportement:
                     world.overlay[int(w.get("j", 0))][int(w.get("i", 0))] = 0
             except Exception:
                 pass
+
+            # Synchronisation Phase1 (entrepôt unique, caches, etc.)
+            phase = getattr(self.e, "phase", None)
+            craft_id = str(w.get("craft_id") or "")
+            if phase and craft_id == "Entrepot_primitif":
+                try:
+                    phase._warehouse_built_count = max(0, int(getattr(phase, "_warehouse_built_count", 0) or 0) - 1)
+                except Exception:
+                    pass
+                if hasattr(phase, "_refresh_craft_gate_state"):
+                    try:
+                        phase._refresh_craft_gate_state(force=True)
+                    except Exception:
+                        pass
 
             self.e.work = None
             self.e.ia["etat"] = "idle"
@@ -741,6 +787,23 @@ class Comportement:
         elif isinstance(interaction_conf, str):
             message = interaction_conf
 
+        # Tanière : 1 seul individu à la fois (réservation côté Phase1)
+        interaction_type = interaction_conf.get("type") if isinstance(interaction_conf, dict) else None
+        if interaction_type == "shelter":
+            phase = getattr(self.e, "phase", None)
+            if phase and hasattr(phase, "_can_enter_shelter"):
+                try:
+                    can = bool(phase._can_enter_shelter(self.e, (int(i), int(j))))
+                except Exception:
+                    can = True
+                if not can:
+                    add_notification("Tanière occupée.")
+                    self.e.ia["etat"] = "idle"
+                    self.e.ia["order_action"] = None
+                    self.e.ia["objectif"] = None
+                    self.e.ia["target_craft_id"] = None
+                    return
+
         duration = 0.6
         self.e.work = {
             "type": "interact",
@@ -773,6 +836,14 @@ class Comportement:
         accel = (0.6 + 0.08 * force + 0.06 * dex + 0.04 * endu) / 5.0
         accel = max(0.3, min(3.0, accel))
         duration = max(0.5, base / accel)
+        phase = getattr(self.e, "phase", None)
+        if phase and hasattr(phase, "get_individual_supply_work_multiplier"):
+            try:
+                mult = float(phase.get_individual_supply_work_multiplier(self.e))
+            except Exception:
+                mult = 1.0
+            if mult > 0:
+                duration = max(0.5, duration / max(0.2, mult))
 
         self.e.work = {
             "type": "dismantle",
@@ -784,6 +855,7 @@ class Comportement:
             "progress": 0.0,
             "drops": drops,
             "craft_name": craft_def.get("name") if craft_def else None,
+            "craft_id": (craft_def.get("id") or craft_def.get("craft_id")) if isinstance(craft_def, dict) else None,
         }
         self.e.ia["etat"] = "demonte"
         self.e.ia["order_action"] = "dismantle"

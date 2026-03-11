@@ -677,6 +677,12 @@ class SaveManager:
 
                 if is_fauna:
                     ent.is_fauna = True
+                else:
+                    if hasattr(ent, "recompute_derived_stats"):
+                        try:
+                            ent.recompute_derived_stats(adjust_current=False)
+                        except Exception:
+                            pass
 
                 if ind_data.get("is_player"):
                     phase1.joueur = ent

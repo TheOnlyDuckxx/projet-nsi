@@ -56,8 +56,6 @@ class PassiveFaunaDefinition:
                     "vitesse": 4,
                     "vitesse de nage": 1,
                     "stockage_energetique": 6,
-                    "temperature_corporelle": 38.0,
-                    "esperance_vie": 3,
                     "weight_limit": 6,
                 },
             ),
@@ -67,7 +65,7 @@ class PassiveFaunaDefinition:
             "sens",
             _dict(
                 self.sens,
-                {"vision": 6, "ouie": 6, "odorat": 5, "echolocalisation": 0, "vision_nocturne": 2, "toucher": 2},
+                {"vision": 6, "vision_nocturne": 2},
             ),
         )
         object.__setattr__(
@@ -79,12 +77,6 @@ class PassiveFaunaDefinition:
                     "intelligence": 2,
                     "dexterite": 4,
                     "agressivite": 0,
-                    "courage": 2,
-                    "sociabilite": 4,
-                    "independance": 4,
-                    "empathie": 3,
-                    "creativite": 2,
-                    "intimidation": 0,
                 },
             ),
         )
@@ -96,20 +88,16 @@ class PassiveFaunaDefinition:
                 {
                     "resistance_froid": 3,
                     "resistance_chaleur": 3,
-                    "resistance_secheresse": 2,
-                    "resistance_toxines": 2,
-                    "discretion": 7,
                     "adaptabilite": 5,
-                    "resistance_aux_maladies": 3,
                 },
             ),
         )
         object.__setattr__(
             self,
             "social",
-            _dict(self.social, {"communication": 3, "charisme": 2, "cohesion": 4, "fidelite": 3}),
+            _dict(self.social, {}),
         )
-        object.__setattr__(self, "genetique", _dict(self.genetique, {"taux_reproduction": 0.4, "mutation_rate": 0.02}))
+        object.__setattr__(self, "genetique", _dict(self.genetique, {"mutation_rate": 0.02}))
 
 
 @dataclass(frozen=True)

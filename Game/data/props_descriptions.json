@@ -123,6 +123,10 @@
     "102": {
       "name": "Entrepot primitif",
       "description": "Structure de stockage pour centraliser les ressources du clan."
+    },
+    "115": {
+      "name": "Recuperateur d'eau",
+      "description": "Collecte l'eau de pluie et alimente l'entrepot pendant les episodes pluvieux."
     }
   }
 }

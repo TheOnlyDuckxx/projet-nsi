@@ -132,13 +132,11 @@ class SpeciesMenu:
         physique = getattr(species, "base_physique", {}) or {}
         sens = getattr(species, "base_sens", {}) or {}
         mental = getattr(species, "base_mental", {}) or {}
-        social = getattr(species, "base_social", {}) or {}
         env = getattr(species, "base_environnement", {}) or {}
         genes = getattr(species, "genetique", {}) or {}
 
         mutation_rate = self._safe_number(genes.get("mutation_rate", 0.1), 0.1)
-        genetics_score = self._safe_number(genes.get("taux_reproduction", 1.0), 1.0) * 8.0
-        genetics_score += max(0.0, (1.0 - mutation_rate)) * 8.0
+        genetics_score = 10.0 + max(0.0, min(1.0, mutation_rate)) * 10.0
 
         values = [
             ("Force", self._safe_number(physique.get("force", 0))),
@@ -157,8 +155,7 @@ class SpeciesMenu:
                 self._safe_average(
                     [
                         sens.get("vision", 0),
-                        sens.get("ouie", 0),
-                        sens.get("odorat", 0),
+                        sens.get("vision_nocturne", 0),
                     ]
                 ),
             ),
@@ -167,28 +164,18 @@ class SpeciesMenu:
                 self._safe_average(
                     [
                         mental.get("intelligence", 0),
-                        mental.get("creativite", 0),
                         mental.get("dexterite", 0),
                     ]
                 ),
             ),
-            (
-                "Social",
-                self._safe_average(
-                    [
-                        social.get("communication", 0),
-                        social.get("cohesion", 0),
-                        social.get("charisme", 0),
-                    ]
-                ),
-            ),
+            ("Social", 0.0),
             (
                 "Survie",
                 self._safe_average(
                     [
                         env.get("adaptabilite", 0),
-                        env.get("resistance_aux_maladies", 0),
                         env.get("resistance_chaleur", 0),
+                        env.get("resistance_froid", 0),
                     ]
                 ),
             ),
