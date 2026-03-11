@@ -49,6 +49,7 @@ def get_prop_sprite_name(pid: int):
         113: "prop_well",
         115: "craft_water_collector",
         150: "base_blob_dead",
+        151: "gravestone",
         # 107: "craft_entrepot",
         # 108: "craft_entrepot",
         # 109: "craft_entrepot",

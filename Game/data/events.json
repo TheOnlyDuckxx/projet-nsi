@@ -1,51 +1,6 @@
 {
   "events": [
     {
-      "id": "new_arrival",
-      "title": "Nouvel arrivant",
-      "short_text": "Un nouveau visage s'approche du camp.",
-      "long_text": "À 23h, un voyageur solitaire se présente à votre camp. Il demande à rejoindre votre groupe.",
-      "unique": true,
-      "already_met": false,
-      "condition": {
-        "type": "time",
-        "hour": 23,
-        "minute": 0,
-        "once_per_day": true
-      },
-      "choices": [
-        {
-          "id": "welcome",
-          "label": "Accueillir",
-          "description": "Accepter le visiteur. (Effet placeholder pour l'instant)",
-          "effects_immediate": [
-            {
-              "type": "notification",
-              "message": "Le voyageur rejoint provisoirement votre groupe."
-            }
-          ]
-        },
-        {
-          "id": "refuse",
-          "label": "Refuser poliment",
-          "description": "Renvoyer le visiteur sans incident.",
-          "chance": 0.5,
-          "effects_immediate": [
-            {
-              "type": "notification",
-              "message": "Le voyageur comprend et repart."
-            }
-          ],
-          "on_fail": [
-            {
-              "type": "notification",
-              "message": "Il laisse un message mystérieux derrière lui…"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "id": "La mort",
       "title": "Un compagnon inerte",
       "short_text": "Un membre de votre espèce a cessé de respirer.",
@@ -72,6 +27,16 @@
             {
               "type": "set_death_policy",
               "mode": "abandonner"
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_chosen",
+              "value": true
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_mode",
+              "value": "abandonner"
             }
           ]
         },
@@ -97,6 +62,16 @@
             {
               "type": "set_death_policy",
               "mode": "manger"
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_chosen",
+              "value": true
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_mode",
+              "value": "manger"
             }
           ]
         },
@@ -117,6 +92,826 @@
             {
               "type": "set_death_policy",
               "mode": "enterrer"
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_chosen",
+              "value": true
+            },
+            {
+              "type": "set_flag",
+              "key": "death_policy_mode",
+              "value": "enterrer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "eau_trouble",
+      "title": "Eau trouble",
+      "short_text": "L'eau stockee a une odeur suspecte.",
+      "long_text": "Au lever du jour, plusieurs outres sentent la vase. Le clan attend une decision rapide.",
+      "unique": false,
+      "cooldown": 1440,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 2
+          },
+          {
+            "type": "time",
+            "hour": 6,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "boil",
+          "label": "Faire bouillir",
+          "description": "Consomme du bois, mais limite le risque.",
+          "requirements": {
+            "type": "warehouse_resource_min",
+            "id": "wood",
+            "amount": 2
+          },
+          "effects_immediate": [
+            {
+              "type": "consume_resource",
+              "id": "wood",
+              "amount": 2
+            },
+            {
+              "type": "add_resource",
+              "id": "water",
+              "amount": 2
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 1,
+              "reason": "L'eau est purifiee."
+            }
+          ]
+        },
+        {
+          "id": "drink_now",
+          "label": "Boire quand meme",
+          "description": "Gain rapide d'eau, mais le moral baisse.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "water",
+              "amount": 2
+            },
+            {
+              "type": "modify_happiness",
+              "amount": -3,
+              "reason": "Le clan craint une maladie."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "discard",
+          "label": "Jeter le stock douteux",
+          "description": "Perte d'eau, mais decision prudente.",
+          "requirements": {
+            "type": "warehouse_resource_min",
+            "id": "water",
+            "amount": 3
+          },
+          "effects_immediate": [
+            {
+              "type": "consume_resource",
+              "id": "water",
+              "amount": 3
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 1,
+              "reason": "Le clan se sent protege."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recolte_exceptionnelle",
+      "title": "Recolte exceptionnelle",
+      "short_text": "Une zone du camp deborde de plantes comestibles.",
+      "long_text": "Les recolteurs reviennent avec de quoi nourrir tout le monde. Il faut choisir quoi faire de cet excedent.",
+      "unique": false,
+      "cooldown": 1440,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 3
+          },
+          {
+            "type": "time",
+            "hour": 12,
+            "minute": 0,
+            "once_per_day": true
+          },
+          {
+            "type": "random",
+            "chance": 0.35
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "stock",
+          "label": "Tout stocker",
+          "description": "Maximise les reserves.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "food",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "id": "feast",
+          "label": "Faire un festin",
+          "description": "Moins de reserve, plus de moral.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "food",
+              "amount": 4
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 5,
+              "reason": "Le clan celebre la recolte."
+            }
+          ]
+        },
+        {
+          "id": "replant",
+          "label": "Replanter",
+          "description": "Investit sur le futur.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "seed",
+              "amount": 3
+            },
+            {
+              "type": "add_xp",
+              "amount": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "empreintes_nocturnes",
+      "title": "Empreintes autour du camp",
+      "short_text": "Des traces inconnues encerclent les abris.",
+      "long_text": "La terre humide revele des allers-retours autour des reserves. Quelqu'un, ou quelque chose, vous observe.",
+      "unique": false,
+      "cooldown": 720,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 4
+          },
+          {
+            "type": "time",
+            "hour": 22,
+            "minute": 0,
+            "once_per_day": true
+          },
+          {
+            "type": "random",
+            "chance": 0.4
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "watch",
+          "label": "Monter une garde",
+          "description": "Le camp est vigilant cette nuit.",
+          "effects_immediate": [
+            {
+              "type": "add_xp",
+              "amount": 12
+            },
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "La nuit est tendue."
+            },
+            {
+              "type": "set_flag",
+              "key": "footprints_watch",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "ignore",
+          "label": "Ignorer",
+          "description": "Economise l'effort, augmente le stress.",
+          "effects_immediate": [
+            {
+              "type": "set_flag",
+              "key": "horde_hint",
+              "value": true
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "traps",
+          "label": "Poser des pieges",
+          "description": "Preparation defensive et un peu de nourriture.",
+          "effects_immediate": [
+            {
+              "type": "unlock_craft",
+              "craft_id": "Piege"
+            },
+            {
+              "type": "add_resource",
+              "id": "food",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mineur_improvise",
+      "title": "Mineur improvise",
+      "short_text": "Un filon affleure pres du camp.",
+      "long_text": "Une veine mineralisee se revele apres un glissement de terrain. Exploitation rapide ou prudente ?",
+      "unique": true,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 4
+          },
+          {
+            "type": "player_has_xp",
+            "min": 80
+          },
+          {
+            "type": "time",
+            "hour": 10,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "rush_extract",
+          "label": "Extraire vite",
+          "description": "Rendement eleve, risque d'incident.",
+          "chance": 0.65,
+          "on_success": [
+            {
+              "type": "add_resource",
+              "id": "iron_ore",
+              "amount": 4
+            },
+            {
+              "type": "add_resource",
+              "id": "copper_ore",
+              "amount": 2
+            }
+          ],
+          "on_fail": [
+            {
+              "type": "add_resource",
+              "id": "stone",
+              "amount": 2
+            },
+            {
+              "type": "modify_happiness",
+              "amount": -2,
+              "reason": "Un eboulement a effraye les mineurs."
+            }
+          ]
+        },
+        {
+          "id": "safe_extract",
+          "label": "Extraire prudemment",
+          "description": "Moins de risque, moins de rendement.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "copper_ore",
+              "amount": 2
+            },
+            {
+              "type": "add_resource",
+              "id": "stone",
+              "amount": 2
+            },
+            {
+              "type": "add_xp",
+              "amount": 15
+            }
+          ]
+        },
+        {
+          "id": "leave_vein",
+          "label": "Laisser tomber",
+          "description": "Aucun risque, aucun gain.",
+          "effects_immediate": [
+            {
+              "type": "notification",
+              "message": "Le clan conserve ses forces pour plus tard."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "predicateur_itinerant",
+      "title": "Predicateur itinerant",
+      "short_text": "Un orateur demande a parler au clan.",
+      "long_text": "Ses paroles promettent unite et discipline, mais son influence peut aussi diviser.",
+      "unique": true,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 5
+          },
+          {
+            "type": "time",
+            "hour": 20,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "listen",
+          "label": "L'ecouter",
+          "description": "Le discours apaise momentanement.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": 2,
+              "reason": "Le clan retrouve un cap."
+            },
+            {
+              "type": "add_xp",
+              "amount": 5
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "chase",
+          "label": "Le chasser",
+          "description": "Vous evitez son influence, mais la tension monte.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Le ton est monte entre clans."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "recruit",
+          "label": "Le recruter",
+          "description": "Vous l'integrez au camp comme conseiller.",
+          "effects_immediate": [
+            {
+              "type": "set_flag",
+              "key": "predicator_joined",
+              "value": true
+            },
+            {
+              "type": "add_xp",
+              "amount": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflit_interne",
+      "title": "Conflit interne",
+      "short_text": "Deux groupes du clan se disputent violemment.",
+      "long_text": "La tension accumulee explose. Il faut trancher avant que le conflit ne degenerate.",
+      "unique": false,
+      "cooldown": 360,
+      "already_met": false,
+      "condition": {
+        "type": "flag_equals",
+        "key": "low_morale",
+        "value": true
+      },
+      "choices": [
+        {
+          "id": "punish",
+          "label": "Punir les meneurs",
+          "description": "Restaure l'ordre, mais durcit l'ambiance.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -2,
+              "reason": "La sanction a laisse des traces."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "mediate",
+          "label": "Lancer une mediation",
+          "description": "Solution plus douce, meilleur moral.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": 3,
+              "reason": "Le dialogue apaise la crise."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "ignore_conflict",
+          "label": "Ignorer",
+          "description": "La crise continue de couver.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Le conflit n'est pas resolu."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feu_de_joie_improvise",
+      "title": "Feu de joie improvise",
+      "short_text": "Le clan veut celebrer la nuit.",
+      "long_text": "Les anciens proposent un grand feu pour resserrer les liens. Cela coutera du bois.",
+      "unique": false,
+      "cooldown": 960,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 3
+          },
+          {
+            "type": "player_has_xp",
+            "min": 40
+          },
+          {
+            "type": "time",
+            "hour": 21,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "organize_party",
+          "label": "Organiser la fete",
+          "description": "Consomme du bois pour un gros boost de moral.",
+          "requirements": {
+            "type": "warehouse_resource_min",
+            "id": "wood",
+            "amount": 5
+          },
+          "effects_immediate": [
+            {
+              "type": "consume_resource",
+              "id": "wood",
+              "amount": 5
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 6,
+              "reason": "Le feu de joie rassemble le clan."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "refuse_party",
+          "label": "Refuser",
+          "description": "Vous economisez les ressources.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Le clan est deçu."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "carcasse_trouvee",
+      "title": "Carcasse trouvee",
+      "short_text": "Une depouille recente est reperee en lisiere du camp.",
+      "long_text": "Cette trouvaille peut fournir de la nourriture ou des materiaux, mais le choix n'est pas sans consequence.",
+      "unique": false,
+      "cooldown": 900,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 4
+          },
+          {
+            "type": "has_mutation",
+            "id": "Cannibale"
+          },
+          {
+            "type": "time",
+            "hour": 14,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "recover_meat",
+          "label": "Recuperer la viande",
+          "description": "Bon gain alimentaire, malaise moral.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "meat",
+              "amount": 6
+            },
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Ce choix derange une partie du clan."
+            }
+          ]
+        },
+        {
+          "id": "recover_leather",
+          "label": "Recuperer le cuir",
+          "description": "Approche plus pragmatique.",
+          "effects_immediate": [
+            {
+              "type": "add_resource",
+              "id": "leather",
+              "amount": 4
+            }
+          ]
+        },
+        {
+          "id": "leave_carcass",
+          "label": "Laisser",
+          "description": "Aucun gain materiel, mais choix moral.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": 1,
+              "reason": "Le clan apprecie le respect des restes."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orage_violent",
+      "title": "Orage violent",
+      "short_text": "Des eclairs frappent a proximite du camp.",
+      "long_text": "Le vent monte et la pluie tombe en rafales. Il faut choisir une posture immediate.",
+      "unique": false,
+      "cooldown": 720,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 6
+          },
+          {
+            "type": "time",
+            "hour": 17,
+            "minute": 0,
+            "once_per_day": true
+          },
+          {
+            "type": "random",
+            "chance": 0.45
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "fortify",
+          "label": "Renforcer le camp",
+          "description": "Consomme des ressources mais stabilise le groupe.",
+          "requirements": {
+            "and": [
+              {
+                "type": "warehouse_resource_min",
+                "id": "wood",
+                "amount": 3
+              },
+              {
+                "type": "warehouse_resource_min",
+                "id": "stone",
+                "amount": 2
+              }
+            ]
+          },
+          "effects_immediate": [
+            {
+              "type": "consume_resource",
+              "id": "wood",
+              "amount": 3
+            },
+            {
+              "type": "consume_resource",
+              "id": "stone",
+              "amount": 2
+            },
+            {
+              "type": "add_xp",
+              "amount": 10
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "hide",
+          "label": "Se cacher",
+          "description": "Option prudente, faible impact.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Le clan reste passif face a la tempete."
+            }
+          ]
+        },
+        {
+          "id": "continue_work",
+          "label": "Continuer les activites",
+          "description": "Risque eleve mais possible gain d'experience.",
+          "chance": 0.5,
+          "on_success": [
+            {
+              "type": "add_xp",
+              "amount": 5
+            }
+          ],
+          "on_fail": [
+            {
+              "type": "modify_happiness",
+              "amount": -4,
+              "reason": "Les eclairs ont seme la panique."
+            },
+            {
+              "type": "set_flag",
+              "key": "low_morale",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "souvenir_du_defunt",
+      "title": "Souvenir d'un defunt",
+      "short_text": "Le clan propose un hommage a un disparu.",
+      "long_text": "Le temps passe, mais la memoire reste vive. Organiser un rituel peut renforcer la cohesion.",
+      "unique": false,
+      "cooldown": 1440,
+      "already_met": false,
+      "condition": {
+        "and": [
+          {
+            "type": "day_at_least",
+            "day": 5
+          },
+          {
+            "type": "death_policy_is",
+            "mode": "enterrer"
+          },
+          {
+            "type": "time",
+            "hour": 18,
+            "minute": 0,
+            "once_per_day": true
+          }
+        ]
+      },
+      "choices": [
+        {
+          "id": "ceremony",
+          "label": "Faire une ceremonie",
+          "description": "Consomme de la nourriture, remonte le moral.",
+          "requirements": {
+            "type": "warehouse_resource_min",
+            "id": "food",
+            "amount": 2
+          },
+          "effects_immediate": [
+            {
+              "type": "consume_resource",
+              "id": "food",
+              "amount": 2
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 4,
+              "reason": "Le rituel apaise le deuil."
+            }
+          ]
+        },
+        {
+          "id": "silence",
+          "label": "Garder le silence",
+          "description": "Pas de cout, mais peu d'apaisement.",
+          "effects_immediate": [
+            {
+              "type": "modify_happiness",
+              "amount": -1,
+              "reason": "Le non-dit entretient la melancolie."
+            }
+          ]
+        },
+        {
+          "id": "tell_story",
+          "label": "Raconter son histoire",
+          "description": "Transmission de la memoire collective.",
+          "effects_immediate": [
+            {
+              "type": "add_xp",
+              "amount": 10
+            },
+            {
+              "type": "modify_happiness",
+              "amount": 1,
+              "reason": "Le clan se soude autour de ses recits."
             }
           ]
         }

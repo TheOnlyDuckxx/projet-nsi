@@ -127,6 +127,14 @@
     "115": {
       "name": "Recuperateur d'eau",
       "description": "Collecte l'eau de pluie et alimente l'entrepot pendant les episodes pluvieux."
+    },
+    "150": {
+      "name": "Cadavre",
+      "description": "Restes d'un membre du clan. Peut etre recolte avec la mutation Cannibale."
+    },
+    "151": {
+      "name": "Tombe",
+      "description": "Lieu de repos d'un defunt. Cette tombe ne doit pas etre profanee."
     }
   }
 }

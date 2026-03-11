@@ -13,6 +13,7 @@ class TechTreeManager:
         self.current_research: Optional[str] = None
         self.current_progress = 0
         self.innovations = 0
+        self.main_class: Optional[str] = None
         self._load_data()
 
     def _load_data(self) -> None:
@@ -33,10 +34,28 @@ class TechTreeManager:
         deps = self.techs.get(tech_id, {}).get("conditions", [])
         return list(deps) if isinstance(deps, list) else []
 
+    def set_main_class(self, class_id: str | None) -> None:
+        normalized = str(class_id or "").strip().lower()
+        self.main_class = normalized or None
+
+    def get_required_class(self, tech_id: str) -> Optional[str]:
+        value = self.techs.get(tech_id, {}).get("required_main_class")
+        normalized = str(value or "").strip().lower()
+        return normalized or None
+
+    def is_class_compatible(self, tech_id: str) -> bool:
+        required = self.get_required_class(tech_id)
+        if not required:
+            return True
+        current = str(self.main_class or "").strip().lower()
+        return bool(current) and current == required
+
     def can_start(self, tech_id: str) -> bool:
         if tech_id in self.unlocked:
             return False
         if self.current_research is not None:
+            return False
+        if not self.is_class_compatible(tech_id):
             return False
         return all(dep in self.unlocked for dep in self.get_dependencies(tech_id))
 

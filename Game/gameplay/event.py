@@ -253,6 +253,31 @@ class EventManager:
         jour, hour, minute = self._get_game_time(phase)
         return jour * 24 * 60 + hour * 60 + minute
 
+    def _species_has_mutation(self, phase, mutation_id: str | None) -> bool:
+        wanted = str(mutation_id or "").strip()
+        if not wanted:
+            return False
+        espece = getattr(phase, "espece", None)
+        if espece is None:
+            return False
+        manager = getattr(espece, "mutations", None)
+        if manager is None:
+            return False
+        if hasattr(manager, "_resolve_mutation_id"):
+            try:
+                wanted = str(manager._resolve_mutation_id(wanted) or wanted)
+            except Exception:
+                pass
+        wanted_norm = wanted.strip().casefold()
+        current: set[str] = set()
+        for raw in list(getattr(manager, "actives", []) or []) + list(getattr(espece, "base_mutations", []) or []):
+            name = str(raw or "").strip()
+            if not name:
+                continue
+            current.add(name)
+            current.add(name.casefold())
+        return wanted in current or wanted_norm in current
+
     def _evaluate_condition(self, cond: Any, phase, event_id: Optional[str] = None) -> bool:
         """Évalue récursivement une condition data-driven ou un callable Python."""
         if cond is None:
@@ -302,6 +327,25 @@ class EventManager:
         if ctype == "phase_attr_true":
             attr = cond.get("attr")
             return bool(attr and getattr(phase, attr, False))
+        if ctype == "day_at_least":
+            min_day = int(cond.get("day", 0) or 0)
+            jour, _hour, _minute = self._get_game_time(phase)
+            return int(jour) >= min_day
+        if ctype == "warehouse_resource_min":
+            res_id = str(cond.get("id") or "").strip()
+            amount = int(cond.get("amount", cond.get("min", 0)) or 0)
+            if not res_id:
+                return False
+            warehouse = getattr(phase, "warehouse", None)
+            if not isinstance(warehouse, dict):
+                return False
+            return int(warehouse.get(res_id, 0) or 0) >= amount
+        if ctype == "has_mutation":
+            return self._species_has_mutation(phase, cond.get("id"))
+        if ctype == "death_policy_is":
+            expected = str(cond.get("mode") or "").strip().casefold()
+            current = str(getattr(phase, "death_response_mode", "") or "").strip().casefold()
+            return bool(expected) and expected == current
 
         return False
 
@@ -348,6 +392,12 @@ class EventManager:
                 qty = int(eff.get("amount", 0))
                 if res_id and qty and getattr(phase, "warehouse", None) is not None:
                     phase.warehouse[res_id] = phase.warehouse.get(res_id, 0) + qty
+            elif etype == "consume_resource":
+                res_id = str(eff.get("id") or "").strip()
+                qty = int(eff.get("amount", 0) or 0)
+                if res_id and qty > 0 and getattr(phase, "warehouse", None) is not None:
+                    stock = int(phase.warehouse.get(res_id, 0) or 0)
+                    phase.warehouse[res_id] = max(0, stock - qty)
             elif etype == "unlock_craft":
                 craft_id = eff.get("craft_id")
                 if craft_id and hasattr(phase, "unlock_craft"):

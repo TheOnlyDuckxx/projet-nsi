@@ -437,10 +437,12 @@ class AggressiveFaunaBehavior:
         target = self._pick_target_in_range()
         if target is not None and self.phase:
             current = getattr(self.creature, "_combat_target", None)
+            started = True
             if current is not target:
-                self.phase._start_entity_combat(self.creature, target)
-            self._wander_timer = 0.0
-            return
+                started = bool(self.phase._start_entity_combat(self.creature, target))
+            if started:
+                self._wander_timer = 0.0
+                return
 
         if self.phase and self.creature.ia.get("etat") == "combat":
             current_target = getattr(self.creature, "_combat_target", None)

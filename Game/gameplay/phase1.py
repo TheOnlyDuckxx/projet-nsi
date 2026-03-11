@@ -67,8 +67,11 @@ _AUTO_HARVESTABLE_PROP_IDS = {
     35, 36, 37, 38, 39, 40,
 }
 _SPECIES_CORPSE_PROP_ID = 150
+_SPECIES_GRAVESTONE_PROP_ID = 151
 _FOOD_STOCK_KEYS = ("food", "berries", "meat")
 _WATER_STOCK_KEYS = ("water",)
+_GARDEN_CYCLE_MINUTES = 4.0
+_GARDEN_FOOD_PER_SEED = 3
 _DEFAULT_CORRUPTION_CONFIG = {
     "enabled": True,
     "initial_seed_count": 5,
@@ -159,6 +162,9 @@ class Phase1:
         self._corruption_dry_ticks = 0
         self.world_history: list[dict] = []
         self.class_state: dict = {"main_class": None, "chosen_day": None}
+        self._tech_effects = self._default_tech_effects()
+        self._tech_runtime = {"belligerant_kill_streak": 0}
+        self._tech_effects_dirty = True
         self.horde_state: dict = {
             "active": False,
             "ends_at_minute": 0.0,
@@ -240,7 +246,8 @@ class Phase1:
         self.food_reserve_capacity = 100
         self.food_target_per_individual = 3.0
         self.water_target_per_individual = 4.0
-        self.food_consumption_per_individual_per_sec = 1.0 / 120.0
+        self._food_consumption_base_per_individual_per_sec = 1.0 / 120.0
+        self.food_consumption_per_individual_per_sec = float(self._food_consumption_base_per_individual_per_sec)
         self.water_consumption_per_individual_per_sec = 1.0 / 100.0
         self._group_supply_food_buffer = 0.0
         self._group_supply_water_buffer = 0.0
@@ -256,6 +263,11 @@ class Phase1:
         self._water_collector_tiles: set[tuple[int, int]] = set()
         self._water_collector_water_buffer = 0.0
         self._water_collector_probe_cd = 0.0
+
+        # Production passive de nourriture (jardins)
+        self._garden_tiles: set[tuple[int, int]] = set()
+        self._garden_growth_buffer = 0.0
+        self._garden_probe_cd = 0.0
 
         # Sources de lumière (feux de camp)
         self._campfire_tiles: set[tuple[int, int]] = set()
@@ -658,6 +670,9 @@ class Phase1:
         self._init_craft_unlocks()
         self.world_history = []
         self.class_state = {"main_class": None, "chosen_day": None}
+        self._tech_effects = self._default_tech_effects()
+        self._tech_runtime = {"belligerant_kill_streak": 0}
+        self._tech_effects_dirty = True
         self.horde_state = {
             "active": False,
             "ends_at_minute": 0.0,
@@ -676,7 +691,8 @@ class Phase1:
         self.food_reserve_capacity = 100
         self.food_target_per_individual = 3.0
         self.water_target_per_individual = 4.0
-        self.food_consumption_per_individual_per_sec = 1.0 / 120.0
+        self._food_consumption_base_per_individual_per_sec = 1.0 / 120.0
+        self.food_consumption_per_individual_per_sec = float(self._food_consumption_base_per_individual_per_sec)
         self.water_consumption_per_individual_per_sec = 1.0 / 100.0
         self._group_supply_food_buffer = 0.0
         self._group_supply_water_buffer = 0.0
@@ -687,6 +703,14 @@ class Phase1:
         self._supply_cached_food_ratio = 0.0
         self._supply_cached_water_ratio = 0.0
         self._supply_cached_debuff_mult = 1.0
+        self._water_collector_tiles = set()
+        self._water_collector_water_buffer = 0.0
+        self._water_collector_probe_cd = 0.0
+        self._garden_tiles = set()
+        self._garden_growth_buffer = 0.0
+        self._garden_probe_cd = 0.0
+        self._campfire_tiles = set()
+        self._campfire_probe_cd = 0.0
         self.weather_system = None
         if self.weather_vfx:
             self.weather_vfx.reset()
@@ -997,12 +1021,211 @@ class Phase1:
             self.unlocked_crafts.add("Entrepot_primitif")
         self._warehouse_gate_cache = bool(int(getattr(self, "_warehouse_built_count", 0) or 0) > 0)
 
+    def _default_tech_effects(self) -> dict[str, float | bool]:
+        return {
+            "global_damage_mult": 1.0,
+            "global_defense_bonus": 0.0,
+            "global_speed_mult": 1.0,
+            "global_attack_interval_mult": 1.0,
+            "food_consumption_mult": 1.0,
+            "pacifist_mode": False,
+            "structures_indestructible": False,
+            "believer_scaling_per_unit": 0.0,
+            "believer_scaling_cap": 0.0,
+            "kill_streak_team_bonus": 0.0,
+            "kill_streak_defense_bonus": 0.0,
+            "kill_streak_cap": 0.65,
+        }
+
+    def _sync_tech_tree_main_class(self) -> None:
+        if not self.tech_tree or not hasattr(self.tech_tree, "set_main_class"):
+            return
+        current = None
+        if self.espece is not None:
+            current = getattr(self.espece, "main_class", None)
+        if not current:
+            current = self.class_state.get("main_class")
+        self.tech_tree.set_main_class(current)
+
+    def _cancel_hostile_combat_due_to_pacifism(self) -> None:
+        for ent in list(getattr(self, "entities", [])):
+            if ent is None:
+                continue
+            if getattr(ent, "ia", {}).get("etat") != "combat":
+                continue
+            target = getattr(ent, "_combat_target", None)
+            if target is None:
+                continue
+            attacker_player = self._is_player_species_entity(ent)
+            target_player = self._is_player_species_entity(target)
+            if attacker_player and getattr(target, "is_fauna", False):
+                self._stop_entity_combat(ent)
+            elif target_player and getattr(ent, "is_fauna", False):
+                self._stop_entity_combat(ent)
+
+    def _recompute_tech_effects(self) -> None:
+        effects = self._default_tech_effects()
+        if not hasattr(self, "_food_consumption_base_per_individual_per_sec"):
+            self._food_consumption_base_per_individual_per_sec = float(
+                getattr(self, "food_consumption_per_individual_per_sec", 1.0 / 120.0) or (1.0 / 120.0)
+            )
+        tree = getattr(self, "tech_tree", None)
+        if tree is not None:
+            for tech_id in sorted(getattr(tree, "unlocked", set()) or set()):
+                tech_data = tree.get_tech(tech_id) if hasattr(tree, "get_tech") else {}
+                eff = tech_data.get("effets") if isinstance(tech_data, dict) else None
+                if not isinstance(eff, dict):
+                    continue
+                for key, value in eff.items():
+                    if key not in effects:
+                        continue
+                    if key in {"global_damage_mult", "global_speed_mult", "global_attack_interval_mult", "food_consumption_mult"}:
+                        try:
+                            val = float(value)
+                        except Exception:
+                            continue
+                        if val > 0:
+                            effects[key] = float(effects[key]) * val
+                    elif key in {"global_defense_bonus", "believer_scaling_per_unit", "kill_streak_team_bonus", "kill_streak_defense_bonus"}:
+                        try:
+                            effects[key] = float(effects[key]) + float(value)
+                        except Exception:
+                            continue
+                    elif key in {"believer_scaling_cap", "kill_streak_cap"}:
+                        try:
+                            effects[key] = max(float(effects[key]), float(value))
+                        except Exception:
+                            continue
+                    elif key in {"pacifist_mode", "structures_indestructible"}:
+                        effects[key] = bool(effects[key]) or bool(value)
+
+        self._tech_effects = effects
+        base_food = float(getattr(self, "_food_consumption_base_per_individual_per_sec", 1.0 / 120.0) or (1.0 / 120.0))
+        self.food_consumption_per_individual_per_sec = max(0.0, base_food * max(0.25, float(effects["food_consumption_mult"])))
+
+        if float(effects.get("kill_streak_team_bonus", 0.0) or 0.0) <= 0.0:
+            self._tech_runtime["belligerant_kill_streak"] = 0
+
+        if bool(effects.get("pacifist_mode", False)):
+            self._cancel_hostile_combat_due_to_pacifism()
+        self._tech_effects_dirty = False
+
+    def is_pacifist_mode_active(self) -> bool:
+        return bool((getattr(self, "_tech_effects", {}) or {}).get("pacifist_mode", False))
+
+    def is_structure_indestructible_mode_active(self) -> bool:
+        return bool((getattr(self, "_tech_effects", {}) or {}).get("structures_indestructible", False))
+
+    def _team_kill_streak_bonus(self) -> float:
+        effects = getattr(self, "_tech_effects", {}) or {}
+        per_kill = float(effects.get("kill_streak_team_bonus", 0.0) or 0.0)
+        if per_kill <= 0.0:
+            return 0.0
+        cap = max(0.0, float(effects.get("kill_streak_cap", 0.65) or 0.65))
+        streak = int((getattr(self, "_tech_runtime", {}) or {}).get("belligerant_kill_streak", 0) or 0)
+        return min(cap, per_kill * max(0, streak))
+
+    def _team_kill_streak_defense_bonus(self) -> float:
+        effects = getattr(self, "_tech_effects", {}) or {}
+        per_kill = float(effects.get("kill_streak_defense_bonus", 0.0) or 0.0)
+        if per_kill <= 0.0:
+            return 0.0
+        cap = max(0.0, float(effects.get("kill_streak_cap", 0.65) or 0.65))
+        streak = int((getattr(self, "_tech_runtime", {}) or {}).get("belligerant_kill_streak", 0) or 0)
+        # On transforme le cap multiplicatif en cap additif défensif raisonnable.
+        cap_def = max(0.0, cap * 10.0)
+        return min(cap_def, per_kill * max(0, streak))
+
+    def _croyant_scaling_bonus(self, ent) -> float:
+        effects = getattr(self, "_tech_effects", {}) or {}
+        per_member = float(effects.get("believer_scaling_per_unit", 0.0) or 0.0)
+        if per_member <= 0.0:
+            return 0.0
+        if ent is None or not self._is_player_species_entity(ent):
+            return 0.0
+        role = str(getattr(ent, "role_class", "") or "").strip().lower()
+        if role != "croyant":
+            return 0.0
+        believers = int(self.count_living_members_by_class("croyant") or 0)
+        cap = max(0.0, float(effects.get("believer_scaling_cap", 0.0) or 0.0))
+        return min(cap, believers * per_member)
+
+    def get_entity_attack_multiplier(self, attacker, target=None) -> float:
+        if attacker is None or not self._is_player_species_entity(attacker):
+            return 1.0
+        effects = getattr(self, "_tech_effects", {}) or {}
+        mult = max(0.1, float(effects.get("global_damage_mult", 1.0) or 1.0))
+        mult *= 1.0 + self._team_kill_streak_bonus()
+        croyant_bonus = self._croyant_scaling_bonus(attacker)
+        if croyant_bonus > 0.0:
+            mult *= 1.0 + croyant_bonus
+        return max(0.1, mult)
+
+    def get_entity_defense_bonus(self, ent) -> float:
+        if ent is None or not self._is_player_species_entity(ent):
+            return 0.0
+        effects = getattr(self, "_tech_effects", {}) or {}
+        bonus = float(effects.get("global_defense_bonus", 0.0) or 0.0)
+        bonus += self._team_kill_streak_defense_bonus()
+        croyant_bonus = self._croyant_scaling_bonus(ent)
+        if croyant_bonus > 0.0:
+            bonus += croyant_bonus * 5.0
+        return max(0.0, bonus)
+
+    def get_entity_speed_multiplier(self, ent) -> float:
+        if ent is None or not self._is_player_species_entity(ent):
+            return 1.0
+        effects = getattr(self, "_tech_effects", {}) or {}
+        mult = max(0.2, float(effects.get("global_speed_mult", 1.0) or 1.0))
+        croyant_bonus = self._croyant_scaling_bonus(ent)
+        if croyant_bonus > 0.0:
+            mult *= 1.0 + (croyant_bonus * 0.2)
+        return max(0.2, mult)
+
+    def is_pacifist_damage_blocked(self, attacker, target) -> bool:
+        if not self.is_pacifist_mode_active():
+            return False
+        if attacker is None or target is None:
+            return False
+        if self._is_player_side_entity(attacker) and getattr(target, "is_fauna", False):
+            return True
+        if getattr(attacker, "is_fauna", False) and self._is_player_side_entity(target):
+            return True
+        return False
+
+    def on_species_enemy_killed(self, attacker, target) -> None:
+        if attacker is None or target is None:
+            return
+        if not self._is_player_species_entity(attacker):
+            return
+        if not getattr(target, "is_fauna", False):
+            return
+        effects = getattr(self, "_tech_effects", {}) or {}
+        if float(effects.get("kill_streak_team_bonus", 0.0) or 0.0) <= 0.0:
+            return
+        streak = int((self._tech_runtime or {}).get("belligerant_kill_streak", 0) or 0) + 1
+        self._tech_runtime["belligerant_kill_streak"] = streak
+        # Évite le spam visuel: feedback fréquent au début puis tous les 5 kills.
+        if streak <= 4 or streak % 5 == 0:
+            percent = int(round(self._team_kill_streak_bonus() * 100.0))
+            add_notification(f"Ferveur belligerante: +{percent}% puissance d'equipe.")
+
+    def _reset_belligerant_kill_streak(self, reason: str | None = None) -> None:
+        streak = int((self._tech_runtime or {}).get("belligerant_kill_streak", 0) or 0)
+        if streak <= 0:
+            return
+        self._tech_runtime["belligerant_kill_streak"] = 0
+        if reason:
+            add_notification(reason)
+
     def _on_tech_unlocked(self, tech_id: str, tech_data: dict) -> None:
         """Callback appelé quand une technologie est débloquée"""
         for craft_id in tech_data.get("craft", []) or []:
             self.unlock_craft(craft_id)
         name = tech_data.get("nom", tech_id)
         add_notification(f"Technologie débloquée : {name}")
+        self._tech_effects_dirty = True
+        self._recompute_tech_effects()
         self._run_stats["max_innovation"] = max(
             int(self._run_stats.get("max_innovation", 0) or 0),
             int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0),
@@ -1113,6 +1336,51 @@ class Phase1:
                     if isinstance(cell, dict) and cell.get("state") == "built":
                         if cell.get("craft_id") == "Recuperateur_eau" or int(cell.get("pid", 0) or 0) == 115:
                             out.add((int(i), int(j)))
+        return out
+
+    def _scan_gardens_near_entities(self, radius: int = 42) -> set[tuple[int, int]]:
+        """
+        Scan borné autour des entités vivantes pour retrouver les jardins construits.
+        """
+        if not self.world or not getattr(self.world, "overlay", None):
+            return set()
+        w, h = int(self.world.width), int(self.world.height)
+        if w <= 0 or h <= 0:
+            return set()
+
+        centers: list[tuple[int, int]] = []
+        for ent in self.entities:
+            if getattr(ent, "_dead_processed", False):
+                continue
+            if getattr(ent, "is_fauna", False):
+                continue
+            centers.append((int(getattr(ent, "x", 0)), int(getattr(ent, "y", 0))))
+            if len(centers) >= 6:
+                break
+        if not centers:
+            try:
+                sx, sy = self.world.spawn
+                centers.append((int(sx), int(sy)))
+            except Exception:
+                centers.append((w // 2, h // 2))
+
+        out: set[tuple[int, int]] = set()
+        seen: set[tuple[int, int]] = set()
+        rad = max(8, int(radius))
+        for cx, cy in centers:
+            x0 = max(0, cx - rad)
+            x1 = min(w - 1, cx + rad)
+            y0 = max(0, cy - rad)
+            y1 = min(h - 1, cy + rad)
+            for j in range(y0, y1 + 1):
+                row = self.world.overlay[j]
+                for i in range(x0, x1 + 1):
+                    if (i, j) in seen:
+                        continue
+                    seen.add((i, j))
+                    cell = row[i]
+                    if isinstance(cell, dict) and cell.get("state") == "built" and cell.get("craft_id") == "Jardin":
+                        out.add((int(i), int(j)))
         return out
 
     def _scan_campfires_near_entities(self, radius: int = 48) -> set[tuple[int, int]]:
@@ -1305,6 +1573,47 @@ class Phase1:
         self._water_collector_water_buffer -= float(produced)
         self.warehouse["water"] = int(self.warehouse.get("water", 0) or 0) + int(produced)
 
+    def _update_gardens(self, dt: float) -> None:
+        self._garden_probe_cd = max(0.0, float(self._garden_probe_cd) - float(dt))
+        if self._garden_probe_cd <= 0.0 and not self._garden_tiles:
+            self._garden_tiles = set(self._scan_gardens_near_entities())
+            self._garden_probe_cd = 8.0
+
+        if self._garden_tiles and self.world and getattr(self.world, "overlay", None):
+            to_remove: list[tuple[int, int]] = []
+            for i, j in self._garden_tiles:
+                try:
+                    cell = self.world.overlay[int(j)][int(i)]
+                except Exception:
+                    cell = None
+                if not (isinstance(cell, dict) and cell.get("state") == "built" and cell.get("craft_id") == "Jardin"):
+                    to_remove.append((i, j))
+            for key in to_remove:
+                self._garden_tiles.discard(key)
+
+        if not self._garden_tiles:
+            return
+
+        dt_minutes = float(dt) / 60.0
+        self._garden_growth_buffer += len(self._garden_tiles) * dt_minutes
+        cycles_ready = int(self._garden_growth_buffer // float(_GARDEN_CYCLE_MINUTES))
+        if cycles_ready <= 0:
+            return
+
+        seeds_stock = int(self.warehouse.get("seed", 0) or 0)
+        if seeds_stock <= 0:
+            self._garden_growth_buffer = min(self._garden_growth_buffer, float(_GARDEN_CYCLE_MINUTES))
+            return
+
+        cycles_done = min(cycles_ready, seeds_stock)
+        if cycles_done <= 0:
+            return
+
+        self.warehouse["seed"] = max(0, seeds_stock - cycles_done)
+        produced_food = int(cycles_done * int(_GARDEN_FOOD_PER_SEED))
+        self.warehouse["food"] = int(self.warehouse.get("food", 0) or 0) + produced_food
+        self._garden_growth_buffer -= float(cycles_done) * float(_GARDEN_CYCLE_MINUTES)
+
     def _refresh_craft_gate_state(self, force: bool = False):
         previous = self._warehouse_gate_cache
         built = self.has_built_warehouse(force_scan=force)
@@ -1362,6 +1671,7 @@ class Phase1:
         """Démarre la recherche d'une technologie si possible, et affiche une notification."""
         if not self.tech_tree:
             return False
+        self._sync_tech_tree_main_class()
         ok = self.tech_tree.start_research(tech_id)
         if ok:
             tech = self.tech_tree.get_tech(tech_id)
@@ -1536,6 +1846,13 @@ class Phase1:
             return bool(getattr(espece_parent, "is_player_species", False))
         return bool(getattr(espece, "is_player_species", False))
 
+    def _is_player_side_entity(self, ent) -> bool:
+        if self._is_player_species_entity(ent):
+            return True
+        if ent is None or not getattr(ent, "is_egg", False):
+            return False
+        return getattr(ent, "espece", None) == getattr(self, "espece", None)
+
     def _tile_is_water(self, i: int, j: int, generate: bool = True) -> bool:
         w = self.world
         if not w:
@@ -1584,6 +1901,7 @@ class Phase1:
             except Exception:
                 pass
         speed *= float(self._temperature_debuff_multiplier(ent))
+        speed *= float(self.get_entity_speed_multiplier(ent))
 
         return max(0.2, speed)
 
@@ -1594,6 +1912,8 @@ class Phase1:
         stop_entity_combat(self, ent, stop_motion=stop_motion)
 
     def _start_entity_combat(self, attacker, target) -> bool:
+        if self.is_pacifist_mode_active() and self._is_player_species_entity(attacker) and getattr(target, "is_fauna", False):
+            return False
         if getattr(attacker, "_shelter_resting", False):
             self._leave_shelter(attacker)
         if getattr(target, "_shelter_resting", False):
@@ -1611,6 +1931,9 @@ class Phase1:
             except Exception:
                 pass
         mult *= float(self._temperature_debuff_multiplier(attacker))
+        if self._is_player_species_entity(attacker):
+            interval_mult = float((getattr(self, "_tech_effects", {}) or {}).get("global_attack_interval_mult", 1.0) or 1.0)
+            mult *= 1.0 / max(0.2, interval_mult)
         interval /= max(0.35, mult)
         return interval
 
@@ -1618,7 +1941,7 @@ class Phase1:
         return combat_attack_range(attacker)
 
     def _combat_damage(self, attacker, target) -> float:
-        damage = float(combat_damage(attacker, target))
+        damage = float(combat_damage(self, attacker, target))
         if self._is_player_species_entity(attacker):
             damage *= float(self._supply_debuff_multiplier())
         if self.weather_system:
@@ -1776,23 +2099,85 @@ class Phase1:
         if reason:
             add_notification(f"{reason} ({before:.0f} → {self.happiness:.0f})")
 
+    def _species_has_mutation(self, mutation_id: str | None) -> bool:
+        wanted = str(mutation_id or "").strip()
+        if not wanted or not self.espece:
+            return False
+        manager = getattr(self.espece, "mutations", None)
+        if manager is None:
+            return False
+        if hasattr(manager, "_resolve_mutation_id"):
+            try:
+                wanted = str(manager._resolve_mutation_id(wanted) or wanted)
+            except Exception:
+                pass
+        wanted_norm = wanted.casefold()
+        known: set[str] = set()
+        for raw in list(getattr(manager, "actives", []) or []) + list(getattr(self.espece, "base_mutations", []) or []):
+            name = str(raw or "").strip()
+            if not name:
+                continue
+            known.add(name)
+            known.add(name.casefold())
+        return wanted in known or wanted_norm in known
+
     def set_death_policy(self, mode: str | None):
         self.death_response_mode = mode
         if mode:
             add_notification(f"Gestion des corps choisie : {mode}.")
+            if str(mode).strip().casefold() == "enterrer":
+                converted = self._convert_species_corpses_to_graves()
+                if converted > 0:
+                    add_notification(f"{converted} cadavre(s) transforme(s) en tombes.")
 
-    def _is_species_corpse_overlay(self, cell) -> bool:
+    def _is_species_grave_overlay(self, cell) -> bool:
         if isinstance(cell, dict):
-            if str(cell.get("state", "")).strip().lower() == "corpse":
+            if str(cell.get("state", "")).strip().lower() == "grave":
                 return True
             pid = cell.get("pid")
             try:
-                return int(pid) == int(_SPECIES_CORPSE_PROP_ID)
+                return int(pid) == int(_SPECIES_GRAVESTONE_PROP_ID)
             except Exception:
                 return False
         if isinstance(cell, int):
-            return int(cell) == int(_SPECIES_CORPSE_PROP_ID)
+            return int(cell) == int(_SPECIES_GRAVESTONE_PROP_ID)
         return False
+
+    def _is_species_corpse_overlay(self, cell) -> bool:
+        if isinstance(cell, dict):
+            state = str(cell.get("state", "")).strip().lower()
+            if state in {"corpse", "grave"}:
+                return True
+            pid = cell.get("pid")
+            try:
+                pid_int = int(pid)
+                return pid_int in {int(_SPECIES_CORPSE_PROP_ID), int(_SPECIES_GRAVESTONE_PROP_ID)}
+            except Exception:
+                return False
+        if isinstance(cell, int):
+            return int(cell) in {int(_SPECIES_CORPSE_PROP_ID), int(_SPECIES_GRAVESTONE_PROP_ID)}
+        return False
+
+    def _can_harvest_species_corpse(self, ent=None, tile: tuple[int, int] | None = None) -> bool:
+        if str(self.death_response_mode or "").strip().casefold() == "enterrer":
+            return False
+        if not self._species_has_mutation("Cannibale"):
+            return False
+        if ent is not None:
+            if getattr(ent, "is_fauna", False) or getattr(ent, "is_egg", False):
+                return False
+            if getattr(ent, "espece", None) != self.espece:
+                return False
+        if tile is None:
+            return True
+        i, j = int(tile[0]), int(tile[1])
+        cell = self._get_construction_cell(i, j, generate=False)
+        if self._is_species_grave_overlay(cell):
+            return False
+        return self._is_species_corpse_overlay(cell)
+
+    def can_entity_harvest_species_corpse(self, ent, tile: tuple[int, int] | None = None) -> bool:
+        return self._can_harvest_species_corpse(ent=ent, tile=tile)
 
     def _drop_species_corpse(self, i: int, j: int) -> bool:
         if not self.world:
@@ -1802,13 +2187,32 @@ class Phase1:
         current = self._get_construction_cell(i, j, generate=True)
         if current and not self._is_species_corpse_overlay(current):
             return False
+        is_burial_mode = str(self.death_response_mode or "").strip().casefold() == "enterrer"
         corpse = {
-            "pid": int(_SPECIES_CORPSE_PROP_ID),
-            "state": "corpse",
-            "name": "Cadavre",
+            "pid": int(_SPECIES_GRAVESTONE_PROP_ID if is_burial_mode else _SPECIES_CORPSE_PROP_ID),
+            "state": "grave" if is_burial_mode else "corpse",
+            "name": "Tombe" if is_burial_mode else "Cadavre",
         }
         self.world.overlay[j][i] = corpse
         return True
+
+    def _convert_species_corpses_to_graves(self) -> int:
+        if not self.world or not getattr(self.world, "overlay", None):
+            return 0
+        converted = 0
+        for j, row in enumerate(self.world.overlay):
+            for i, cell in enumerate(row):
+                if not self._is_species_corpse_overlay(cell):
+                    continue
+                if self._is_species_grave_overlay(cell):
+                    continue
+                row[i] = {
+                    "pid": int(_SPECIES_GRAVESTONE_PROP_ID),
+                    "state": "grave",
+                    "name": "Tombe",
+                }
+                converted += 1
+        return converted
 
     def _clear_species_corpse(self, i: int, j: int) -> bool:
         if not self.world:
@@ -2051,6 +2455,9 @@ class Phase1:
         day = int(getattr(self.day_night, "jour", 0) or 0)
         self.class_state["main_class"] = normalized
         self.class_state["chosen_day"] = day
+        if self.tech_tree and hasattr(self.tech_tree, "set_main_class"):
+            self.tech_tree.set_main_class(normalized)
+        self._tech_effects_dirty = True
         self.event_manager.runtime_flags["class_choice_ready"] = False
         self.event_manager.runtime_flags["class_choice_candidate"] = None
         label = ROLE_CLASS_LABELS.get(normalized, normalized.title())
@@ -2129,6 +2536,8 @@ class Phase1:
         self.log_world_event("horde", "Fin de la horde hostile.")
 
     def _structure_is_attackable(self, cell) -> bool:
+        if self.is_structure_indestructible_mode_active():
+            return False
         if not isinstance(cell, dict):
             return False
         if not cell.get("craft_id") and cell.get("state") != "building":
@@ -2139,6 +2548,8 @@ class Phase1:
 
     def _find_nearest_attackable_structure(self, attacker, max_radius: int = 8):
         if not self.world or attacker is None:
+            return None
+        if self.is_pacifist_mode_active():
             return None
         ex, ey = int(getattr(attacker, "x", 0)), int(getattr(attacker, "y", 0))
         width, height = self.world.width, self.world.height
@@ -2166,6 +2577,10 @@ class Phase1:
 
     def _damage_structure_at(self, i: int, j: int, damage: float, attacker=None) -> bool:
         if not self.world:
+            return False
+        if self.is_pacifist_mode_active() and getattr(attacker, "is_fauna", False):
+            return False
+        if self.is_structure_indestructible_mode_active():
             return False
         cell = self._get_construction_cell(i, j)
         if not self._structure_is_attackable(cell):
@@ -2398,6 +2813,7 @@ class Phase1:
 
         if getattr(ent, "espece", None) == self.espece:
             self._drop_species_corpse(death_i, death_j)
+            self._reset_belligerant_kill_streak("La ferveur belligerante retombe apres une perte.")
             self.species_death_count += 1
             self._stats_current_day["deaths"] = int(self._stats_current_day.get("deaths", 0) or 0) + 1
             survivors = self._count_living_species_members()
@@ -2974,6 +3390,9 @@ class Phase1:
             if self._perf_trace_frames > 0:
                 self._perf_trace_frames -= 1
             return
+        self._sync_tech_tree_main_class()
+        if bool(getattr(self, "_tech_effects_dirty", False)):
+            self._recompute_tech_effects()
         if self.paused or self.ui_menu_open:
             # Meme en pause on continue les timers d'evenements
             if self.quest_manager:
@@ -3067,6 +3486,7 @@ class Phase1:
 
         self._update_campfires(dt)
         self._update_water_collectors(dt)
+        self._update_gardens(dt)
         self._update_group_supply(dt)
         mark("Group supply update")
 
@@ -4374,20 +4794,36 @@ class Phase1:
             elif kind == "prop":
                 i, j, pid = payload
                 cell = self._get_construction_cell(i, j)
-                craft_id = cell.get("craft_id") if isinstance(cell, dict) else None
-                if self._is_construction_site(i, j):
-                    etat = "se_deplace_vers_construction"
-                    objectif = ("construction", (i, j))
-                    base_target = (i, j)
-                    action_mode = None
-                else:
+                if self._is_species_corpse_overlay(cell):
+                    leader = entities[0] if entities else None
+                    if not self._can_harvest_species_corpse(ent=leader, tile=(i, j)):
+                        if self._is_species_grave_overlay(cell):
+                            add_notification("Cette tombe ne peut pas etre recoltee.")
+                        elif not self._species_has_mutation("Cannibale"):
+                            add_notification("Il faut la mutation Cannibale pour recolter un cadavre.")
+                        else:
+                            add_notification("Ce cadavre ne peut pas etre recolte.")
+                        return
                     etat = "se_deplace_vers_prop"
                     objectif = ("prop", (i, j, pid))
                     base_target = (i, j)
-                    if isinstance(cell, dict) and craft_id:
-                        action_mode = "dismantle" if harvest_mode else "interact"
-                    else:
+                    action_mode = None
+                    craft_id = None
+                else:
+                    craft_id = cell.get("craft_id") if isinstance(cell, dict) else None
+                    if self._is_construction_site(i, j):
+                        etat = "se_deplace_vers_construction"
+                        objectif = ("construction", (i, j))
+                        base_target = (i, j)
                         action_mode = None
+                    else:
+                        etat = "se_deplace_vers_prop"
+                        objectif = ("prop", (i, j, pid))
+                        base_target = (i, j)
+                        if isinstance(cell, dict) and craft_id:
+                            action_mode = "dismantle" if harvest_mode else "interact"
+                        else:
+                            action_mode = None
         if base_target is None:
             cx, cy = click_pos if click_pos else pygame.mouse.get_pos()
             base_target = self._fallback_pick_tile(cx, cy)
@@ -4552,6 +4988,8 @@ class Phase1:
                         self._water_collector_tiles.add((int(key[0]), int(key[1])))
                     if craft_id == "Feu_de_camp":
                         self._campfire_tiles.add((int(key[0]), int(key[1])))
+                    if craft_id == "Jardin":
+                        self._garden_tiles.add((int(key[0]), int(key[1])))
         if finished:
             self._refresh_craft_gate_state(force=True)
 

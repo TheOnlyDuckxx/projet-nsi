@@ -311,6 +311,13 @@ class TechMenu:
         if tech_tree.current_research and tech_tree.current_research != tech_id:
             add_notification("Une recherche est deja en cours.")
             return
+        if hasattr(tech_tree, "is_class_compatible") and not tech_tree.is_class_compatible(tech_id):
+            required = getattr(tech_tree, "get_required_class", lambda _tid: None)(tech_id)
+            if required:
+                add_notification(f"Technologie reservee a la classe: {required}.")
+            else:
+                add_notification("Technologie incompatible avec la classe principale.")
+            return
         if not tech_tree.can_start(tech_id):
             add_notification("Conditions non remplies pour cette technologie.")
             return
@@ -426,9 +433,9 @@ class TechMenu:
             screen.blit(txt, txt.get_rect(center=center))
 
             if state == "research":
-                cost = max(1, int(tech_tree.get_cost(tech_id)))
+                cost = max(0, int(tech_tree.get_cost(tech_id)))
                 progress = int(getattr(tech_tree, "current_progress", 0))
-                ratio = max(0.0, min(1.0, progress / cost))
+                ratio = 1.0 if cost <= 0 else max(0.0, min(1.0, progress / cost))
                 arc_r = self._bubble_radius + 8
                 start_angle = -math.pi / 2
                 end_angle = start_angle + 2 * math.pi * ratio
@@ -536,11 +543,14 @@ class TechMenu:
 
         deps = tech_tree.get_dependencies(self._hovered_tech)
         deps_text = ", ".join(deps) if deps else "Aucune"
+        required = getattr(tech_tree, "get_required_class", lambda _tid: None)(self._hovered_tech)
+        required_text = required if required else "Toutes classes"
         lines = [
             tech.get("nom", self._hovered_tech),
             tech.get("description", ""),
             f"Cout: {tech_tree.get_cost(self._hovered_tech)}",
             f"Prerequis: {deps_text}",
+            f"Classe requise: {required_text}",
         ]
         rendered = [self.tooltip_font.render(line, True, (240, 242, 248)) for line in lines if line]
         if not rendered:

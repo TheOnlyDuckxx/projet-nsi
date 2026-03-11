@@ -787,6 +787,9 @@ class SaveManager:
                     getattr(phase1, "food_consumption_per_individual_per_sec", 1.0 / 120.0),
                 ) or (1.0 / 120.0)
             )
+            phase1._food_consumption_base_per_individual_per_sec = float(
+                getattr(phase1, "food_consumption_per_individual_per_sec", 1.0 / 120.0) or (1.0 / 120.0)
+            )
             phase1.water_consumption_per_individual_per_sec = float(
                 data.get(
                     "water_consumption_per_individual_per_sec",

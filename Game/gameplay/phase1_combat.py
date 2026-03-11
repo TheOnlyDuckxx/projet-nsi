@@ -51,6 +51,18 @@ def start_entity_combat(phase, attacker, target) -> bool:
 
     attacker_is_fauna = bool(getattr(attacker, "is_fauna", False))
     target_is_fauna = bool(getattr(target, "is_fauna", False))
+    is_player_side = getattr(
+        phase,
+        "_is_player_side_entity",
+        getattr(phase, "_is_player_species_entity", lambda _ent: False),
+    )
+
+    pacifist_active = bool(getattr(phase, "is_pacifist_mode_active", lambda: False)())
+    if pacifist_active:
+        if attacker_is_fauna and is_player_side(target):
+            return False
+        if target_is_fauna and is_player_side(attacker):
+            return False
 
     if attacker_is_fauna and not attacker_is_aggressive:
         return False
@@ -77,10 +89,17 @@ def start_entity_combat(phase, attacker, target) -> bool:
     return True
 
 
-def combat_attack_interval(attacker) -> float:
+def combat_attack_interval(attacker, phase=None) -> float:
     speed = float(getattr(attacker, "physique", {}).get("vitesse", 3) or 3)
     agilite = float(getattr(attacker, "combat", {}).get("agilite", 0) or 0)
     base = max(0.35, 1.2 - speed * 0.05 - agilite * 0.01)
+    if phase is not None and hasattr(phase, "_is_player_species_entity") and phase._is_player_species_entity(attacker):
+        tech = getattr(phase, "_tech_effects", {}) or {}
+        try:
+            interval_mult = float(tech.get("global_attack_interval_mult", 1.0) or 1.0)
+        except Exception:
+            interval_mult = 1.0
+        base *= max(0.2, interval_mult)
     combat = getattr(attacker, "combat", {}) or {}
     atk_speed = combat.get("attaque_speed", combat.get("attack_speed", None))
     try:
@@ -97,7 +116,7 @@ def combat_attack_range(attacker) -> float:
     return max(0.85, 0.75 + taille * 0.06)
 
 
-def combat_damage(attacker, target) -> float:
+def combat_damage(phase, attacker, target) -> float:
     physique = getattr(attacker, "physique", {}) or {}
     force = float(physique.get("force", 1) or 1)
     speed = float(physique.get("vitesse", 1) or 1)
@@ -106,8 +125,24 @@ def combat_damage(attacker, target) -> float:
     melee = float(combat.get("attaque_melee", 0) or 0)
     attack_bonus = float(combat.get("attaque", combat.get("attack", 0)) or 0)
     defense = float(getattr(target, "combat", {}).get("defense", 0) or 0)
+    if hasattr(phase, "get_entity_defense_bonus"):
+        try:
+            defense += float(phase.get_entity_defense_bonus(target))
+        except Exception:
+            pass
 
     raw = 1.0 + force * 1.4 + speed * 0.55 + taille * 0.2 + melee * 0.05 + attack_bonus
+    if hasattr(phase, "get_entity_attack_multiplier"):
+        try:
+            raw *= float(phase.get_entity_attack_multiplier(attacker, target))
+        except Exception:
+            pass
+    if hasattr(phase, "is_pacifist_damage_blocked"):
+        try:
+            if bool(phase.is_pacifist_damage_blocked(attacker, target)):
+                return 0.0
+        except Exception:
+            pass
     reduced = raw - defense * 0.2
     dmg = max(1.0, reduced)
     return dmg * random.uniform(0.9, 1.1)
@@ -122,6 +157,11 @@ def grant_fauna_combat_rewards(phase, attacker, target):
     if getattr(target, "is_fauna", False) and phase._is_player_species_entity(attacker):
         phase._run_stats["animals_killed"] = int(phase._run_stats.get("animals_killed", 0) or 0) + 1
         phase._stats_current_day["animals_killed"] = int(phase._stats_current_day.get("animals_killed", 0) or 0) + 1
+        if hasattr(phase, "on_species_enemy_killed"):
+            try:
+                phase.on_species_enemy_killed(attacker, target)
+            except Exception:
+                pass
         if hasattr(phase, "log_world_event"):
             phase.log_world_event("kill", f"{attacker.nom} a tue {target.nom}.")
 
@@ -186,6 +226,19 @@ def update_entity_combat(phase, ent, dt: float):
         stop_entity_combat(phase, ent)
         return
 
+    if bool(getattr(phase, "is_pacifist_mode_active", lambda: False)()):
+        is_player_side = getattr(
+            phase,
+            "_is_player_side_entity",
+            getattr(phase, "_is_player_species_entity", lambda _ent: False),
+        )
+        if getattr(ent, "is_fauna", False) and is_player_side(target):
+            stop_entity_combat(phase, ent)
+            return
+        if getattr(target, "is_fauna", False) and is_player_side(ent):
+            stop_entity_combat(phase, ent)
+            return
+
     chase_limit = float(getattr(ent, "chase_distance", 0.0) or 0.0)
     if chase_limit > 0.0 and getattr(ent, "is_aggressive", False):
         anchor = getattr(ent, "_combat_anchor", None)
@@ -216,7 +269,13 @@ def update_entity_combat(phase, ent, dt: float):
         if ent._combat_attack_cd > 0.0:
             return
 
-        damage = combat_damage(ent, target)
+        if hasattr(phase, "_combat_damage"):
+            try:
+                damage = float(phase._combat_damage(ent, target))
+            except Exception:
+                damage = combat_damage(phase, ent, target)
+        else:
+            damage = combat_damage(phase, ent, target)
         if getattr(target, "is_egg", False) and hasattr(target, "take_damage"):
             try:
                 target.take_damage(damage)
@@ -227,7 +286,13 @@ def update_entity_combat(phase, ent, dt: float):
         target._last_attacker = ent
         ent._combat_recent_timer = max(0.0, float(getattr(ent, "_combat_recent_timer", 0.0) or 0.0), 6.0)
         target._combat_recent_timer = max(0.0, float(getattr(target, "_combat_recent_timer", 0.0) or 0.0), 6.0)
-        ent._combat_attack_cd = combat_attack_interval(ent)
+        if hasattr(phase, "_combat_attack_interval"):
+            try:
+                ent._combat_attack_cd = float(phase._combat_attack_interval(ent))
+            except Exception:
+                ent._combat_attack_cd = combat_attack_interval(ent, phase)
+        else:
+            ent._combat_attack_cd = combat_attack_interval(ent, phase)
         if hasattr(ent, "attack_anim_ms"):
             ent._attack_anim_until_ms = pygame.time.get_ticks() + int(ent.attack_anim_ms)
 

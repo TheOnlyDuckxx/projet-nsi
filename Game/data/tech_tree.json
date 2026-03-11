@@ -1,35 +1,290 @@
 {
-    "Feu": {
-        "nom": "Feu",
-        "description": "La maîtrise du feu ouvre la voie à la cuisson et à la protection.",
-        "effets": {},
-        "craft": ["Feu_de_camp"],
-        "conditions": [],
-        "event": {},
-        "cout": 3,
-        "categorie": "Flamme",
-        "phase": 1
+  "Feu": {
+    "nom": "Feu",
+    "description": "La maitrise du feu ouvre la voie a la cuisson et a la protection.",
+    "effets": {},
+    "craft": ["Feu_de_camp"],
+    "conditions": [],
+    "event": {},
+    "cout": 0,
+    "categorie": "Tronc commun",
+    "phase": 1
+  },
+  "Outils_primitifs": {
+    "nom": "Outils primitifs",
+    "description": "Formalise la fabrication d'outils et de defenses simples.",
+    "effets": {
+      "global_damage_mult": 1.05
     },
-    "Feu_totem": {
-        "nom": "Feu totem",
-        "description": "Un feu sacré qui renforce la cohésion et inspire le clan.",
-        "effets": {},
-        "craft": ["Feu_de_joie"],
-        "conditions": ["Feu"],
-        "event": {},
-        "cout": 4,
-        "categorie": "Flamme",
-        "phase": 1
+    "craft": ["Defense_primitive"],
+    "conditions": ["Feu"],
+    "event": {},
+    "cout": 2,
+    "categorie": "Tronc commun",
+    "phase": 1
+  },
+  "Organisation_du_clan": {
+    "nom": "Organisation du clan",
+    "description": "Le groupe se structure et coordonne mieux ses efforts.",
+    "effets": {
+      "global_speed_mult": 1.05
     },
-    "Feux_intimidation": {
-        "nom": "Feux d’intimidation",
-        "description": "Des brasiers stratégiques pour dissuader la faune hostile.",
-        "effets": {},
-        "craft": [],
-        "conditions": ["Feu"],
-        "event": {},
-        "cout": 2,
-        "categorie": "Flamme",
-        "phase": 1
-    }
+    "craft": [],
+    "conditions": ["Outils_primitifs"],
+    "event": {},
+    "cout": 2,
+    "categorie": "Tronc commun",
+    "phase": 1
+  },
+  "Feu_totem": {
+    "nom": "Feu totem",
+    "description": "Un feu sacre qui renforce la cohesion et inspire le clan.",
+    "effets": {
+      "global_defense_bonus": 1.0
+    },
+    "craft": ["Feu_de_joie"],
+    "conditions": ["Feu"],
+    "event": {},
+    "cout": 4,
+    "categorie": "Tronc commun",
+    "phase": 1
+  },
+  "Feux_intimidation": {
+    "nom": "Feux d'intimidation",
+    "description": "Des brasiers strategiques pour dissuader la faune hostile.",
+    "effets": {
+      "global_damage_mult": 1.06
+    },
+    "craft": ["Piege"],
+    "conditions": ["Feu"],
+    "event": {},
+    "cout": 2,
+    "categorie": "Tronc commun",
+    "phase": 1
+  },
+
+  "Atelier_savant": {
+    "nom": "Atelier savant",
+    "description": "Methode scientifique appliquee aux constructions et a l'outillage.",
+    "effets": {
+      "global_speed_mult": 1.06
+    },
+    "craft": ["Four_a_bois"],
+    "conditions": ["Organisation_du_clan"],
+    "event": {},
+    "cout": 3,
+    "categorie": "Savant",
+    "required_main_class": "savant",
+    "phase": 1
+  },
+  "Materiaux_autorepares": {
+    "nom": "Materiaux auto-repares",
+    "description": "Les structures resistent mieux grace a des techniques avancees.",
+    "effets": {
+      "global_defense_bonus": 1.5
+    },
+    "craft": ["Paratonnerre"],
+    "conditions": ["Atelier_savant"],
+    "event": {},
+    "cout": 4,
+    "categorie": "Savant",
+    "required_main_class": "savant",
+    "phase": 1
+  },
+  "Architecture_eternelle": {
+    "nom": "Architecture eternelle",
+    "description": "Les constructions du clan deviennent indestructibles.",
+    "effets": {
+      "structures_indestructible": true
+    },
+    "craft": [],
+    "conditions": ["Materiaux_autorepares"],
+    "event": {},
+    "cout": 6,
+    "categorie": "Savant",
+    "required_main_class": "savant",
+    "phase": 1
+  },
+  "Optimisation_mecanique": {
+    "nom": "Optimisation mecanique",
+    "description": "Les gestes et outils sont optimises pour agir plus vite.",
+    "effets": {
+      "global_attack_interval_mult": 0.9,
+      "global_speed_mult": 1.05
+    },
+    "craft": [],
+    "conditions": ["Atelier_savant"],
+    "event": {},
+    "cout": 5,
+    "categorie": "Savant",
+    "required_main_class": "savant",
+    "phase": 1
+  },
+
+  "Conseil_pacifique": {
+    "nom": "Conseil pacifique",
+    "description": "La mediation devient la norme dans le clan.",
+    "effets": {
+      "global_defense_bonus": 1.0
+    },
+    "craft": [],
+    "conditions": ["Organisation_du_clan"],
+    "event": {},
+    "cout": 3,
+    "categorie": "Pacifiste",
+    "required_main_class": "pacifiste",
+    "phase": 1
+  },
+  "Serment_de_non_violence": {
+    "nom": "Serment de non-violence",
+    "description": "Les ennemis cessent d'attaquer, mais le clan renonce aussi a blesser.",
+    "effets": {
+      "pacifist_mode": true,
+      "global_speed_mult": 1.05
+    },
+    "craft": [],
+    "conditions": ["Conseil_pacifique"],
+    "event": {},
+    "cout": 5,
+    "categorie": "Pacifiste",
+    "required_main_class": "pacifiste",
+    "phase": 1
+  },
+  "Harmonie_vivante": {
+    "nom": "Harmonie vivante",
+    "description": "Le groupe se deplace et se coordonne avec fluidite.",
+    "effets": {
+      "global_speed_mult": 1.12,
+      "global_defense_bonus": 1.0
+    },
+    "craft": [],
+    "conditions": ["Conseil_pacifique"],
+    "event": {},
+    "cout": 4,
+    "categorie": "Pacifiste",
+    "required_main_class": "pacifiste",
+    "phase": 1
+  },
+
+  "Rite_du_clan": {
+    "nom": "Rites du clan",
+    "description": "Les croyants structurent des rituels protecteurs.",
+    "effets": {
+      "global_defense_bonus": 1.0
+    },
+    "craft": ["Cimetiere"],
+    "conditions": ["Organisation_du_clan"],
+    "event": {},
+    "cout": 3,
+    "categorie": "Croyant",
+    "required_main_class": "croyant",
+    "phase": 1
+  },
+  "Communion_ardente": {
+    "nom": "Communion ardente",
+    "description": "Plus les croyants sont nombreux, plus leur puissance augmente.",
+    "effets": {
+      "believer_scaling_per_unit": 0.03,
+      "believer_scaling_cap": 0.45
+    },
+    "craft": [],
+    "conditions": ["Rite_du_clan"],
+    "event": {},
+    "cout": 5,
+    "categorie": "Croyant",
+    "required_main_class": "croyant",
+    "phase": 1
+  },
+  "Benediction_de_guerison": {
+    "nom": "Benediction de guerison",
+    "description": "La ferveur soutient la resilence du clan.",
+    "effets": {
+      "global_defense_bonus": 1.5,
+      "global_speed_mult": 1.04
+    },
+    "craft": [],
+    "conditions": ["Rite_du_clan"],
+    "event": {},
+    "cout": 4,
+    "categorie": "Croyant",
+    "required_main_class": "croyant",
+    "phase": 1
+  },
+  "Foi_inflexible": {
+    "nom": "Foi inflexible",
+    "description": "La conviction religieuse renforce l'impact en combat.",
+    "effets": {
+      "global_damage_mult": 1.1
+    },
+    "craft": [],
+    "conditions": ["Communion_ardente"],
+    "event": {},
+    "cout": 6,
+    "categorie": "Croyant",
+    "required_main_class": "croyant",
+    "phase": 1
+  },
+
+  "Discipline_martiale": {
+    "nom": "Discipline martiale",
+    "description": "L'entrainement systematique augmente la letalite du groupe.",
+    "effets": {
+      "global_damage_mult": 1.12,
+      "global_attack_interval_mult": 0.94
+    },
+    "craft": [],
+    "conditions": ["Organisation_du_clan"],
+    "event": {},
+    "cout": 3,
+    "categorie": "Belligerant",
+    "required_main_class": "belligerant",
+    "phase": 1
+  },
+  "Frisson_de_chasse": {
+    "nom": "Frisson de chasse",
+    "description": "Chaque ennemi tue renforce toute l'equipe jusqu'a la prochaine perte.",
+    "effets": {
+      "kill_streak_team_bonus": 0.03,
+      "kill_streak_defense_bonus": 0.35,
+      "kill_streak_cap": 0.8
+    },
+    "craft": [],
+    "conditions": ["Discipline_martiale"],
+    "event": {},
+    "cout": 5,
+    "categorie": "Belligerant",
+    "required_main_class": "belligerant",
+    "phase": 1
+  },
+  "Frenesie_predatrice": {
+    "nom": "Frenesie predatrice",
+    "description": "Le clan devient beaucoup plus fort, mais consomme deux fois plus de nourriture.",
+    "effets": {
+      "food_consumption_mult": 2.0,
+      "global_damage_mult": 1.3,
+      "global_defense_bonus": 2.0
+    },
+    "craft": [],
+    "conditions": ["Frisson_de_chasse"],
+    "event": {},
+    "cout": 6,
+    "categorie": "Belligerant",
+    "required_main_class": "belligerant",
+    "phase": 1
+  },
+  "Carnage_coordonne": {
+    "nom": "Carnage coordonne",
+    "description": "Les combattants enchainent leurs attaques avec une efficacite brutale.",
+    "effets": {
+      "global_attack_interval_mult": 0.88,
+      "global_speed_mult": 1.08
+    },
+    "craft": [],
+    "conditions": ["Discipline_martiale"],
+    "event": {},
+    "cout": 5,
+    "categorie": "Belligerant",
+    "required_main_class": "belligerant",
+    "phase": 1
+  }
 }

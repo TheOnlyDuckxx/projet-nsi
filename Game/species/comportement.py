@@ -5,6 +5,8 @@ import random
 from Game.core.utils import resource_path
 from Game.ui.hud.notification import add_notification
 
+_SPECIES_CORPSE_PROP_ID = 150
+
 class Comportement:
     def __init__(self, espece):
         self.e = espece
@@ -196,6 +198,10 @@ class Comportement:
                 {"id": "leather", "min": 1, "max": 2, "p": 0.35},
                 {"id": "flint",   "min": 1, "max": 1, "p": 0.10},
                 {"id": "stone",   "min": 1, "max": 2, "p": 0.30}
+            ],
+
+            150: [  # corpse (cadavre de l'espece)
+                {"id": "meat", "min": 2, "max": 5, "p": 1.0}
             ]
         }
         try :
@@ -377,6 +383,20 @@ class Comportement:
             return
 
         i, j, pid = objectif[1]
+        phase = getattr(self.e, "phase", None)
+        try:
+            pid_int = int(pid)
+        except Exception:
+            pid_int = 0
+        if pid_int == _SPECIES_CORPSE_PROP_ID and phase and hasattr(phase, "can_entity_harvest_species_corpse"):
+            if not phase.can_entity_harvest_species_corpse(self.e, (int(i), int(j))):
+                add_notification("Ce cadavre n'est pas recuperable.")
+                self.e.ia["etat"] = "idle"
+                self.e.ia["objectif"] = None
+                self.e.ia["order_action"] = None
+                self.e.ia["target_craft_id"] = None
+                self.e.work = None
+                return
         new_key = self._harvest_key(i, j, pid)
 
         w = getattr(self.e, "work", None)
