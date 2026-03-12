@@ -1,59 +1,61 @@
+from __future__ import annotations
+
 import math
+from typing import Dict, List, Tuple
+
 import pygame
 
-from Game.core.utils import Button, ButtonStyle
+from Game.core.utils import Button, ButtonStyle, resource_path
 from Game.ui.hud.notification import add_notification
 
 
+def _mix_color(a: Tuple[int, int, int], b: Tuple[int, int, int], t: float) -> Tuple[int, int, int]:
+    t = max(0.0, min(1.0, float(t)))
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+    )
+
+
 class TechMenu:
-    _GRAPH_ROTATION = [
-        ("Population", "population", (124, 218, 146)),
-        ("Bonheur", "happiness", (255, 193, 112)),
-        ("XP espece", "xp", (137, 181, 250)),
-        ("Innovations", "innovations", (216, 150, 255)),
-        ("Tech debloquees", "unlocked_techs", (228, 225, 122)),
-        ("Crafts debloques", "unlocked_crafts", (126, 227, 218)),
-    ]
+    BRANCH_COLORS = {
+        "common": (224, 180, 96),
+        "savant": (100, 196, 255),
+        "pacifiste": (126, 220, 164),
+        "croyant": (208, 138, 255),
+        "belligerant": (238, 96, 96),
+    }
+
+    # Directions visuelles des branches autour du tronc commun.
+    BRANCH_DIRECTIONS = {
+        "savant": (-1.0, -0.82),
+        "croyant": (1.0, -0.82),
+        "pacifiste": (-1.0, 0.82),
+        "belligerant": (1.0, 0.82),
+    }
 
     def __init__(self, phase, on_close=None):
         self.phase = phase
         self.on_close = on_close
         self.active = False
 
-        self.scroll_x = 0
-        self._max_scroll_x = 0
-        self.bubble_buttons = {}
-        self.graph_buttons = {}
-        self._hovered_tech = None
-        self._selected_graph_tech = None
-
+        self.title = "Arbre de competences"
         self._layout_key = None
-        self._layout_centers = {}
-        self._layout_edges = []
-        self._bubble_radius = 40
         self._tree_rect = pygame.Rect(0, 0, 0, 0)
-        self._graph_list_rect = pygame.Rect(0, 0, 0, 0)
-        self._graph_plot_rect = pygame.Rect(0, 0, 0, 0)
-
-        self._series_max_points = 48
-        self._last_capture_ms = 0
-        self._metric_series = {
-            "population": [],
-            "happiness": [],
-            "xp": [],
-            "innovations": [],
-            "unlocked_techs": [],
-            "unlocked_crafts": [],
-        }
+        self._layout_centers: Dict[str, Tuple[int, int]] = {}
+        self._layout_edges: List[Tuple[str, str]] = []
+        self._buttons: Dict[str, Button] = {}
+        self._hovered_tech = None
+        self._node_radius = 38
+        self._last_screen_size = (0, 0)
 
         if not pygame.font.get_init():
             pygame.font.init()
-
-        self.title = "Menu Technologies"
-        self.title_font = pygame.font.SysFont("consolas", 42, bold=True)
-        self.btn_font = pygame.font.SysFont("consolas", 22, bold=True)
-        self.tooltip_font = pygame.font.SysFont("consolas", 16)
+        self.title_font = pygame.font.SysFont("consolas", 44, bold=True)
+        self.node_font = pygame.font.SysFont("consolas", 15, bold=True)
         self.small_font = pygame.font.SysFont("consolas", 16)
+        self.tooltip_font = pygame.font.SysFont("consolas", 14)
 
         style = ButtonStyle(
             draw_background=True,
@@ -61,20 +63,45 @@ class TechMenu:
             padding_x=16,
             padding_y=10,
             hover_zoom=1.04,
-            font=self.btn_font,
+            font=self.small_font,
+            bg_color=(35, 39, 47),
+            hover_bg_color=(52, 57, 68),
+            active_bg_color=(66, 72, 84),
+            draw_border=True,
+            border_color=(148, 154, 166),
+            border_width=2,
         )
         self.back_btn = Button("Retour", (0, 0), anchor="bottomleft", style=style, on_click=self._on_back)
 
     def open(self):
         self.active = True
-        self._capture_metrics(force=True)
 
     def close(self):
         self.active = False
+        self._hovered_tech = None
 
     def _on_back(self, _btn):
         if self.on_close:
             self.on_close()
+
+    def _load_font(self, rel_path: str, size: int, *, bold_fallback: bool = False):
+        try:
+            return pygame.font.Font(resource_path(rel_path), int(size))
+        except Exception:
+            return pygame.font.SysFont("consolas", int(size), bold=bold_fallback)
+
+    def _refresh_fonts(self, screen_size):
+        if screen_size == self._last_screen_size:
+            return
+        self._last_screen_size = screen_size
+        _w, h = screen_size
+        self.title_font = self._load_font("Game/assets/ui/MightySouly.ttf", max(34, int(h * 0.075)))
+        self.node_font = self._load_font("Game/assets/ui/KiwiSoda.ttf", max(12, int(h * 0.021)))
+        self.small_font = self._load_font("Game/assets/ui/KiwiSoda.ttf", max(13, int(h * 0.022)))
+        self.tooltip_font = self._load_font("Game/assets/ui/KiwiSoda.ttf", max(12, int(h * 0.019)))
+        self.back_btn.style.font = self.small_font
+        self.back_btn._rebuild_surfaces()
+        self._layout_key = None
 
     def _sorted_tech_ids(self):
         tech_tree = getattr(self.phase, "tech_tree", None)
@@ -84,50 +111,6 @@ class TechMenu:
             (getattr(tech_tree, "techs", {}) or {}).keys(),
             key=lambda tid: (tech_tree.get_tech(tid).get("phase", 0), tech_tree.get_tech(tid).get("nom", tid)),
         )
-
-    def _sorted_unlocked(self):
-        tech_tree = getattr(self.phase, "tech_tree", None)
-        if not tech_tree:
-            return []
-        ordered = self._sorted_tech_ids()
-        unlocked = set(getattr(tech_tree, "unlocked", set()) or set())
-        return [tid for tid in ordered if tid in unlocked]
-
-    def _capture_metrics(self, force=False):
-        now = pygame.time.get_ticks()
-        if not force and now - self._last_capture_ms < 400:
-            return
-        self._last_capture_ms = now
-
-        tech_tree = getattr(self.phase, "tech_tree", None)
-        species = getattr(self.phase, "espece", None)
-
-        snapshot = {
-            "population": float(getattr(species, "population", 0)),
-            "happiness": float(getattr(self.phase, "happiness", 0)),
-            "xp": float(getattr(species, "xp", 0) if species else 0),
-            "innovations": float(getattr(tech_tree, "innovations", 0) if tech_tree else 0),
-            "unlocked_techs": float(len(getattr(tech_tree, "unlocked", []) or [])),
-            "unlocked_crafts": float(len(getattr(self.phase, "unlocked_crafts", []) or [])),
-        }
-
-        for key, value in snapshot.items():
-            series = self._metric_series[key]
-            series.append(value)
-            if len(series) > self._series_max_points:
-                del series[0]
-
-    def _graph_spec_for_tech(self, tech_id):
-        unlocked = self._sorted_unlocked()
-        if tech_id not in unlocked:
-            return None
-        idx = unlocked.index(tech_id)
-        label, metric, color = self._GRAPH_ROTATION[idx % len(self._GRAPH_ROTATION)]
-        return {
-            "label": label,
-            "metric": metric,
-            "color": color,
-        }
 
     def _compute_depths(self):
         tech_tree = getattr(self.phase, "tech_tree", None)
@@ -143,10 +126,7 @@ class TechMenu:
             stack = set(stack)
             stack.add(tid)
 
-            deps = []
-            for dep in tech_tree.get_dependencies(tid):
-                if dep in techs:
-                    deps.append(dep)
+            deps = [dep for dep in tech_tree.get_dependencies(tid) if dep in techs]
             if not deps:
                 memo[tid] = 0
                 return 0
@@ -158,6 +138,121 @@ class TechMenu:
             depth(tid, set())
         return memo
 
+    def _branch_for_tech(self, tech_id: str) -> str:
+        tech_tree = getattr(self.phase, "tech_tree", None)
+        if not tech_tree:
+            return "common"
+        tech = tech_tree.get_tech(tech_id) or {}
+        required = str(tech.get("required_main_class") or "").strip().lower()
+        if required in self.BRANCH_COLORS:
+            return required
+        cat = str(tech.get("categorie") or "").strip().lower()
+        if cat in self.BRANCH_COLORS:
+            return cat
+        return "common"
+
+    def _state_for(self, tech_id: str):
+        tech_tree = getattr(self.phase, "tech_tree", None)
+        if not tech_tree:
+            return "locked"
+        if tech_id in tech_tree.unlocked:
+            return "unlocked"
+        if tech_tree.current_research == tech_id:
+            return "research"
+        if tech_tree.can_start(tech_id):
+            return "available"
+        return "locked"
+
+    def _node_label(self, tech_id: str):
+        tech_tree = getattr(self.phase, "tech_tree", None)
+        if not tech_tree:
+            return "?"
+        name = str((tech_tree.get_tech(tech_id) or {}).get("nom") or tech_id).strip()
+        if not name:
+            return "?"
+        parts = [p for p in name.split() if p]
+        if len(parts) == 1:
+            return parts[0][:8].upper()
+        initials = "".join(p[0] for p in parts[:3]).upper()
+        if len(initials) >= 2:
+            return initials
+        return name[:8].upper()
+
+    def _fit_layout_in_rect(self, raw_centers: Dict[str, Tuple[float, float]], pad: int):
+        if not raw_centers:
+            return {}
+        xs = [p[0] for p in raw_centers.values()]
+        ys = [p[1] for p in raw_centers.values()]
+        min_x = min(xs) - pad
+        max_x = max(xs) + pad
+        min_y = min(ys) - pad
+        max_y = max(ys) + pad
+
+        raw_w = max(1.0, max_x - min_x)
+        raw_h = max(1.0, max_y - min_y)
+        avail_w = max(1.0, float(self._tree_rect.width - 2 * pad))
+        avail_h = max(1.0, float(self._tree_rect.height - 2 * pad))
+        scale = min(1.0, avail_w / raw_w, avail_h / raw_h)
+
+        cx, cy = self._tree_rect.centerx, self._tree_rect.centery
+        mx = (min_x + max_x) / 2.0
+        my = (min_y + max_y) / 2.0
+        return {tid: ((x - mx) * scale + cx, (y - my) * scale + cy) for tid, (x, y) in raw_centers.items()}
+
+    def _relax_layout(self, centers: Dict[str, Tuple[float, float]], pad: int):
+        if not centers:
+            return {}
+        if len(centers) == 1:
+            tid, pos = next(iter(centers.items()))
+            return {tid: (int(round(pos[0])), int(round(pos[1])))}
+
+        left = self._tree_rect.left + pad
+        right = self._tree_rect.right - pad
+        top = self._tree_rect.top + pad
+        bottom = self._tree_rect.bottom - pad
+        ids = list(centers.keys())
+        anchors = {tid: (float(centers[tid][0]), float(centers[tid][1])) for tid in ids}
+        positions = {tid: [anchors[tid][0], anchors[tid][1]] for tid in ids}
+        min_dist = self._node_radius * 2.22
+
+        for _ in range(72):
+            moved = 0.0
+            for i, a in enumerate(ids):
+                for j in range(i + 1, len(ids)):
+                    b = ids[j]
+                    ax, ay = positions[a]
+                    bx, by = positions[b]
+                    vx = bx - ax
+                    vy = by - ay
+                    d2 = vx * vx + vy * vy
+                    if d2 < 1e-6:
+                        ang = (i * 37 + j * 53) * 0.07
+                        nx = math.cos(ang)
+                        ny = math.sin(ang)
+                        dist = 1.0
+                    else:
+                        dist = math.sqrt(d2)
+                        nx = vx / dist
+                        ny = vy / dist
+                    if dist < min_dist:
+                        push = (min_dist - dist) * 0.5
+                        positions[a][0] -= nx * push
+                        positions[a][1] -= ny * push
+                        positions[b][0] += nx * push
+                        positions[b][1] += ny * push
+                        moved += push
+
+            for tid in ids:
+                tx, ty = anchors[tid]
+                positions[tid][0] += (tx - positions[tid][0]) * 0.09
+                positions[tid][1] += (ty - positions[tid][1]) * 0.09
+                positions[tid][0] = max(left, min(right, positions[tid][0]))
+                positions[tid][1] = max(top, min(bottom, positions[tid][1]))
+            if moved < 0.05:
+                break
+
+        return {tid: (int(round(pos[0])), int(round(pos[1]))) for tid, pos in positions.items()}
+
     def _update_layout(self):
         screen = getattr(self.phase, "screen", None)
         tech_tree = getattr(self.phase, "tech_tree", None)
@@ -165,141 +260,122 @@ class TechMenu:
             return
 
         w, h = screen.get_size()
+        tech_count = len(getattr(tech_tree, "techs", {}) or {})
         unlocked_count = len(getattr(tech_tree, "unlocked", []) or [])
-        layout_key = (
-            w,
-            h,
-            unlocked_count,
-            self.scroll_x,
-            len(getattr(tech_tree, "techs", {}) or {}),
-            self.btn_font.get_height(),
-            self.small_font.get_height(),
-        )
-        if self._layout_key == layout_key:
+        key = (w, h, tech_count, unlocked_count, self.node_font.get_height(), self.small_font.get_height())
+        if key == self._layout_key:
             return
-        self._layout_key = layout_key
+        self._layout_key = key
 
-        margin = max(14, int(min(w, h) * 0.03))
-        header_h = max(72, int(h * 0.12))
-        content_y = margin + header_h + margin // 2
-        content_h = h - content_y - int(margin * 1.6)
-        content_rect = pygame.Rect(margin, content_y, w - 2 * margin, content_h)
-
-        tree_w = int(content_rect.width * 0.58)
-        self._tree_rect = pygame.Rect(content_rect.x, content_rect.y, tree_w, content_rect.height)
-        graph_rect = pygame.Rect(content_rect.x + tree_w + margin // 2, content_rect.y, content_rect.width - tree_w - margin // 2, content_rect.height)
-
-        available_w = max(220, graph_rect.width - 32)
-        list_w = int(graph_rect.width * 0.36)
-        list_w = max(90, min(list_w, max(90, available_w - 130)))
-        self._graph_list_rect = pygame.Rect(graph_rect.x + 10, graph_rect.y + 14, list_w, graph_rect.height - 28)
-        self._graph_plot_rect = pygame.Rect(
-            self._graph_list_rect.right + 12,
-            graph_rect.y + 14,
-            max(120, available_w - list_w),
-            graph_rect.height - 28,
+        margin = max(16, int(min(w, h) * 0.03))
+        header_h = max(84, int(h * 0.14))
+        self._tree_rect = pygame.Rect(
+            margin,
+            margin + header_h,
+            w - margin * 2,
+            h - margin * 2 - header_h - max(44, int(h * 0.08)),
         )
 
-        self._bubble_radius = max(26, int(min(self._tree_rect.width, self._tree_rect.height) * 0.075))
+        node_target = math.sqrt(
+            (self._tree_rect.width * self._tree_rect.height) / (max(1, tech_count) * 48.0)
+        )
+        self._node_radius = max(22, min(34, int(node_target)))
+        step = max(self._node_radius * 2.75, min(self._tree_rect.width, self._tree_rect.height) * 0.17)
+
         tech_ids = self._sorted_tech_ids()
         depths = self._compute_depths()
-        max_depth = max(depths.values(), default=0)
-        layer_gap = max(int(self._tree_rect.width * 0.24), self._bubble_radius * 3)
 
-        required_width = (max_depth + 1) * layer_gap + self._bubble_radius * 2 + 30
-        self._max_scroll_x = max(0, required_width - self._tree_rect.width)
-        self.scroll_x = max(0, min(self.scroll_x, self._max_scroll_x))
+        branches = {tid: self._branch_for_tech(tid) for tid in tech_ids}
+        common_nodes = [tid for tid in tech_ids if branches.get(tid) == "common"]
+        split_depth = max((depths.get(tid, 0) for tid in common_nodes), default=0)
 
-        layers = {}
-        for tid in tech_ids:
-            d = depths.get(tid, 0)
-            layers.setdefault(d, []).append(tid)
-        for d in layers:
-            layers[d].sort(key=lambda tid: tech_tree.get_tech(tid).get("nom", tid))
+        # Layout initial dans un espace local, puis recentrage/scaling.
+        raw_centers: Dict[str, Tuple[float, float]] = {}
 
-        centers = {}
-        top = self._tree_rect.y + self._bubble_radius + 12
-        bottom = self._tree_rect.bottom - self._bubble_radius - 12
-        for d, nodes in layers.items():
-            x = self._tree_rect.x + self._bubble_radius + 16 + d * layer_gap - self.scroll_x
-            if len(nodes) == 1:
-                y_positions = [self._tree_rect.centery]
-            else:
-                free_h = max(1, bottom - top)
-                step = free_h / (len(nodes) - 1)
-                y_positions = [int(top + i * step) for i in range(len(nodes))]
+        common_by_depth: Dict[int, List[str]] = {}
+        for tid in common_nodes:
+            common_by_depth.setdefault(depths.get(tid, 0), []).append(tid)
+        for d in sorted(common_by_depth.keys()):
+            nodes = common_by_depth[d]
+            nodes.sort(key=lambda tid: ((tech_tree.get_tech(tid) or {}).get("nom", tid), tid))
+            x = (d - split_depth) * (step * 1.05)
+            count = len(nodes)
             for idx, tid in enumerate(nodes):
-                centers[tid] = (int(x), int(y_positions[idx]))
+                y = (idx - (count - 1) / 2.0) * (self._node_radius * 1.80)
+                raw_centers[tid] = (x, y)
 
-        edges = []
+        branch_nodes: Dict[str, List[str]] = {k: [] for k in self.BRANCH_DIRECTIONS.keys()}
         for tid in tech_ids:
-            for dep in tech_tree.get_dependencies(tid):
-                if dep in centers:
+            b = branches.get(tid, "common")
+            if b in branch_nodes:
+                branch_nodes[b].append(tid)
+
+        for branch, nodes in branch_nodes.items():
+            if not nodes:
+                continue
+            nodes.sort(key=lambda tid: (depths.get(tid, 0), (tech_tree.get_tech(tid) or {}).get("nom", tid)))
+            base_depth = min(depths.get(tid, 0) for tid in nodes)
+            dx, dy = self.BRANCH_DIRECTIONS[branch]
+            norm = math.sqrt(dx * dx + dy * dy) or 1.0
+            dx, dy = dx / norm, dy / norm
+            pdx, pdy = -dy, dx
+
+            by_depth: Dict[int, List[str]] = {}
+            for tid in nodes:
+                by_depth.setdefault(depths.get(tid, 0), []).append(tid)
+
+            for d in sorted(by_depth.keys()):
+                layer = by_depth[d]
+                layer.sort(key=lambda tid: (tech_tree.get_tech(tid) or {}).get("nom", tid))
+                forward = d - base_depth + 1.65
+                bx = dx * step * forward
+                by = dy * step * forward
+                count = len(layer)
+                for idx, tid in enumerate(layer):
+                    side = (idx - (count - 1) / 2.0) * (self._node_radius * 1.95)
+                    raw_centers[tid] = (bx + pdx * side, by + pdy * side)
+
+        pad = self._node_radius + 10
+        centers = self._fit_layout_in_rect(raw_centers, pad)
+        centers = self._relax_layout(centers, pad)
+
+        # Feu prend l'emplacement visuel d'Organisation_du_clan (swap explicite),
+        # sans deplacer tout le reste de l'arbre.
+        if "Feu" in centers and "Organisation_du_clan" in centers:
+            centers["Feu"], centers["Organisation_du_clan"] = (
+                centers["Organisation_du_clan"],
+                centers["Feu"],
+            )
+
+        edges: List[Tuple[str, str]] = []
+        for tid in tech_ids:
+            deps = tech_tree.get_dependencies(tid)
+            for dep in deps:
+                if dep in centers and tid in centers:
                     edges.append((dep, tid))
 
         self._layout_centers = centers
         self._layout_edges = edges
 
-        bubble_style = ButtonStyle(
+        btn_style = ButtonStyle(
             draw_background=False,
             draw_border=False,
             padding_x=0,
             padding_y=0,
-            font=self.btn_font,
+            font=self.node_font,
         )
-        self.bubble_buttons = {}
+        self._buttons = {}
+        size = (self._node_radius * 2, self._node_radius * 2)
         for tech_id, center in self._layout_centers.items():
             btn = Button(
                 text="",
                 pos=center,
-                size=(self._bubble_radius * 2, self._bubble_radius * 2),
+                size=size,
                 anchor="center",
-                style=bubble_style,
+                style=btn_style,
                 on_click=lambda _btn, tid=tech_id: self._start_research(tid),
             )
-            self.bubble_buttons[tech_id] = btn
-
-        self.graph_buttons = {}
-        unlocked = self._sorted_unlocked()
-        if unlocked and self._selected_graph_tech not in unlocked:
-            self._selected_graph_tech = unlocked[0]
-        elif not unlocked:
-            self._selected_graph_tech = None
-
-        row_h = max(30, int(self._graph_list_rect.height * 0.12))
-        btn_style = ButtonStyle(
-            draw_background=True,
-            bg_color=(36, 58, 74),
-            hover_bg_color=(50, 78, 98),
-            active_bg_color=(70, 112, 136),
-            draw_border=True,
-            border_color=(98, 152, 180),
-            border_width=2,
-            radius=8,
-            padding_x=8,
-            padding_y=6,
-            font=self.small_font,
-            hover_zoom=1.02,
-        )
-
-        y = self._graph_list_rect.y + 2
-        for tid in unlocked:
-            label = tech_tree.get_tech(tid).get("nom", tid)
-            clipped = label if len(label) <= 14 else f"{label[:12]}.."
-            btn = Button(
-                text=clipped,
-                pos=(self._graph_list_rect.x + 3, y),
-                size=(self._graph_list_rect.width - 6, row_h),
-                anchor="topleft",
-                style=btn_style,
-                on_click=lambda _btn, tech_id=tid: self._set_graph_tech(tech_id),
-            )
-            self.graph_buttons[tid] = btn
-            y += row_h + 8
-
-    def _set_graph_tech(self, tech_id):
-        if tech_id in self.graph_buttons:
-            self._selected_graph_tech = tech_id
+            self._buttons[tech_id] = btn
 
     def _start_research(self, tech_id):
         tech_tree = getattr(self.phase, "tech_tree", None)
@@ -325,211 +401,166 @@ class TechMenu:
             return
         add_notification("Impossible de demarrer la recherche.")
 
-    def _scroll_tree(self, delta):
-        if self._max_scroll_x <= 0:
-            self.scroll_x = 0
-            return
-        self.scroll_x = max(0, min(self.scroll_x + delta, self._max_scroll_x))
-        self._layout_key = None
-
-    def _handle_scroll_input(self, events):
-        for e in events:
-            if e.type != pygame.MOUSEWHEEL:
-                continue
-            mx, my = pygame.mouse.get_pos()
-            if self._tree_rect.collidepoint((mx, my)):
-                self._scroll_tree(-e.y * 50)
-
     def handle(self, events):
         if not self.active:
             return
-        self._capture_metrics(force=False)
+        screen = getattr(self.phase, "screen", None)
+        if not screen:
+            return
+        self._refresh_fonts(screen.get_size())
         self._update_layout()
-        self._handle_scroll_input(events)
 
         self.back_btn.handle(events)
         self._hovered_tech = None
-
-        for tech_id, btn in self.bubble_buttons.items():
+        for tech_id, btn in self._buttons.items():
             btn.handle(events)
             if btn.is_hovered:
                 self._hovered_tech = tech_id
 
-        for btn in self.graph_buttons.values():
-            btn.handle(events)
+    def _hex_points(self, center: Tuple[int, int], radius: float) -> List[Tuple[int, int]]:
+        cx, cy = float(center[0]), float(center[1])
+        pts = []
+        for i in range(6):
+            ang = math.radians(30 + i * 60)
+            pts.append((int(cx + math.cos(ang) * radius), int(cy + math.sin(ang) * radius)))
+        return pts
 
-    @staticmethod
-    def _bubble_text(label):
-        if not label:
-            return "?"
-        parts = str(label).split()
-        if len(parts) == 1:
-            return parts[0][:7].upper()
-        short = "".join(p[0] for p in parts[:3]).upper()
-        if len(short) >= 2:
-            return short
-        return str(label)[:6].upper()
+    def _draw_hex_bg(self, screen):
+        w, h = screen.get_size()
+        for y in range(h):
+            t = y / max(1, h - 1)
+            c = _mix_color((22, 24, 30), (11, 13, 18), t)
+            pygame.draw.line(screen, c, (0, y), (w, y))
 
-    def _state_for(self, tech_id):
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        r = 24
+        dx = int(r * math.sqrt(3))
+        dy = int(r * 1.5)
+        rows = int(h / dy) + 3
+        cols = int(w / dx) + 3
+        for row in range(rows):
+            oy = row * dy - r
+            offset = (row % 2) * (dx // 2)
+            for col in range(cols):
+                ox = col * dx + offset - r
+                pts = self._hex_points((ox, oy), r)
+                pygame.draw.polygon(overlay, (108, 114, 126, 34), pts, 1)
+        screen.blit(overlay, (0, 0))
+
+    def _draw_header(self, screen):
+        w, h = screen.get_size()
+        margin = max(16, int(min(w, h) * 0.03))
+        header_h = max(84, int(h * 0.14))
+        rect = pygame.Rect(margin, margin, w - 2 * margin, header_h)
+        panel = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        panel.fill((22, 24, 31, 214))
+        screen.blit(panel, rect.topleft)
+        pygame.draw.rect(screen, (150, 156, 167), rect, 2, border_radius=16)
+
+        title_surf = self.title_font.render(self.title, True, (239, 240, 244))
+        screen.blit(title_surf, (rect.x + 18, rect.y + 8))
+
         tech_tree = getattr(self.phase, "tech_tree", None)
-        if not tech_tree:
-            return "locked"
-        if tech_id in tech_tree.unlocked:
-            return "unlocked"
-        if tech_tree.current_research == tech_id:
-            return "research"
-        if tech_tree.can_start(tech_id):
-            return "available"
-        return "locked"
+        current = getattr(tech_tree, "current_research", None) if tech_tree else None
+        innovations = int(getattr(tech_tree, "innovations", 0)) if tech_tree else 0
+        current_class = str(getattr(getattr(self.phase, "espece", None), "main_class", "") or "").strip() or "aucune"
+        info = f"Innovations: {innovations}  |  Classe: {current_class}"
+        if current:
+            info += f"  |  Recherche: {current}"
+        info_surf = self.small_font.render(info, True, (199, 204, 213))
+        screen.blit(info_surf, (rect.x + 18, rect.bottom - info_surf.get_height() - 12))
 
-    def _draw_tree(self, screen):
-        tech_tree = getattr(self.phase, "tech_tree", None)
-        if not tech_tree:
-            return
+    def _draw_tree_panel(self, screen):
+        panel = pygame.Surface((self._tree_rect.width, self._tree_rect.height), pygame.SRCALPHA)
+        panel.fill((14, 16, 22, 176))
+        screen.blit(panel, self._tree_rect.topleft)
+        pygame.draw.rect(screen, (120, 126, 138), self._tree_rect, 2, border_radius=18)
 
-        pygame.draw.rect(screen, (20, 35, 48), self._tree_rect, border_radius=16)
-        pygame.draw.rect(screen, (86, 137, 168), self._tree_rect, 2, border_radius=16)
+    def _edge_color_for_child(self, child_id: str):
+        branch = self._branch_for_tech(child_id)
+        base = self.BRANCH_COLORS.get(branch, self.BRANCH_COLORS["common"])
+        return _mix_color(base, (212, 218, 230), 0.28)
 
-        title = self.small_font.render("Arbre technologique", True, (230, 243, 255))
-        screen.blit(title, (self._tree_rect.x + 16, self._tree_rect.y + 10))
-
-        clip = screen.get_clip()
-        screen.set_clip(self._tree_rect)
-
+    def _draw_edges(self, screen):
         for parent, child in self._layout_edges:
             p = self._layout_centers.get(parent)
             c = self._layout_centers.get(child)
             if not p or not c:
                 continue
-            pygame.draw.line(screen, (98, 130, 152), p, c, 4)
+            col = self._edge_color_for_child(child)
+            pygame.draw.line(screen, _mix_color(col, (255, 255, 255), 0.30), p, c, 5)
+            pygame.draw.line(screen, col, p, c, 2)
 
-        bubble_font = pygame.font.SysFont("consolas", max(12, int(self._bubble_radius * 0.44)), bold=True)
+    def _draw_nodes(self, screen):
+        tech_tree = getattr(self.phase, "tech_tree", None)
+        if not tech_tree:
+            return
+        now = pygame.time.get_ticks() / 1000.0
         for tech_id, center in self._layout_centers.items():
-            tech = tech_tree.get_tech(tech_id)
             state = self._state_for(tech_id)
+            branch = self._branch_for_tech(tech_id)
+            base = self.BRANCH_COLORS.get(branch, self.BRANCH_COLORS["common"])
 
-            # Locked nodes stay colored (not grayscale).
-            fill = (87, 112, 139)
-            border = (188, 211, 230)
-            text_color = (243, 247, 250)
             if state == "unlocked":
-                fill = (64, 139, 94)
-                border = (182, 241, 201)
+                fill = _mix_color(base, (232, 237, 244), 0.44)
+                border = _mix_color(base, (245, 248, 252), 0.68)
             elif state == "research":
-                fill = (65, 109, 171)
-                border = (170, 208, 255)
+                pulse = 0.5 + 0.5 * math.sin(now * 4.2)
+                fill = _mix_color(base, (210, 222, 242), 0.35 + pulse * 0.18)
+                border = _mix_color(base, (255, 255, 255), 0.62)
             elif state == "available":
-                fill = (151, 114, 62)
-                border = (236, 208, 161)
-            elif state == "locked":
-                fill = (124, 82, 73)
-                border = (214, 165, 146)
+                fill = _mix_color(base, (24, 29, 37), 0.52)
+                border = _mix_color(base, (228, 233, 242), 0.44)
+            else:
+                fill = _mix_color(base, (12, 14, 20), 0.84)
+                border = _mix_color(base, (130, 136, 148), 0.24)
 
-            pygame.draw.circle(screen, fill, center, self._bubble_radius)
-            pygame.draw.circle(screen, border, center, self._bubble_radius, 3)
+            if self._hovered_tech == tech_id:
+                fill = _mix_color(fill, (241, 244, 249), 0.16)
+                border = _mix_color(border, (255, 255, 255), 0.24)
 
-            label = self._bubble_text(tech.get("nom", tech_id))
-            txt = bubble_font.render(label, True, text_color)
+            pts_outer = self._hex_points(center, self._node_radius + 3)
+            pts_inner = self._hex_points(center, self._node_radius - 1)
+            pygame.draw.polygon(screen, _mix_color(border, (255, 255, 255), 0.22), pts_outer)
+            pygame.draw.polygon(screen, fill, pts_inner)
+            pygame.draw.polygon(screen, border, pts_inner, 2)
+
+            label = self._node_label(tech_id)
+            txt = self.node_font.render(label, True, (240, 243, 247))
             screen.blit(txt, txt.get_rect(center=center))
 
             if state == "research":
                 cost = max(0, int(tech_tree.get_cost(tech_id)))
                 progress = int(getattr(tech_tree, "current_progress", 0))
                 ratio = 1.0 if cost <= 0 else max(0.0, min(1.0, progress / cost))
-                arc_r = self._bubble_radius + 8
-                start_angle = -math.pi / 2
-                end_angle = start_angle + 2 * math.pi * ratio
-                arc_rect = pygame.Rect(center[0] - arc_r, center[1] - arc_r, arc_r * 2, arc_r * 2)
-                pygame.draw.arc(screen, (220, 239, 255), arc_rect, start_angle, end_angle, 4)
+                ring_r = self._node_radius + 9
+                start = -math.pi / 2
+                end = start + 2 * math.pi * ratio
+                ring_rect = pygame.Rect(center[0] - ring_r, center[1] - ring_r, ring_r * 2, ring_r * 2)
+                pygame.draw.arc(screen, (228, 236, 250), ring_rect, start, end, 3)
 
-        screen.set_clip(clip)
+            if state == "locked":
+                required = getattr(tech_tree, "get_required_class", lambda _tid: None)(tech_id)
+                if required:
+                    marker = (center[0] + self._node_radius - 8, center[1] + self._node_radius - 8)
+                    pygame.draw.circle(screen, (20, 22, 28), marker, 6)
+                    pygame.draw.circle(screen, (244, 160, 160), marker, 3)
 
-    def _draw_metric_graph(self, screen, rect, values, color, title, latest_text):
-        pygame.draw.rect(screen, (19, 31, 42), rect, border_radius=12)
-        pygame.draw.rect(screen, (86, 137, 168), rect, 2, border_radius=12)
-
-        title_surf = self.small_font.render(title, True, (235, 246, 255))
-        screen.blit(title_surf, (rect.x + 12, rect.y + 10))
-        latest_surf = self.small_font.render(latest_text, True, color)
-        screen.blit(latest_surf, (rect.x + 12, rect.y + 10 + title_surf.get_height() + 2))
-
-        plot = rect.inflate(-24, -84)
-        if plot.width <= 4 or plot.height <= 4:
-            return
-
-        pygame.draw.rect(screen, (27, 44, 58), plot, border_radius=8)
-        pygame.draw.rect(screen, (68, 101, 122), plot, 1, border_radius=8)
-
-        if not values:
-            msg = self.tooltip_font.render("Aucune donnee disponible.", True, (200, 210, 220))
-            screen.blit(msg, msg.get_rect(center=plot.center))
-            return
-
-        if len(values) == 1:
-            px = plot.centerx
-            py = plot.bottom - int(plot.height * 0.5)
-            pygame.draw.circle(screen, color, (px, py), 4)
-            return
-
-        v_min = min(values)
-        v_max = max(values)
-        if abs(v_max - v_min) < 1e-6:
-            v_max += 1.0
-            v_min -= 1.0
-
-        points = []
-        for i, value in enumerate(values):
-            x = plot.x + int(i * (plot.width - 1) / max(1, len(values) - 1))
-            ratio = (value - v_min) / (v_max - v_min)
-            y = plot.bottom - int(ratio * (plot.height - 1))
-            points.append((x, y))
-
-        area = pygame.Surface((plot.width, plot.height), pygame.SRCALPHA)
-        shifted = [(x - plot.x, y - plot.y) for x, y in points]
-        area_points = [(shifted[0][0], plot.height)] + shifted + [(shifted[-1][0], plot.height)]
-        pygame.draw.polygon(area, (*color, 70), area_points)
-        screen.blit(area, plot.topleft)
-
-        pygame.draw.lines(screen, color, False, points, 3)
-        pygame.draw.circle(screen, (245, 245, 245), points[-1], 4)
-
-        min_s = self.tooltip_font.render(f"min {v_min:.1f}", True, (178, 198, 212))
-        max_s = self.tooltip_font.render(f"max {v_max:.1f}", True, (178, 198, 212))
-        screen.blit(min_s, (plot.x + 6, plot.bottom + 6))
-        screen.blit(max_s, (plot.right - max_s.get_width() - 6, plot.bottom + 6))
-
-    def _draw_graph_panel(self, screen):
-        panel_rect = self._graph_list_rect.union(self._graph_plot_rect).inflate(20, 18)
-        pygame.draw.rect(screen, (20, 35, 48), panel_rect, border_radius=16)
-        pygame.draw.rect(screen, (86, 137, 168), panel_rect, 2, border_radius=16)
-
-        list_title = self.small_font.render("Graphes debloques", True, (230, 243, 255))
-        screen.blit(list_title, (self._graph_list_rect.x + 8, self._graph_list_rect.y - 12))
-
-        for tech_id, btn in self.graph_buttons.items():
-            if tech_id == self._selected_graph_tech:
-                pygame.draw.rect(screen, (84, 128, 156), btn.rect.inflate(4, 4), border_radius=10)
-            btn.draw(screen)
-
-        tech_tree = getattr(self.phase, "tech_tree", None)
-        unlocked = self._sorted_unlocked()
-        if not tech_tree or not unlocked:
-            msg = self.small_font.render("Debloquez une technologie pour ouvrir un graphe.", True, (212, 220, 228))
-            screen.blit(msg, msg.get_rect(center=self._graph_plot_rect.center))
-            return
-
-        selected = self._selected_graph_tech if self._selected_graph_tech in unlocked else unlocked[0]
-        self._selected_graph_tech = selected
-        tech = tech_tree.get_tech(selected)
-        spec = self._graph_spec_for_tech(selected)
-        if not spec:
-            return
-
-        metric_values = self._metric_series.get(spec["metric"], [])
-        latest_value = metric_values[-1] if metric_values else 0
-        graph_title = f"{tech.get('nom', selected)} - {spec['label']}"
-        latest_text = f"Derniere valeur: {latest_value:.1f}"
-        self._draw_metric_graph(screen, self._graph_plot_rect, metric_values, spec["color"], graph_title, latest_text)
+    def _wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> List[str]:
+        words = str(text or "").split()
+        if not words:
+            return []
+        lines = []
+        current = words[0]
+        for word in words[1:]:
+            trial = current + " " + word
+            if font.size(trial)[0] <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
 
     def _draw_tooltip(self, screen):
         if not self._hovered_tech:
@@ -542,25 +573,25 @@ class TechMenu:
             return
 
         deps = tech_tree.get_dependencies(self._hovered_tech)
-        deps_text = ", ".join(deps) if deps else "Aucune"
+        deps_text = ", ".join(deps) if deps else "Aucun"
         required = getattr(tech_tree, "get_required_class", lambda _tid: None)(self._hovered_tech)
-        required_text = required if required else "Toutes classes"
-        lines = [
-            tech.get("nom", self._hovered_tech),
-            tech.get("description", ""),
-            f"Cout: {tech_tree.get_cost(self._hovered_tech)}",
-            f"Prerequis: {deps_text}",
-            f"Classe requise: {required_text}",
-        ]
-        rendered = [self.tooltip_font.render(line, True, (240, 242, 248)) for line in lines if line]
+        required_text = required if required else "Toutes"
+
+        lines = [str(tech.get("nom", self._hovered_tech))]
+        lines.extend(self._wrap_text(str(tech.get("description", "")), self.tooltip_font, 320))
+        lines.append(f"Cout: {tech_tree.get_cost(self._hovered_tech)}")
+        lines.append(f"Prerequis: {deps_text}")
+        lines.append(f"Classe: {required_text}")
+
+        rendered = [self.tooltip_font.render(line, True, (237, 241, 248)) for line in lines if line]
         if not rendered:
             return
 
-        padding = 8
-        width = max(s.get_width() for s in rendered) + padding * 2
-        height = sum(s.get_height() for s in rendered) + padding * 2
+        pad = 10
+        width = max(s.get_width() for s in rendered) + pad * 2
+        height = sum(s.get_height() for s in rendered) + pad * 2
         mx, my = pygame.mouse.get_pos()
-        rect = pygame.Rect(mx + 16, my + 16, width, height)
+        rect = pygame.Rect(mx + 18, my + 18, width, height)
 
         sw, sh = screen.get_size()
         if rect.right > sw - 8:
@@ -568,58 +599,29 @@ class TechMenu:
         if rect.bottom > sh - 8:
             rect.y = sh - rect.height - 8
 
-        pygame.draw.rect(screen, (38, 41, 52), rect, border_radius=8)
-        pygame.draw.rect(screen, (124, 132, 156), rect, 2, border_radius=8)
+        box = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        box.fill((24, 27, 35, 236))
+        screen.blit(box, rect.topleft)
+        pygame.draw.rect(screen, (156, 164, 178), rect, 2, border_radius=10)
 
-        y = rect.y + padding
+        y = rect.y + pad
         for surf in rendered:
-            screen.blit(surf, (rect.x + padding, y))
+            screen.blit(surf, (rect.x + pad, y))
             y += surf.get_height()
 
     def draw(self, screen):
         if not self.active:
             return
-
-        w, h = screen.get_size()
-        margin = max(14, int(min(w, h) * 0.03))
-        header_h = max(72, int(h * 0.12))
-
-        self.title_font = pygame.font.SysFont("consolas", max(26, int(h * 0.055)), bold=True)
-        self.btn_font = pygame.font.SysFont("consolas", max(14, int(h * 0.022)), bold=True)
-        self.small_font = pygame.font.SysFont("consolas", max(12, int(h * 0.019)))
-        self.tooltip_font = pygame.font.SysFont("consolas", max(12, int(h * 0.017)))
-        self.back_btn.style.font = pygame.font.SysFont("consolas", max(16, int(h * 0.03)), bold=True)
-        self.back_btn._rebuild_surfaces()
-
-        for y in range(h):
-            t = y / max(1, h - 1)
-            color = (
-                int(14 + 20 * t),
-                int(20 + 28 * t),
-                int(30 + 34 * t),
-            )
-            pygame.draw.line(screen, color, (0, y), (w, y))
-
-        header_rect = pygame.Rect(margin, margin, w - 2 * margin, header_h)
-        pygame.draw.rect(screen, (17, 48, 64), header_rect, border_radius=16)
-        pygame.draw.rect(screen, (94, 160, 190), header_rect, 2, border_radius=16)
-
-        title_surf = self.title_font.render(self.title, True, (244, 252, 255))
-        screen.blit(title_surf, (header_rect.x + 18, header_rect.y + 10))
-
-        tech_tree = getattr(self.phase, "tech_tree", None)
-        innovations = int(getattr(tech_tree, "innovations", 0)) if tech_tree else 0
-        current = getattr(tech_tree, "current_research", None) if tech_tree else None
-        sub_txt = f"Innovations: {innovations}"
-        if current:
-            sub_txt += f" | Recherche: {current}"
-        sub_surf = self.small_font.render(sub_txt, True, (190, 224, 240))
-        screen.blit(sub_surf, (header_rect.x + 18, header_rect.bottom - sub_surf.get_height() - 12))
-
+        self._refresh_fonts(screen.get_size())
         self._update_layout()
-        self._draw_tree(screen)
-        self._draw_graph_panel(screen)
+
+        self._draw_hex_bg(screen)
+        self._draw_header(screen)
+        self._draw_tree_panel(screen)
+        self._draw_edges(screen)
+        self._draw_nodes(screen)
         self._draw_tooltip(screen)
 
-        self.back_btn.move_to((margin, h - margin))
+        margin = max(16, int(min(screen.get_width(), screen.get_height()) * 0.03))
+        self.back_btn.move_to((margin, screen.get_height() - margin))
         self.back_btn.draw(screen)

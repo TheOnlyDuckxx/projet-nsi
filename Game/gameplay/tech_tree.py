@@ -55,6 +55,9 @@ class TechTreeManager:
             return False
         if self.current_research is not None:
             return False
+        # Force "Feu" comme point de depart si present dans l'arbre.
+        if "Feu" in self.techs and "Feu" not in self.unlocked and tech_id != "Feu":
+            return False
         if not self.is_class_compatible(tech_id):
             return False
         return all(dep in self.unlocked for dep in self.get_dependencies(tech_id))
