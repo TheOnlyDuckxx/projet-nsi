@@ -28,6 +28,21 @@ def _trim_sprite(surface: pygame.Surface) -> pygame.Surface:
 
 # Classe de base pour l'hérédité des autres menus
 class BaseMenu:
+    BG_COLOR = (18, 33, 29)
+    BG_GLOW = (62, 104, 92)
+    PANEL_BG = (24, 39, 35)
+    PANEL_BG_ALT = (31, 48, 43)
+    PANEL_BORDER = (122, 154, 145)
+    PANEL_BORDER_SOFT = (88, 112, 103)
+    TEXT = (240, 241, 234)
+    TEXT_MUTED = (184, 194, 186)
+    TEXT_DIM = (146, 160, 151)
+    ACCENT = (92, 132, 114)
+    ACCENT_HOVER = (110, 152, 132)
+    ACCENT_STRONG = (134, 180, 157)
+    DANGER = (136, 84, 86)
+    DANGER_HOVER = (160, 98, 100)
+
     def __init__(self, app, title:str):
         self.app = app
         self.app.audio.play_music("main_chill", loops=-1)
@@ -54,13 +69,90 @@ class BaseMenu:
 
     def update(self, dt):
         pass
+
+    def draw_background(self, screen, glow_y: float = 0.23):
+        sw, sh = screen.get_size()
+        screen.fill(self.BG_COLOR)
+        glow = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        ellipse = pygame.Rect(0, 0, int(sw * 0.52), int(sh * 0.24))
+        ellipse.center = (sw // 2, int(sh * glow_y))
+        pygame.draw.ellipse(glow, (*self.BG_GLOW, 52), ellipse)
+        screen.blit(glow, (0, 0))
+
+    def draw_title(self, screen, title: str | None = None, top: int | None = None, color=None):
+        sw, sh = screen.get_size()
+        text = title if title is not None else self.title
+        top = max(22, int(sh * 0.05)) if top is None else int(top)
+        color = self.TEXT if color is None else color
+        title_surf = self.title_font.render(text, True, color)
+        screen.blit(title_surf, (sw // 2 - title_surf.get_width() // 2, top))
+        return title_surf
+
+    def draw_panel(self, screen, rect: pygame.Rect, fill=None, border=None, radius: int = 16):
+        fill = self.PANEL_BG if fill is None else fill
+        border = self.PANEL_BORDER if border is None else border
+        pygame.draw.rect(screen, fill, rect, border_radius=radius)
+        pygame.draw.rect(screen, border, rect, 2, border_radius=radius)
+
+    def themed_button_style(self, font, variant: str = "neutral", *, ghost: bool = False) -> ButtonStyle:
+        if ghost:
+            return ButtonStyle(
+                draw_background=False,
+                font=font,
+                text_color=self.TEXT,
+                hover_text_color=(252, 252, 246),
+                active_text_color=(252, 252, 246),
+                hover_zoom=1.05,
+            )
+        if variant == "primary":
+            return ButtonStyle(
+                draw_background=True,
+                radius=12,
+                padding_x=18,
+                padding_y=10,
+                font=font,
+                bg_color=self.ACCENT,
+                hover_bg_color=self.ACCENT_HOVER,
+                active_bg_color=self.ACCENT_STRONG,
+                border_color=self.PANEL_BORDER,
+                border_width=1,
+                text_color=(248, 249, 242),
+                hover_zoom=1.0,
+            )
+        if variant == "danger":
+            return ButtonStyle(
+                draw_background=True,
+                radius=12,
+                padding_x=18,
+                padding_y=10,
+                font=font,
+                bg_color=self.DANGER,
+                hover_bg_color=self.DANGER_HOVER,
+                active_bg_color=(182, 112, 114),
+                border_color=(214, 180, 182),
+                border_width=1,
+                text_color=(248, 244, 244),
+                hover_zoom=1.0,
+            )
+        return ButtonStyle(
+            draw_background=True,
+            radius=12,
+            padding_x=18,
+            padding_y=10,
+            font=font,
+            bg_color=self.PANEL_BG_ALT,
+            hover_bg_color=(45, 68, 60),
+            active_bg_color=(58, 86, 76),
+            border_color=self.PANEL_BORDER_SOFT,
+            border_width=1,
+            text_color=self.TEXT,
+            hover_zoom=1.0,
+        )
     
     # Affiche le menu niveau moteur
     def render(self, screen):
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
-        title_surf = self.title_font.render(self.title, True, (230,230,230))
-        screen.blit(title_surf, (WIDTH//2 - title_surf.get_width()//2, 50))
+        self.draw_background(screen)
+        self.draw_title(screen)
 
         # 1) corps des widgets
         for w in self.widgets:
@@ -174,17 +266,7 @@ class OptionsMenu(BaseMenu):
             ("Focus individu proche", "controls.focus_nearest"),
             ("Afficher mini-map", "controls.map_toggle"),
         ]
-        bind_style = ButtonStyle(
-            draw_background=True,
-            radius=10,
-            padding_x=14,
-            padding_y=8,
-            hover_zoom=1.03,
-            font=self.info_font,
-            bg_color=(58, 66, 82),
-            hover_bg_color=(74, 84, 104),
-            border_color=(124, 144, 178),
-        )
+        bind_style = self.themed_button_style(self.info_font)
         self.rebind_buttons = {
             path: Button(
                 "Touche",
@@ -197,12 +279,11 @@ class OptionsMenu(BaseMenu):
         }
         self._refresh_rebind_labels()
 
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230, 230, 230), hover_zoom=1.08)
         self.btn_back = Button(
             "← Retour",
             (0, 0),
             anchor="midleft",
-            style=ghost,
+            style=self.themed_button_style(self.btn_font, ghost=True),
             on_click=lambda _b: app.change_state("MENU"),
         )
 
@@ -256,10 +337,20 @@ class OptionsMenu(BaseMenu):
         for widget in self.base_widgets:
             if hasattr(widget, "btn"):
                 widget.btn.style.font = self.info_font
+                widget.btn.style.bg_color = self.PANEL_BG_ALT
+                widget.btn.style.hover_bg_color = (44, 66, 58)
+                widget.btn.style.active_bg_color = (58, 86, 76)
+                widget.btn.style.border_color = self.PANEL_BORDER_SOFT
+                widget.btn.style.text_color = self.TEXT
                 widget.btn.move_to((center_x, content_y + 16))
                 row_h = widget.btn.rect.height + 10
             else:
                 widget.font = self.info_font
+                widget.width = max(280, int(self.content_rect.width * 0.62))
+                widget.track_color = (66, 82, 76)
+                widget.fill_color = self.ACCENT_HOVER
+                widget.knob_color = self.TEXT
+                widget.label_color = self.TEXT
                 widget.pos = (center_x, content_y + 28)
                 widget._rebuild_rects()
                 row_h = 68
@@ -322,18 +413,13 @@ class OptionsMenu(BaseMenu):
     def render(self, screen):
         self._layout()
 
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
+        self.draw_background(screen)
+        self.draw_title(screen)
+        self.draw_panel(screen, self.panel_rect)
 
-        title = self.title_font.render(self.title, True, (235, 235, 235))
-        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 46))
-
-        pygame.draw.rect(screen, (24, 30, 42), self.panel_rect, border_radius=16)
-        pygame.draw.rect(screen, (88, 112, 146), self.panel_rect, 2, border_radius=16)
-
-        section_video = self.section_font.render("Configuration", True, (214, 228, 246))
+        section_video = self.section_font.render("Configuration", True, self.TEXT)
         screen.blit(section_video, (self.content_rect.x + 6, self.content_rect.y - self.scroll + 2))
-        section_keys = self.section_font.render("Raccourcis clavier", True, (214, 228, 246))
+        section_keys = self.section_font.render("Raccourcis clavier", True, self.TEXT)
         keys_y = int(getattr(self, "_keys_section_y", self.content_rect.y + 200))
         screen.blit(section_keys, (self.content_rect.x + 6, keys_y))
 
@@ -344,7 +430,7 @@ class OptionsMenu(BaseMenu):
             widget.draw(screen)
         y = int(getattr(self, "_keys_section_y", self.content_rect.y + 200) + 38)
         for label, path in self.keybind_specs:
-            text = self.info_font.render(label, True, (225, 232, 242))
+            text = self.info_font.render(label, True, self.TEXT)
             screen.blit(text, (self.content_rect.x + 14, y))
             self.rebind_buttons[path].draw(screen)
             y += 44
@@ -353,16 +439,16 @@ class OptionsMenu(BaseMenu):
 
         if self.max_scroll > 0:
             track = pygame.Rect(self.panel_rect.right - 10, self.content_rect.y, 4, self.content_rect.height)
-            pygame.draw.rect(screen, (44, 52, 64), track, border_radius=3)
+            pygame.draw.rect(screen, self.PANEL_BG_ALT, track, border_radius=3)
             thumb_h = max(30, int(track.height * (self.content_rect.height / (self.content_rect.height + self.max_scroll))))
             thumb_y = track.y + int((track.height - thumb_h) * (self.scroll / max(1, self.max_scroll)))
-            pygame.draw.rect(screen, (122, 144, 176), pygame.Rect(track.x, thumb_y, track.width, thumb_h), border_radius=3)
+            pygame.draw.rect(screen, self.ACCENT_HOVER, pygame.Rect(track.x, thumb_y, track.width, thumb_h), border_radius=3)
 
         if self.pending_rebind_path is not None:
-            msg = self.info_font.render("En attente d'une touche...", True, (250, 214, 132))
+            msg = self.info_font.render("En attente d'une touche...", True, self.ACCENT_STRONG)
             screen.blit(msg, (self.panel_rect.x + 20, self.panel_rect.bottom - 42))
         elif self.feedback:
-            msg = self.info_font.render(self.feedback, True, (210, 220, 240))
+            msg = self.info_font.render(self.feedback, True, self.TEXT_MUTED)
             screen.blit(msg, (self.panel_rect.x + 20, self.panel_rect.bottom - 42))
 
         self.btn_back.draw(screen)
@@ -634,36 +720,11 @@ class TutorialIntroMenu(BaseMenu):
         self.body_font = app.assets.get_font("KiwiSoda", max(16, int(HEIGHT * 0.024)))
         self.small_font = app.assets.get_font("KiwiSoda", max(14, int(HEIGHT * 0.020)))
 
-        primary_style = ButtonStyle(
-            draw_background=True,
-            radius=12,
-            padding_x=22,
-            padding_y=12,
-            font=self.body_font,
-            bg_color=(66, 118, 82),
-            hover_bg_color=(82, 144, 102),
-            border_color=(184, 222, 194),
-            border_width=2,
-            hover_zoom=1.0,
-        )
-        secondary_style = ButtonStyle(
-            draw_background=True,
-            radius=12,
-            padding_x=20,
-            padding_y=12,
-            font=self.body_font,
-            bg_color=(46, 58, 76),
-            hover_bg_color=(64, 82, 108),
-            border_color=(124, 146, 176),
-            border_width=2,
-            hover_zoom=1.0,
-        )
-
         self.btn_start = Button(
             "Commencer le tutoriel",
             (0, 0),
             anchor="center",
-            style=primary_style,
+            style=self.themed_button_style(self.body_font, "primary"),
             on_click=lambda _b: self.app.change_state(
                 "LOADING",
                 preset="Tutorial",
@@ -674,7 +735,7 @@ class TutorialIntroMenu(BaseMenu):
             "Retour",
             (0, 0),
             anchor="center",
-            style=secondary_style,
+            style=self.themed_button_style(self.body_font),
             on_click=lambda _b: self.app.change_state("MENU"),
         )
         self._panel_rect = pygame.Rect(0, 0, 10, 10)
@@ -684,17 +745,21 @@ class TutorialIntroMenu(BaseMenu):
         return f"{label} : {control_key_label(settings, path, fallback)}"
 
     def _compute_layout(self):
-        panel_w = min(int(WIDTH * 0.66), 900)
-        panel_h = min(int(HEIGHT * 0.72), 680)
+        sw, sh = self.app.screen.get_size()
+        panel_w = min(int(sw * 0.66), 900)
+        panel_h = min(int(sh * 0.72), 680)
         self._panel_rect = pygame.Rect(
-            WIDTH // 2 - panel_w // 2,
-            HEIGHT // 2 - panel_h // 2,
+            sw // 2 - panel_w // 2,
+            sh // 2 - panel_h // 2,
             panel_w,
             panel_h,
         )
         button_y = self._panel_rect.bottom - 48
-        self.btn_back.move_to((self._panel_rect.centerx - 150, button_y))
-        self.btn_start.move_to((self._panel_rect.centerx + 150, button_y))
+        gap = 18
+        total_w = self.btn_back.rect.width + self.btn_start.rect.width + gap
+        start_x = self._panel_rect.centerx - total_w // 2
+        self.btn_back.move_to((start_x + self.btn_back.rect.width // 2, button_y))
+        self.btn_start.move_to((self.btn_back.rect.right + gap + self.btn_start.rect.width // 2, button_y))
 
     def handle_input(self, events):
         self._compute_layout()
@@ -706,14 +771,12 @@ class TutorialIntroMenu(BaseMenu):
 
     def render(self, screen):
         self._compute_layout()
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
+        self.draw_background(screen)
 
         panel = self._panel_rect
-        pygame.draw.rect(screen, (22, 28, 38), panel, border_radius=18)
-        pygame.draw.rect(screen, (110, 136, 170), panel, 2, border_radius=18)
+        self.draw_panel(screen, panel, radius=18)
 
-        title = self.title_font.render("Tutoriel jouable", True, (238, 242, 246))
+        title = self.title_font.render("Tutoriel jouable", True, self.TEXT)
         title_y = panel.y + 24
         screen.blit(title, (panel.centerx - title.get_width() // 2, title_y))
 
@@ -724,12 +787,12 @@ class TutorialIntroMenu(BaseMenu):
         ]
         y = title_y + title.get_height() + 18
         for line in intro_lines:
-            surf = self.body_font.render(line, True, (220, 226, 235))
+            surf = self.body_font.render(line, True, self.TEXT)
             screen.blit(surf, (panel.centerx - surf.get_width() // 2, y))
             y += surf.get_height() + 6
 
         y += 16
-        section = self.body_font.render("Raccourcis utilisés pendant le tutoriel", True, (244, 228, 166))
+        section = self.body_font.render("Raccourcis utilisés pendant le tutoriel", True, self.ACCENT_STRONG)
         screen.blit(section, (panel.x + 28, y))
         y += section.get_height() + 12
 
@@ -742,7 +805,7 @@ class TutorialIntroMenu(BaseMenu):
             "Ordres : clic droit",
         ]
         for line in key_lines:
-            surf = self.body_font.render(line, True, (214, 220, 230))
+            surf = self.body_font.render(line, True, self.TEXT_MUTED)
             screen.blit(surf, (panel.x + 36, y))
             y += surf.get_height() + 8
 
@@ -750,7 +813,7 @@ class TutorialIntroMenu(BaseMenu):
         note = self.small_font.render(
             "Le tutoriel n'utilise pas de sauvegarde et ne compte pas comme une vraie partie.",
             True,
-            (168, 182, 200),
+            self.TEXT_DIM,
         )
         screen.blit(note, (panel.centerx - note.get_width() // 2, panel.bottom - 118))
 
@@ -800,12 +863,14 @@ class SaveSelectionMenu(BaseMenu):
         if reset_page:
             self._page = 0
 
-        panel_w = int(WIDTH * 0.56)
-        btn_h = max(48, int(HEIGHT * 0.075))
-        gap = max(8, int(HEIGHT * 0.015))
-        top = int(HEIGHT * 0.25)
-        bottom_reserved = int(HEIGHT * 0.22)
-        usable_h = max(btn_h, HEIGHT - top - bottom_reserved)
+        sw, sh = self.app.screen.get_size()
+
+        panel_w = int(sw * 0.56)
+        btn_h = max(48, int(sh * 0.075))
+        gap = max(8, int(sh * 0.015))
+        top = int(sh * 0.25)
+        bottom_reserved = int(sh * 0.22)
+        usable_h = max(btn_h, sh - top - bottom_reserved)
         self._per_page = max(1, usable_h // (btn_h + gap))
 
         self._page_count = max(1, int(math.ceil(len(self._slots) / max(1, self._per_page))))
@@ -815,21 +880,21 @@ class SaveSelectionMenu(BaseMenu):
         self._visible_slots = self._slots[start:end]
 
         delete_w = max(72, int(panel_w * 0.11))
-        row_gap = max(10, int(HEIGHT * 0.015))
+        row_gap = max(10, int(sh * 0.015))
         load_w = panel_w - delete_w - row_gap
-        row_x = WIDTH // 2 - panel_w // 2
+        row_x = sw // 2 - panel_w // 2
 
         load_style = ButtonStyle(
             draw_background=True,
-            bg_color=(36, 48, 62),
-            hover_bg_color=(58, 82, 110),
-            active_bg_color=(44, 108, 150),
+            bg_color=self.PANEL_BG_ALT,
+            hover_bg_color=(44, 68, 60),
+            active_bg_color=(58, 86, 76),
             draw_border=True,
-            border_color=(120, 160, 200),
-            border_width=2,
+            border_color=self.PANEL_BORDER_SOFT,
+            border_width=1,
             radius=12,
             font=self.btn_font,
-            text_color=(238, 242, 248),
+            text_color=self.TEXT,
             padding_x=16,
             padding_y=10,
             hover_zoom=1.0,
@@ -837,12 +902,12 @@ class SaveSelectionMenu(BaseMenu):
         )
         delete_style = ButtonStyle(
             draw_background=True,
-            bg_color=(88, 36, 44),
-            hover_bg_color=(124, 48, 62),
-            active_bg_color=(150, 56, 74),
+            bg_color=self.DANGER,
+            hover_bg_color=self.DANGER_HOVER,
+            active_bg_color=(182, 112, 114),
             draw_border=True,
-            border_color=(195, 120, 135),
-            border_width=2,
+            border_color=(214, 180, 182),
+            border_width=1,
             radius=12,
             font=self.btn_font,
             text_color=(250, 240, 240),
@@ -879,24 +944,24 @@ class SaveSelectionMenu(BaseMenu):
 
         pager_style = ButtonStyle(
             draw_background=True,
-            bg_color=(36, 40, 52),
-            hover_bg_color=(56, 66, 88),
-            active_bg_color=(72, 88, 116),
+            bg_color=self.PANEL_BG_ALT,
+            hover_bg_color=(44, 66, 58),
+            active_bg_color=(58, 86, 76),
             draw_border=True,
-            border_color=(130, 145, 175),
-            border_width=2,
+            border_color=self.PANEL_BORDER_SOFT,
+            border_width=1,
             radius=10,
             font=self.btn_font,
-            text_color=(236, 236, 236),
+            text_color=self.TEXT,
             hover_zoom=1.0,
         )
-        pager_y = HEIGHT - max(122, int(HEIGHT * 0.18))
-        pager_w = max(84, int(WIDTH * 0.12))
-        pager_h = max(40, int(HEIGHT * 0.065))
+        pager_y = sh - max(122, int(sh * 0.18))
+        pager_w = max(84, int(sw * 0.12))
+        pager_h = max(40, int(sh * 0.065))
         self.add(
             Button(
                 "◀",
-                (WIDTH // 2 - max(110, int(WIDTH * 0.14)), pager_y),
+                (sw // 2 - max(110, int(sw * 0.14)), pager_y),
                 size=(pager_w, pager_h),
                 anchor="center",
                 style=pager_style,
@@ -907,7 +972,7 @@ class SaveSelectionMenu(BaseMenu):
         self.add(
             Button(
                 "▶",
-                (WIDTH // 2 + max(110, int(WIDTH * 0.14)), pager_y),
+                (sw // 2 + max(110, int(sw * 0.14)), pager_y),
                 size=(pager_w, pager_h),
                 anchor="center",
                 style=pager_style,
@@ -918,22 +983,22 @@ class SaveSelectionMenu(BaseMenu):
 
         back_style = ButtonStyle(
             draw_background=True,
-            bg_color=(42, 45, 54),
-            hover_bg_color=(60, 67, 86),
-            active_bg_color=(88, 95, 120),
+            bg_color=self.PANEL_BG_ALT,
+            hover_bg_color=(44, 66, 58),
+            active_bg_color=(58, 86, 76),
             draw_border=True,
-            border_color=(140, 150, 170),
-            border_width=2,
+            border_color=self.PANEL_BORDER_SOFT,
+            border_width=1,
             radius=10,
             font=self.btn_font,
-            text_color=(236, 236, 236),
+            text_color=self.TEXT,
             hover_zoom=1.0,
         )
         self.add(
             Button(
                 "Retour",
-                (WIDTH // 2, HEIGHT - max(60, int(HEIGHT * 0.09))),
-                size=(max(180, int(WIDTH * 0.2)), max(42, int(HEIGHT * 0.07))),
+                (sw // 2, sh - max(60, int(sh * 0.09))),
+                size=(max(180, int(sw * 0.2)), max(42, int(sh * 0.07))),
                 anchor="center",
                 style=back_style,
                 on_click=lambda _b: self.app.change_state("MENU"),
@@ -961,18 +1026,19 @@ class SaveSelectionMenu(BaseMenu):
 
     def render(self, screen):
         super().render(screen)
+        sw, sh = screen.get_size()
         if not self._visible_slots:
-            txt = self.info_font.render("Aucune sauvegarde disponible.", True, (230, 230, 230))
-            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, int(HEIGHT * 0.35)))
+            txt = self.info_font.render("Aucune sauvegarde disponible.", True, self.TEXT)
+            screen.blit(txt, (sw // 2 - txt.get_width() // 2, int(sh * 0.35)))
         info = self.info_font.render(
             f"Page {self._page + 1}/{self._page_count}  •  {len(self._slots)} sauvegarde(s)",
             True,
-            (210, 215, 225),
+            self.TEXT_MUTED,
         )
-        screen.blit(info, (WIDTH // 2 - info.get_width() // 2, HEIGHT - max(164, int(HEIGHT * 0.24))))
+        screen.blit(info, (sw // 2 - info.get_width() // 2, sh - max(164, int(sh * 0.24))))
         if self._notice:
-            note = self.info_font.render(self._notice, True, (230, 210, 120))
-            screen.blit(note, (WIDTH // 2 - note.get_width() // 2, HEIGHT - max(138, int(HEIGHT * 0.20))))
+            note = self.info_font.render(self._notice, True, self.ACCENT_STRONG)
+            screen.blit(note, (sw // 2 - note.get_width() // 2, sh - max(138, int(sh * 0.20))))
 
 
 class CreditMenu(BaseMenu):
@@ -999,8 +1065,7 @@ class CreditMenu(BaseMenu):
             "Commencé le 02/10/2025 et terminé le ...",
         ]
 
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230,230,230), hover_zoom=1.08)
-        self.btn_back = Button("← Retour", (WIDTH//2, HEIGHT//2), anchor="center", style=ghost,
+        self.btn_back = Button("← Retour", (WIDTH//2, HEIGHT//2), anchor="center", style=self.themed_button_style(self.btn_font, ghost=True),
                                on_click=lambda b: self.app.change_state("MENU"))
         self.add(self.btn_back)
 
@@ -1010,20 +1075,21 @@ class CreditMenu(BaseMenu):
         def clamp(v, a, b):
             return a if v < a else b if v > b else v
 
-        x = WIDTH // 2
-        color = (230, 230, 230)
+        sw, sh = self.app.screen.get_size()
+        x = sw // 2
+        color = self.TEXT
 
         self._title_surf = self.title_font.render(self.title, True, color)
 
         self._text_surfs = [self.credit_font.render(line, True, color) for line in self.lines]
-        line_gap = clamp(int(HEIGHT * 0.012), 4, 16)
-        title_gap = clamp(int(HEIGHT * 0.035), 10, 40)
-        back_gap = clamp(int(HEIGHT * 0.050), 14, 60)
+        line_gap = clamp(int(sh * 0.012), 4, 16)
+        title_gap = clamp(int(sh * 0.035), 10, 40)
+        back_gap = clamp(int(sh * 0.050), 14, 60)
 
         text_h = sum(s.get_height() for s in self._text_surfs) + (len(self._text_surfs) - 1) * line_gap
         total_h = self._title_surf.get_height() + title_gap + text_h + back_gap + self.btn_back.rect.height
 
-        top_y = HEIGHT // 2 - total_h // 2
+        top_y = sh // 2 - total_h // 2
 
         self._title_pos = (x - self._title_surf.get_width() // 2, top_y)
 
@@ -1045,8 +1111,8 @@ class CreditMenu(BaseMenu):
                 self.app.change_state("MENU")
 
     def render(self, screen):
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
+        self._compute_layout()
+        self.draw_background(screen)
 
         screen.blit(self._title_surf, self._title_pos)
         for s, pos in zip(self._text_surfs, self._lines_pos):
@@ -1057,13 +1123,13 @@ class CreditMenu(BaseMenu):
 
 
 class AchievementsMenu(BaseMenu):
-    PANEL_BG = (30, 38, 50)
-    PANEL_BORDER = (90, 110, 140)
-    CARD_BG_UNLOCKED = (58, 78, 104)
-    CARD_BG_LOCKED = (36, 44, 56)
-    TEXT_UNLOCKED = (235, 235, 235)
-    TEXT_LOCKED = (170, 170, 170)
-    TEXT_MUTED = (130, 140, 150)
+    PANEL_BG = BaseMenu.PANEL_BG
+    PANEL_BORDER = BaseMenu.PANEL_BORDER
+    CARD_BG_UNLOCKED = (42, 64, 57)
+    CARD_BG_LOCKED = (31, 46, 41)
+    TEXT_UNLOCKED = BaseMenu.TEXT
+    TEXT_LOCKED = BaseMenu.TEXT_MUTED
+    TEXT_MUTED = BaseMenu.TEXT_DIM
 
     def __init__(self, app):
         super().__init__(app, title="Succes")
@@ -1085,12 +1151,11 @@ class AchievementsMenu(BaseMenu):
         self._max_scroll = 0
         self._panel_rect = pygame.Rect(0, 0, 10, 10)
 
-        ghost = ButtonStyle(draw_background=False, font=self.btn_font, text_color=(230, 230, 230), hover_zoom=1.06)
         self.btn_back = Button(
             "Retour",
             (WIDTH // 2, HEIGHT - max(60, int(HEIGHT * 0.10))),
             anchor="center",
-            style=ghost,
+            style=self.themed_button_style(self.btn_font, ghost=True),
             on_click=lambda b: self.app.change_state("MENU"),
         )
         self.add(self.btn_back)
@@ -1104,21 +1169,22 @@ class AchievementsMenu(BaseMenu):
         def clamp(v, a, b):
             return a if v < a else b if v > b else v
 
-        margin = clamp(int(WIDTH * 0.10), 40, 140)
-        top = clamp(int(HEIGHT * 0.18), 90, 180)
-        bottom = clamp(int(HEIGHT * 0.18), 90, 180)
+        sw, sh = self.app.screen.get_size()
+        margin = clamp(int(sw * 0.10), 40, 140)
+        top = clamp(int(sh * 0.18), 90, 180)
+        bottom = clamp(int(sh * 0.18), 90, 180)
 
         self._panel_rect = pygame.Rect(
             margin,
             top,
-            max(200, WIDTH* 0.8 - 2 * margin),
-            max(160, HEIGHT - top - bottom),
+            max(200, sw - 2 * margin),
+            max(160, sh - top - bottom),
         )
 
-        self._title_surf = self.title_font.render(self.title, True, (230, 230, 230))
-        self._title_pos = (WIDTH // 2 - self._title_surf.get_width() // 2, max(24, int(HEIGHT * 0.06)))
+        self._title_surf = self.title_font.render(self.title, True, self.TEXT)
+        self._title_pos = (sw // 2 - self._title_surf.get_width() // 2, max(24, int(sh * 0.06)))
 
-        self.btn_back.move_to((WIDTH // 2, HEIGHT - max(50, int(HEIGHT * 0.08))))
+        self.btn_back.move_to((sw // 2, sh - max(50, int(sh * 0.08))))
 
     def handle_input(self, events):
         super().handle_input(events)
@@ -1136,13 +1202,11 @@ class AchievementsMenu(BaseMenu):
 
     def render(self, screen):
         self._compute_layout()
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
+        self.draw_background(screen)
         screen.blit(self._title_surf, self._title_pos)
 
         panel = self._panel_rect
-        pygame.draw.rect(screen, self.PANEL_BG, panel, border_radius=14)
-        pygame.draw.rect(screen, self.PANEL_BORDER, panel, width=2, border_radius=14)
+        self.draw_panel(screen, panel, fill=self.PANEL_BG, border=self.PANEL_BORDER, radius=14)
 
         achievements = []
         if getattr(self.app, "progression", None):
@@ -1173,12 +1237,12 @@ class AchievementsMenu(BaseMenu):
                 unlocked = bool(ach.get("unlocked", False))
                 card_bg = self.CARD_BG_UNLOCKED if unlocked else self.CARD_BG_LOCKED
                 txt_title = self.TEXT_UNLOCKED if unlocked else self.TEXT_LOCKED
-                txt_body = (210, 215, 220) if unlocked else (150, 155, 165)
+                txt_body = (216, 224, 218) if unlocked else self.TEXT_DIM
 
                 rect = pygame.Rect(panel.x + pad, y, panel.width - pad * 2, card_h)
                 if rect.bottom >= panel.y and rect.top <= panel.bottom:
                     pygame.draw.rect(screen, card_bg, rect, border_radius=10)
-                    pygame.draw.rect(screen, self.PANEL_BORDER, rect, width=1, border_radius=10)
+                    pygame.draw.rect(screen, self.PANEL_BORDER_SOFT, rect, width=1, border_radius=10)
 
                     title = str(ach.get("title") or "Succes")
                     desc = str(ach.get("description") or "")
@@ -1213,17 +1277,17 @@ class AchievementsMenu(BaseMenu):
 
 
 class WorldCreationMenu(BaseMenu):
-    LEFT_BG = (32, 44, 48)
-    RIGHT_BG = (8, 8, 12)
-    PANEL_LINE = (75, 84, 96)
-    CARD_BG = (46, 58, 68)
-    CARD_BG_HOVER = (56, 70, 82)
-    ACCENT = (80, 160, 200)
-    TEXT = (232, 232, 232)
-    TEXT_MUTED = (170, 178, 186)
-    INPUT_BG = (235, 235, 235)
-    INPUT_FG = (25, 25, 25)
-    INPUT_PLACEHOLDER = (120, 120, 120)
+    LEFT_BG = BaseMenu.PANEL_BG
+    RIGHT_BG = BaseMenu.BG_COLOR
+    PANEL_LINE = BaseMenu.PANEL_BORDER_SOFT
+    CARD_BG = BaseMenu.PANEL_BG_ALT
+    CARD_BG_HOVER = (45, 68, 60)
+    ACCENT = BaseMenu.ACCENT_STRONG
+    TEXT = BaseMenu.TEXT
+    TEXT_MUTED = BaseMenu.TEXT_MUTED
+    INPUT_BG = (232, 236, 231)
+    INPUT_FG = (25, 32, 29)
+    INPUT_PLACEHOLDER = (114, 124, 118)
 
     def __init__(self, app):
         super().__init__(app, title="Paramètres du monde")
@@ -1630,14 +1694,14 @@ class WorldCreationMenu(BaseMenu):
     def _draw_sprite_button(self, screen, rect, hovered, pressed, lines, *, primary=False):
         if primary:
             bg = self._shade(self.ACCENT, -20 if pressed else 0)
-            border = (20, 30, 45)
-            text_main = (255, 255, 255)
-            text_sub = (235, 245, 250)
+            border = self.PANEL_LINE
+            text_main = self.TEXT
+            text_sub = self.TEXT
         else:
             bg = self.CARD_BG_HOVER if hovered else self.CARD_BG
             if pressed:
                 bg = self._shade(bg, -8)
-            border = self.ACCENT if hovered else (20, 24, 30)
+            border = self.ACCENT if hovered else self.PANEL_LINE
             text_main = self.TEXT
             text_sub = self.TEXT_MUTED
 
@@ -1740,19 +1804,19 @@ class WorldCreationMenu(BaseMenu):
 
 
 class SpeciesCreationMenu(BaseMenu):
-    LEFT_BG = (32, 44, 48)
-    RIGHT_BG = (8, 8, 12)
-    PANEL_LINE = (75, 84, 96)
-    CARD_BG = (46, 58, 68)
-    CARD_BG_HOVER = (56, 70, 82)
-    CARD_BG_DISABLED = (32, 38, 46)
-    ACCENT = (80, 160, 200)
-    TEXT = (232, 232, 232)
+    LEFT_BG = BaseMenu.PANEL_BG
+    RIGHT_BG = BaseMenu.BG_COLOR
+    PANEL_LINE = BaseMenu.PANEL_BORDER_SOFT
+    CARD_BG = BaseMenu.PANEL_BG_ALT
+    CARD_BG_HOVER = (45, 68, 60)
+    CARD_BG_DISABLED = (28, 40, 36)
+    ACCENT = BaseMenu.ACCENT_STRONG
+    TEXT = BaseMenu.TEXT
     MUT_GAIN = (80, 200, 140)
     MUT_COST = (220, 110, 110)
-    INPUT_BG = (235, 235, 235)
-    INPUT_FG = (25, 25, 25)
-    INPUT_PLACEHOLDER = (120, 120, 120)
+    INPUT_BG = (232, 236, 231)
+    INPUT_FG = (25, 32, 29)
+    INPUT_PLACEHOLDER = (114, 124, 118)
 
     def __init__(self, app):
         super().__init__(app, title="Creation d'espece")
@@ -2043,6 +2107,10 @@ class SpeciesCreationMenu(BaseMenu):
                 min_v=min_delta,
                 max_v=max_delta,
                 step=1,
+                track_color=(66, 82, 76),
+                fill_color=self.ACCENT,
+                knob_color=self.TEXT,
+                label_color=self.TEXT,
             )
             self._stat_items.append({
                 "cat": cat,
@@ -2172,17 +2240,17 @@ class SpeciesCreationMenu(BaseMenu):
         if self._btn_layout_key != btn_layout_key:
             primary = ButtonStyle(
                 draw_background=True,
-                bg_color=(60, 90, 120),
-                hover_bg_color=(80, 120, 160),
-                active_bg_color=(60, 140, 210),
+                bg_color=self.ACCENT,
+                hover_bg_color=(148, 190, 167),
+                active_bg_color=(170, 206, 184),
                 draw_border=True,
-                border_color=(20, 30, 45),
-                border_width=2,
+                border_color=self.PANEL_LINE,
+                border_width=1,
                 radius=14,
                 font=self.btn_font,
-                text_color=(255, 255, 255),
-                hover_text_color=(255, 255, 255),
-                active_text_color=(255, 255, 255),
+                text_color=(248, 249, 242),
+                hover_text_color=(248, 249, 242),
+                active_text_color=(248, 249, 242),
                 padding_x=26,
                 padding_y=14,
                 shadow=True,
@@ -2194,7 +2262,7 @@ class SpeciesCreationMenu(BaseMenu):
             ghost = ButtonStyle(
                 draw_background=False,
                 font=self.btn_font,
-                text_color=(230, 230, 230),
+                text_color=self.TEXT,
                 hover_zoom=1.06,
                 zoom_speed=0.22,
             )
@@ -2362,12 +2430,12 @@ class SpeciesCreationMenu(BaseMenu):
     def _draw_tabs(self, screen):
         for i, rect in enumerate(self._tab_rects):
             active = i == self.active_tab
-            bg = self.ACCENT if active else (38, 48, 58)
-            border = (20, 24, 30)
+            bg = self.ACCENT if active else self.CARD_BG
+            border = self.PANEL_LINE
             pygame.draw.rect(screen, bg, rect, border_radius=12)
             pygame.draw.rect(screen, border, rect, width=2, border_radius=12)
             label = self._tab_labels[i]
-            txt = self.tab_font.render(label, True, (250, 250, 250))
+            txt = self.tab_font.render(label, True, self.TEXT)
             screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
 
     def _draw_identity_tab(self, screen):
@@ -2377,7 +2445,7 @@ class SpeciesCreationMenu(BaseMenu):
 
         # input
         pygame.draw.rect(screen, self.INPUT_BG, self._name_rect, border_radius=10)
-        border = (255, 255, 255) if self.name_active else (210, 210, 210)
+        border = self.ACCENT if self.name_active else self.PANEL_LINE
         pygame.draw.rect(screen, border, self._name_rect, 2, border_radius=10)
 
         if self.species_name:
@@ -2403,7 +2471,7 @@ class SpeciesCreationMenu(BaseMenu):
         for rect, opt in self._color_rects:
             pygame.draw.rect(screen, opt["swatch"], rect, border_radius=8)
             is_selected = opt["id"] == self.selected_color
-            border_col = self.ACCENT if is_selected else (20, 24, 30)
+            border_col = self.ACCENT if is_selected else self.PANEL_LINE
             pygame.draw.rect(screen, border_col, rect, width=3 if is_selected else 2, border_radius=8)
             if is_selected:
                 pygame.draw.rect(screen, (255, 255, 255), rect.inflate(-6, -6), width=1, border_radius=6)
@@ -2437,7 +2505,7 @@ class SpeciesCreationMenu(BaseMenu):
 
             bg = self.CARD_BG_DISABLED if blocked else (self.CARD_BG_HOVER if rect.collidepoint(mouse_pos) else self.CARD_BG)
             pygame.draw.rect(screen, bg, rect, border_radius=10)
-            border_col = self.ACCENT if selected else (20, 24, 30)
+            border_col = self.ACCENT if selected else self.PANEL_LINE
             pygame.draw.rect(screen, border_col, rect, width=2, border_radius=10)
 
             name_surf = self.small_font.render(str(name), True, self.TEXT)

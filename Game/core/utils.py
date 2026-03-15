@@ -417,7 +417,23 @@ class Toggle:
 
 # ---- SLIDER (0..1 ou 0..100) ----
 class Slider:
-    def __init__(self, label, pos, width, get_value, set_value, font, min_v=0.0, max_v=1.0, step=0.01, anchor="center"):
+    def __init__(
+        self,
+        label,
+        pos,
+        width,
+        get_value,
+        set_value,
+        font,
+        min_v=0.0,
+        max_v=1.0,
+        step=0.01,
+        anchor="center",
+        track_color=(80, 90, 110),
+        fill_color=(40, 140, 240),
+        knob_color=(230, 230, 230),
+        label_color=(230, 230, 230),
+    ):
         self.label = label
         self.pos = pos
         self.width = width
@@ -426,6 +442,10 @@ class Slider:
         self.min_v, self.max_v, self.step = min_v, max_v, step
         self.font = font
         self.anchor = anchor
+        self.track_color = track_color
+        self.fill_color = fill_color
+        self.knob_color = knob_color
+        self.label_color = label_color
 
         # Barre
         self.height = 8
@@ -440,7 +460,7 @@ class Slider:
         y = self.pos[1]
         # ancre "center" only pour concision; ajoute d'autres si besoin
         self.bar_rect = pygame.Rect(x - self.width//2, y - self.height//2, self.width, self.height)
-        self.label_surf = self.font.render(self.label, True, (230,230,230))
+        self.label_surf = self.font.render(self.label, True, self.label_color)
         self.label_pos = (self.bar_rect.centerx - self.label_surf.get_width()//2, self.bar_rect.top - 36)
 
     def _val_to_x(self, v):
@@ -474,14 +494,14 @@ class Slider:
         # label
         screen.blit(self.label_surf, self.label_pos)
         # barre
-        pygame.draw.rect(screen, (80, 90, 110), self.bar_rect, border_radius=4)
+        pygame.draw.rect(screen, self.track_color, self.bar_rect, border_radius=4)
         # fill
         fill_rect = self.bar_rect.copy()
         cur_x = self._val_to_x(self.get_value())
         fill_rect.width = max(0, cur_x - self.bar_rect.left)
-        pygame.draw.rect(screen, (40, 140, 240), fill_rect, border_radius=4)
+        pygame.draw.rect(screen, self.fill_color, fill_rect, border_radius=4)
         # knob
-        pygame.draw.circle(screen, (230, 230, 230), (cur_x, self.bar_rect.centery), self.knob_r)
+        pygame.draw.circle(screen, self.knob_color, (cur_x, self.bar_rect.centery), self.knob_r)
 
 class ValueSelector:
     def __init__(self, rect, label, min_value, max_value, step, start_value, font=None):

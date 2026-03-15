@@ -35,17 +35,10 @@ class EndGameScreen(BaseMenu):
         self.small_font = app.assets.get_font("MightySouly", 22)
         self.graph_font = app.assets.get_font("MightySouly", 18)
 
-        btn_style = ButtonStyle(
-            font=app.assets.get_font("MightySouly", 30),
-            bg_color=(60, 68, 82),
-            hover_bg_color=(78, 88, 106),
-            border_color=(130, 150, 170),
-            radius=12,
-        )
         self.btn_continue = Button(
             "Retour au menu",
             (WIDTH // 2, HEIGHT - 90),
-            style=btn_style,
+            style=self.themed_button_style(app.assets.get_font("MightySouly", 30)),
             on_click=lambda _b: self.app.change_state("MENU"),
         )
 
@@ -84,9 +77,9 @@ class EndGameScreen(BaseMenu):
 
         style = ButtonStyle(
             font=self.graph_font,
-            bg_color=(44, 52, 64),
-            hover_bg_color=(70, 82, 100),
-            border_color=(110, 130, 150),
+            bg_color=self.PANEL_BG_ALT,
+            hover_bg_color=(45, 68, 60),
+            border_color=self.PANEL_BORDER_SOFT,
             radius=10,
             padding_x=14,
             padding_y=8,
@@ -353,29 +346,29 @@ class EndGameScreen(BaseMenu):
         self._draw_line_graph(screen, r6, death_rate, "Taux mortalite / jour", (255, 168, 168), percent=True)
 
     def render(self, screen):
-        screen.blit(self.bg, (0, 0))
-        screen.blit(self._overlay, (0, 0))
+        sw, sh = screen.get_size()
+        self.draw_background(screen)
+        self.draw_title(screen)
 
-        title_surf = self.title_font.render(self.title, True, (230, 230, 230))
-        screen.blit(title_surf, (WIDTH // 2 - title_surf.get_width() // 2, 50))
-
-        panel_w = int(WIDTH * 0.84)
-        panel_h = int(HEIGHT * 0.72)
-        panel_x = WIDTH // 2 - panel_w // 2
-        panel_y = int(HEIGHT * 0.15)
+        panel_w = int(sw * 0.84)
+        panel_h = int(sh * 0.72)
+        panel_x = sw // 2 - panel_w // 2
+        panel_y = int(sh * 0.15)
         panel = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
-        pygame.draw.rect(screen, (24, 28, 38), panel, border_radius=16)
-        pygame.draw.rect(screen, (70, 82, 96), panel, 2, border_radius=16)
+        self.draw_panel(screen, panel)
+        self.btn_continue.move_to((sw // 2, sh - max(60, int(sh * 0.09))))
 
         self._ensure_tab_buttons(panel)
         for tab_id, btn in self.tab_buttons.items():
-            old_active = btn.style.active_bg_color
             if tab_id == self.active_tab:
-                btn.style.active_bg_color = (85, 115, 150)
+                btn.style.bg_color = self.ACCENT
+                btn.style.hover_bg_color = self.ACCENT_HOVER
             btn.draw(screen)
-            btn.style.active_bg_color = old_active
+            if tab_id == self.active_tab:
+                btn.style.bg_color = self.PANEL_BG_ALT
+                btn.style.hover_bg_color = (45, 68, 60)
         if not self.stats_available:
-            locked = self.graph_font.render("Statistiques indisponibles (< 1 jour)", True, (190, 165, 150))
+            locked = self.graph_font.render("Statistiques indisponibles (< 1 jour)", True, self.TEXT_DIM)
             screen.blit(locked, (panel.x + 20, panel.y + 54))
 
         content = pygame.Rect(panel.x + 18, panel.y + 70, panel.width - 36, panel.height - 86)
