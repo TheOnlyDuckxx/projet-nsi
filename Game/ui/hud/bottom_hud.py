@@ -112,6 +112,13 @@ class BottomHUD:
         self.craft_buttons = craft_buttons
         self._layout_craft_buttons()
 
+    def get_craft_button_rect(self, craft_id: str) -> pygame.Rect | None:
+        self._update_layout()
+        for current_id, btn in self.craft_buttons:
+            if current_id == craft_id:
+                return btn.rect.copy()
+        return None
+
     def _make_craft_cb(self, craft_id: str):
         def _cb(_btn):
             if hasattr(self.phase, "is_craft_unlocked") and not self.phase.is_craft_unlocked(craft_id):

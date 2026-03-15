@@ -133,6 +133,13 @@ class LeftHUD:
             btn.rect = btn._compute_rect()
             btn.move_to((cx, cy))
 
+    def get_button_rect(self, key: str) -> pygame.Rect | None:
+        self._update_layout()
+        for (_fallback_label, current_key, _icon_names), btn in zip(self.button_specs, self.buttons):
+            if current_key == key:
+                return btn.rect.copy()
+        return None
+
     def is_menu_open(self) -> bool:
         return self.active_menu_key is not None
 

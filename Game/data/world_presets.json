@@ -3,13 +3,25 @@
         "Custom": {
             "world_name": "Alpha",
             "seed": "Aléatoire",
-            "world_size": "Moyenne",
+            "world_size": "Petite",
             "water_coverage": "Océanique",
             "temperature": "Chaud",
             "resource_density": "Moyenne",
             "biodiversity": "Élevée",
             "tectonic_activity": "Stable",
             "gravity": "Forte"
+        },
+        "Tutorial": {
+            "world_name": "Tutoriel",
+            "seed": 424242,
+            "world_size": 48,
+            "water_coverage": "Tempéré",
+            "temperature": "Tempéré",
+            "resource_density": "Moyenne",
+            "biodiversity": "Moyenne",
+            "tectonic_activity": "Stable",
+            "gravity": "Moyenne",
+            "chunk_noise_step": 6
         }
     }
 }

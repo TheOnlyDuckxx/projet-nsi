@@ -17,6 +17,31 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 
+def format_key_label(key_code: int) -> str:
+    """Retourne un libellé lisible pour une touche pygame."""
+    try:
+        name = pygame.key.name(int(key_code))
+    except Exception:
+        name = ""
+    name = (name or "").strip()
+    return name.upper() if name else f"KEY_{int(key_code)}"
+
+
+def control_key_label(settings, path: str, fallback: int) -> str:
+    """Retourne le libellé d'un raccourci depuis les settings."""
+    raw = fallback
+    if settings is not None:
+        try:
+            raw = settings.get(path, fallback)
+        except Exception:
+            raw = fallback
+    try:
+        key_code = int(raw)
+    except Exception:
+        key_code = int(fallback)
+    return format_key_label(key_code)
+
+
 Color = Tuple[int, int, int]
 Anchor = Literal[
     "center","topleft","topright","bottomleft","bottomright",

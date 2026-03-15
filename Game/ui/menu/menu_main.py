@@ -6,7 +6,7 @@
 
 import pygame
 from Game.core.config import WIDTH, HEIGHT
-from Game.core.utils import Button, ButtonStyle, Slider, Toggle
+from Game.core.utils import Button, ButtonStyle, Slider, Toggle, control_key_label, format_key_label
 from Game.save.save import SaveManager
 from Game.species.species import Espece
 from Game.species.sprite_render import EspeceRenderer
@@ -207,12 +207,7 @@ class OptionsMenu(BaseMenu):
         )
 
     def _key_label(self, key_code: int) -> str:
-        try:
-            name = pygame.key.name(int(key_code))
-        except Exception:
-            name = ""
-        name = (name or "").strip()
-        return name.upper() if name else f"KEY_{int(key_code)}"
+        return format_key_label(key_code)
 
     def _refresh_rebind_labels(self):
         for _label, path in self.keybind_specs:
@@ -377,124 +372,194 @@ class OptionsMenu(BaseMenu):
 
 class MainMenu(BaseMenu):
     def __init__(self, app):
-        super().__init__(app, title="The Long Evolution")
+        super().__init__(app, title="Keystone")
 
-        # ---------- Helpers ----------
         def clamp(v, a, b):
             return a if v < a else b if v > b else v
 
         self._clamp = clamp
+        self._layout_signature = None
+        self._banner_rect = pygame.Rect(0, 0, 10, 10)
+        self._banner_surface = None
+        self._banner_source = app.assets.images.get("banner_name")
 
-        # ---------- Zone overlay (40% WIDTH) ----------
-        self.overlay_w = int(WIDTH * 0.40)
-        self.overlay_surf = pygame.Surface((self.overlay_w, HEIGHT), pygame.SRCALPHA)
-        # Noir transparent
-        self.overlay_surf.fill((0, 0, 0, 160))  # alpha 0..255 (augmente si tu veux plus sombre)
+        self._bg_color = (18, 33, 29)
+        self._glow_color = (62, 104, 92)
+        self._button_text_color = (240, 241, 234)
 
-        # ---------- Fonts (dépendants de HEIGHT) ----------
-        title_size = clamp(int(HEIGHT * 0.10), 42, 96)
-        btn_size = clamp(int(HEIGHT * 0.04), 18, 30)
+        title_size = clamp(int(HEIGHT * 0.090), 40, 88)
+        btn_size = clamp(int(HEIGHT * 0.030), 18, 27)
         self.title_font = app.assets.get_font("MightySouly", title_size)
         self.btn_font = app.assets.get_font("KiwiSoda", btn_size)
-        # ---------- Sprite de bouton ----------
-        # On évite de "trim" pour ne pas casser les marges transparentes du sprite.
-        try:
-            self._btn_sprite_default = _trim_sprite(app.assets.get_image("btn_menu_default").convert_alpha())
-            self._btn_sprite_hover = _trim_sprite(app.assets.get_image("btn_menu_hover").convert_alpha())
-        except Exception:
-            # fallback (anciens noms)
-            self._btn_sprite_default = _trim_sprite(app.assets.get_image("menus_bouton").convert_alpha())
-            self._btn_sprite_hover = self._btn_sprite_default
+        self.prompt_font = app.assets.get_font("KiwiSoda", max(16, int(HEIGHT * 0.022)))
+        self.prompt_title_font = app.assets.get_font("MightySouly", max(30, int(HEIGHT * 0.050)))
 
-        self._sprite_cache: dict[tuple[int, int, bool], pygame.Surface] = {}
+        self._button_style = ButtonStyle(
+            draw_background=True,
+            radius=15,
+            padding_x=24,
+            padding_y=11,
+            font=self.btn_font,
+            bg_color=self._bg_color,
+            hover_bg_color=(50, 70, 63),
+            active_bg_color=(64, 86, 77),
+            draw_border=False,
+            text_color=self._button_text_color,
+            hover_text_color=(252, 252, 246),
+            active_text_color=(252, 252, 246),
+            hover_zoom=1.0,
+        )
+        self._primary_button_style = ButtonStyle(
+            draw_background=True,
+            radius=15,
+            padding_x=24,
+            padding_y=11,
+            font=self.btn_font,
+            bg_color=(58, 82, 73),
+            hover_bg_color=(74, 101, 90),
+            active_bg_color=(88, 118, 105),
+            draw_border=False,
+            text_color=(248, 249, 242),
+            hover_zoom=1.0,
+        )
 
-        # ---------- Boutons ----------
         from Game.gameplay.phase1 import Phase1
         self.has_save = Phase1.save_exists()
 
         self._buttons = []
+        self._tutorial_prompt_open = False
+        self._tutorial_prompt_rect = pygame.Rect(0, 0, 10, 10)
+        prompt_style = ButtonStyle(
+            draw_background=True,
+            radius=12,
+            padding_x=18,
+            padding_y=10,
+            font=self.prompt_font,
+            bg_color=(42, 58, 53),
+            hover_bg_color=(56, 78, 70),
+            border_color=(118, 148, 138),
+            border_width=1,
+            hover_zoom=1.0,
+        )
+        accent_style = ButtonStyle(
+            draw_background=True,
+            radius=12,
+            padding_x=18,
+            padding_y=10,
+            font=self.prompt_font,
+            bg_color=(70, 102, 88),
+            hover_bg_color=(84, 122, 106),
+            border_color=(188, 212, 198),
+            border_width=1,
+            hover_zoom=1.0,
+        )
+        self._prompt_start_button = Button(
+            "Faire le tutoriel",
+            (0, 0),
+            anchor="center",
+            style=accent_style,
+            on_click=lambda _b: self.app.change_state("TUTORIAL_INTRO"),
+        )
+        self._prompt_later_button = Button(
+            "Plus tard",
+            (0, 0),
+            anchor="center",
+            style=prompt_style,
+            on_click=lambda _b: self._dismiss_tutorial_prompt(),
+        )
         self._rebuild_layout()
 
-    # ------------ Bouton sprite interne ------------
-    class _SpriteButton:
-        def __init__(self, text, rect: pygame.Rect, font, on_click):
-            self.text = text
-            self.rect = rect
-            self.font = font
-            self.on_click = on_click
-            self.hovered = False
-            self.pressed = False
-
-        def handle(self, events):
-            mx, my = pygame.mouse.get_pos()
-            self.hovered = self.rect.collidepoint(mx, my)
-
-            for e in events:
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.hovered:
-                    self.pressed = True
-                if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
-                    if self.pressed and self.hovered:
-                        self.on_click()
-                    self.pressed = False
-
-    def _get_scaled_sprite(self, w: int, h: int, hovered: bool) -> pygame.Surface:
-        key = (max(1, w), max(1, h), hovered)
-        if key not in self._sprite_cache:
-            src = self._btn_sprite_hover if hovered else self._btn_sprite_default
-            sw, sh = src.get_size()
-            scale = min(w / max(1, sw), h / max(1, sh))
-            nw = max(1, int(sw * scale))
-            nh = max(1, int(sh * scale))
-            self._sprite_cache[key] = pygame.transform.smoothscale(src, (nw, nh))
-        return self._sprite_cache[key]
-
     def _rebuild_layout(self):
-        """Recrée la liste des boutons + positions (centrés dans l'overlay gauche)."""
+        """Recrée le layout centré: bannière puis colonne de boutons."""
+        screen_w, screen_h = self.app.screen.get_size()
+        self._layout_signature = (screen_w, screen_h, self.has_save)
         self._buttons.clear()
 
-        # Dimensions boutons (dépendants de WIDTH/HEIGHT)
-        btn_w = self._clamp(int(self.overlay_w * 0.86), 200, self.overlay_w - 20)
-        btn_h = self._clamp(int(HEIGHT * 0.12), 56, 140)
-        gap = self._clamp(int(HEIGHT * 0.03), 10, 44)
-        title_gap = self._clamp(int(HEIGHT * 0.05), 12, 60)
+        if self._banner_source is not None:
+            max_w = min(int(screen_w * 0.52), 760)
+            max_h = min(int(screen_h * 0.20), 220)
+            src_w, src_h = self._banner_source.get_size()
+            scale = min(max_w / max(1, src_w), max_h / max(1, src_h))
+            scaled_size = (max(1, int(src_w * scale)), max(1, int(src_h * scale)))
+            self._banner_surface = pygame.transform.smoothscale(self._banner_source, scaled_size)
+        else:
+            self._banner_surface = self.title_font.render(self.title, True, self._button_text_color)
 
-        # Liste des actions (avec ou sans sauvegarde)
+        self._banner_rect = self._banner_surface.get_rect(center=(screen_w // 2, int(screen_h * 0.28)))
+
+        btn_w = self._clamp(int(screen_w * 0.22), 210, 320)
+        btn_h = self._clamp(int(screen_h * 0.062), 44, 58)
+        gap = self._clamp(int(screen_h * 0.012), 8, 15)
+
         actions = []
         if self.has_save:
             actions.append(("Reprendre", lambda: self.app.change_state("SAVE_SELECT")))
         actions += [
             ("Commencer", lambda: self.app.change_state("CREATION")),
+            ("Tutoriel", lambda: self.app.change_state("TUTORIAL_INTRO")),
             ("Succes", lambda: self.app.change_state("ACHIEVEMENTS")),
             ("Options", lambda: self.app.change_state("OPTIONS")),
             ("Credits", lambda: self.app.change_state("CREDITS")),
             ("Quitter", lambda: self.app.quit_game()),
         ]
 
-        # Mesure titre pour centrer le bloc (titre + boutons) verticalement
-        title_surf = self.title_font.render(self.title, True, (235, 235, 235))
-        title_h = title_surf.get_height()
-
         n = len(actions)
-        total_h = title_h + title_gap + (n * btn_h) + ((n - 1) * gap)
+        total_h = (n * btn_h) + max(0, n - 1) * gap
+        column_top = self._banner_rect.bottom + self._clamp(int(screen_h * 0.045), 24, 42)
+        max_top = screen_h - total_h - self._clamp(int(screen_h * 0.12), 80, 130)
+        y = min(column_top, max_top)
+        center_x = screen_w // 2
 
-        start_y = (HEIGHT // 2) - (total_h // 2)
-        center_x = self.overlay_w // 2
-
-        # Stocke pour render
-        self._title_surf = title_surf
-        self._title_pos = (center_x - title_surf.get_width() // 2, start_y)
-
-        # Place boutons
-        y = start_y + title_h + title_gap
-        for label, cb in actions:
-            rect = pygame.Rect(
-                center_x - btn_w // 2,
-                y,
-                btn_w,
-                btn_h
+        for idx, (label, cb) in enumerate(actions):
+            style = self._primary_button_style if idx == 0 else self._button_style
+            btn = Button(
+                label.upper(),
+                (center_x, y + btn_h // 2),
+                size=(btn_w, btn_h),
+                anchor="center",
+                style=style,
+                on_click=lambda _b, fn=cb: fn(),
             )
-            self._buttons.append(self._SpriteButton(label, rect, self.btn_font, cb))
+            self._buttons.append(btn)
             y += btn_h + gap
+
+    def _ensure_layout(self):
+        signature = (*self.app.screen.get_size(), self.has_save)
+        if signature != self._layout_signature:
+            self._rebuild_layout()
+            self._layout_tutorial_prompt()
+
+    def _should_show_tutorial_prompt(self) -> bool:
+        progression = getattr(self.app, "progression", None)
+        if progression is None:
+            return False
+        try:
+            return bool(progression.should_prompt_tutorial())
+        except Exception:
+            return False
+
+    def _layout_tutorial_prompt(self):
+        screen_w, screen_h = self.app.screen.get_size()
+        panel_w = min(int(screen_w * 0.44), 560)
+        panel_h = max(220, int(screen_h * 0.26))
+        panel_x = screen_w // 2 - panel_w // 2
+        panel_y = screen_h - panel_h - max(26, int(screen_h * 0.05))
+        self._tutorial_prompt_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        button_y = panel_y + panel_h - 42
+        later_x = panel_x + panel_w // 2 - 90
+        start_x = panel_x + panel_w // 2 + 90
+        self._prompt_later_button.move_to((later_x, button_y))
+        self._prompt_start_button.move_to((start_x, button_y))
+
+    def _dismiss_tutorial_prompt(self):
+        progression = getattr(self.app, "progression", None)
+        if progression is not None:
+            try:
+                progression.dismiss_tutorial_prompt()
+            except Exception:
+                pass
+        self._tutorial_prompt_open = False
 
     def enter(self):
         """Rafraîchit la détection de sauvegarde quand on revient au menu."""
@@ -502,39 +567,195 @@ class MainMenu(BaseMenu):
         new_has_save = Phase1.save_exists()
         if new_has_save != self.has_save:
             self.has_save = new_has_save
-            self._rebuild_layout()
+        self._ensure_layout()
+        self._tutorial_prompt_open = self._should_show_tutorial_prompt()
+        self._layout_tutorial_prompt()
 
     def handle_input(self, events):
+        self._ensure_layout()
+        self._layout_tutorial_prompt()
+        if self._tutorial_prompt_open:
+            self._prompt_start_button.handle(events)
+            self._prompt_later_button.handle(events)
+            return
         for b in self._buttons:
             b.handle(events)
 
+    def _draw_backdrop(self, screen):
+        screen.fill(self._bg_color)
+        glow = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        sw, sh = screen.get_size()
+        ellipse = pygame.Rect(0, 0, int(sw * 0.48), int(sh * 0.22))
+        ellipse.center = (sw // 2, int(sh * 0.23))
+        pygame.draw.ellipse(glow, (*self._glow_color, 52), ellipse)
+        screen.blit(glow, (0, 0))
+
     def render(self, screen):
-        # 1) fond
-        screen.blit(self.bg, (0, 0))
-
-        # 2) overlay gauche 40%
-        screen.blit(self.overlay_surf, (0, 0))
-
-        # 3) titre centré dans l'overlay
-        screen.blit(self._title_surf, self._title_pos)
-
-        # 4) boutons sprite (centrés dans l'overlay)
+        self._ensure_layout()
+        self._draw_backdrop(screen)
+        if self._banner_surface is not None:
+            screen.blit(self._banner_surface, self._banner_rect)
         for b in self._buttons:
-            sprite = self._get_scaled_sprite(b.rect.width, b.rect.height, b.hovered)
-            screen.blit(
-                sprite,
-                (b.rect.centerx - sprite.get_width() // 2, b.rect.centery - sprite.get_height() // 2),
-            )
+            b.draw(screen)
 
-            # plus d'overlay au survol : sprite only
-            if b.pressed:
-                ov = pygame.Surface(b.rect.size, pygame.SRCALPHA)
-                ov.fill((0, 0, 0, 35))
-                screen.blit(ov, b.rect.topleft)
+        if self._tutorial_prompt_open:
+            self._layout_tutorial_prompt()
+            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            overlay.fill((8, 12, 11, 116))
+            screen.blit(overlay, (0, 0))
 
-            # texte centré
-            txt = b.font.render(b.text, True, (245, 245, 245))
-            screen.blit(txt, (b.rect.centerx - txt.get_width() // 2, b.rect.centery - txt.get_height() // 2))
+            panel = self._tutorial_prompt_rect
+            pygame.draw.rect(screen, (25, 38, 34), panel, border_radius=18)
+            pygame.draw.rect(screen, (126, 158, 147), panel, 2, border_radius=18)
+
+            title = self.prompt_title_font.render("Tutoriel conseille", True, (240, 243, 238))
+            title_y = panel.y + 18
+            screen.blit(title, (panel.centerx - title.get_width() // 2, title_y))
+
+            body_lines = [
+                "Le tutoriel jouable montre la caméra, la sélection,",
+                "les ordres, l'inspection, la récolte et la construction",
+                "avant votre première vraie partie.",
+            ]
+            y = title_y + title.get_height() + 16
+            for line in body_lines:
+                surf = self.prompt_font.render(line, True, (218, 226, 220))
+                screen.blit(surf, (panel.centerx - surf.get_width() // 2, y))
+                y += surf.get_height() + 6
+
+            self._prompt_later_button.draw(screen)
+            self._prompt_start_button.draw(screen)
+
+
+class TutorialIntroMenu(BaseMenu):
+    def __init__(self, app):
+        super().__init__(app, title="Tutoriel")
+        self.title_font = app.assets.get_font("MightySouly", max(40, int(HEIGHT * 0.085)))
+        self.body_font = app.assets.get_font("KiwiSoda", max(16, int(HEIGHT * 0.024)))
+        self.small_font = app.assets.get_font("KiwiSoda", max(14, int(HEIGHT * 0.020)))
+
+        primary_style = ButtonStyle(
+            draw_background=True,
+            radius=12,
+            padding_x=22,
+            padding_y=12,
+            font=self.body_font,
+            bg_color=(66, 118, 82),
+            hover_bg_color=(82, 144, 102),
+            border_color=(184, 222, 194),
+            border_width=2,
+            hover_zoom=1.0,
+        )
+        secondary_style = ButtonStyle(
+            draw_background=True,
+            radius=12,
+            padding_x=20,
+            padding_y=12,
+            font=self.body_font,
+            bg_color=(46, 58, 76),
+            hover_bg_color=(64, 82, 108),
+            border_color=(124, 146, 176),
+            border_width=2,
+            hover_zoom=1.0,
+        )
+
+        self.btn_start = Button(
+            "Commencer le tutoriel",
+            (0, 0),
+            anchor="center",
+            style=primary_style,
+            on_click=lambda _b: self.app.change_state(
+                "LOADING",
+                preset="Tutorial",
+                tutorial_mode=True,
+            ),
+        )
+        self.btn_back = Button(
+            "Retour",
+            (0, 0),
+            anchor="center",
+            style=secondary_style,
+            on_click=lambda _b: self.app.change_state("MENU"),
+        )
+        self._panel_rect = pygame.Rect(0, 0, 10, 10)
+
+    def _control_line(self, label: str, path: str, fallback: int) -> str:
+        settings = getattr(self.app, "settings", None)
+        return f"{label} : {control_key_label(settings, path, fallback)}"
+
+    def _compute_layout(self):
+        panel_w = min(int(WIDTH * 0.66), 900)
+        panel_h = min(int(HEIGHT * 0.72), 680)
+        self._panel_rect = pygame.Rect(
+            WIDTH // 2 - panel_w // 2,
+            HEIGHT // 2 - panel_h // 2,
+            panel_w,
+            panel_h,
+        )
+        button_y = self._panel_rect.bottom - 48
+        self.btn_back.move_to((self._panel_rect.centerx - 150, button_y))
+        self.btn_start.move_to((self._panel_rect.centerx + 150, button_y))
+
+    def handle_input(self, events):
+        self._compute_layout()
+        self.btn_back.handle(events)
+        self.btn_start.handle(events)
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                self.app.change_state("MENU")
+
+    def render(self, screen):
+        self._compute_layout()
+        screen.blit(self.bg, (0, 0))
+        screen.blit(self._overlay, (0, 0))
+
+        panel = self._panel_rect
+        pygame.draw.rect(screen, (22, 28, 38), panel, border_radius=18)
+        pygame.draw.rect(screen, (110, 136, 170), panel, 2, border_radius=18)
+
+        title = self.title_font.render("Tutoriel jouable", True, (238, 242, 246))
+        title_y = panel.y + 24
+        screen.blit(title, (panel.centerx - title.get_width() // 2, title_y))
+
+        intro_lines = [
+            "Cette partie guidée dure environ 5 à 8 minutes.",
+            "Elle vous apprend la caméra, la sélection, les ordres,",
+            "l'inspection, la récolte, la construction et les menus clés.",
+        ]
+        y = title_y + title.get_height() + 18
+        for line in intro_lines:
+            surf = self.body_font.render(line, True, (220, 226, 235))
+            screen.blit(surf, (panel.centerx - surf.get_width() // 2, y))
+            y += surf.get_height() + 6
+
+        y += 16
+        section = self.body_font.render("Raccourcis utilisés pendant le tutoriel", True, (244, 228, 166))
+        screen.blit(section, (panel.x + 28, y))
+        y += section.get_height() + 12
+
+        key_lines = [
+            self._control_line("Inspection", "controls.inspect_mode", pygame.K_i),
+            self._control_line("Focus individu proche", "controls.focus_nearest", pygame.K_SPACE),
+            self._control_line("Afficher mini-map", "controls.map_toggle", pygame.K_m),
+            "Déplacement caméra : flèches ou clic molette",
+            "Zoom caméra : molette",
+            "Ordres : clic droit",
+        ]
+        for line in key_lines:
+            surf = self.body_font.render(line, True, (214, 220, 230))
+            screen.blit(surf, (panel.x + 36, y))
+            y += surf.get_height() + 8
+
+        y += 10
+        note = self.small_font.render(
+            "Le tutoriel n'utilise pas de sauvegarde et ne compte pas comme une vraie partie.",
+            True,
+            (168, 182, 200),
+        )
+        screen.blit(note, (panel.centerx - note.get_width() // 2, panel.bottom - 118))
+
+        self.btn_back.draw(screen)
+        self.btn_start.draw(screen)
 
     
 class SaveSelectionMenu(BaseMenu):

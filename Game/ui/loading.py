@@ -4,12 +4,13 @@ import threading
 import time
 
 from Game.core.config import WIDTH, HEIGHT
-from world.world_gen import load_world_params_from_preset, WorldGenerator
+from Game.world.world_gen import ChunkedWorld, WorldGenerator, load_world_params_from_preset, make_final_seed
 
 
 class LoadingState:
     _WORLD_STAGE_SPAN = 0.70
     _RENDER_STAGE_SPAN = 0.30
+    _TUTORIAL_WORLD_SIZE = (96, 72)
 
     def __init__(self, app):
         self.app = app
@@ -35,6 +36,7 @@ class LoadingState:
         self._world = None
         self._params = None
         self._save_path = None
+        self._tutorial_mode = False
         self._perf_logs_enabled = True
 
     def _set_progress(self, value: float, label: str | None = None):
@@ -182,6 +184,21 @@ class LoadingState:
                 return best
         return best
 
+    def _build_tutorial_world(self, params, seed, progress) -> ChunkedWorld:
+        width, height = self._TUTORIAL_WORLD_SIZE
+        base_seed = int(seed if seed is not None else (getattr(params, "seed", 0) or 0))
+        final_seed = make_final_seed(base_seed, params)
+        return ChunkedWorld(
+            width=width,
+            height=height,
+            seed=final_seed,
+            params=params,
+            tiles_levels=6,
+            chunk_size=16,
+            cache_chunks=48,
+            progress=progress,
+        )
+
     def enter(self, **kwargs):
         # kwargs possibles: preset, seed
         self.progress = 0.0
@@ -190,8 +207,10 @@ class LoadingState:
         self.failed = None
         self._world = None
         self._params = None
-        self._save_path = kwargs.get("save_path")
+        self._tutorial_mode = bool(kwargs.get("tutorial_mode", False))
+        self._save_path = None if self._tutorial_mode else kwargs.get("save_path")
         self._perf_logs_enabled = bool(self.app.settings.get("debug.perf_logs", True))
+        self.phase_txt = "Preparation du tutoriel..." if self._tutorial_mode else "Chargement..."
 
         def worker():
             try:
@@ -210,11 +229,11 @@ class LoadingState:
                 seed = kwargs.get("seed", None)
                 log_step(f"Debut generation world (preset={preset}, seed={seed})")
                 overrides = {"seed": seed} if seed is not None else None
+                if self._tutorial_mode:
+                    overrides = dict(overrides or {})
+                    overrides.setdefault("world_size", 48)
+                    overrides.setdefault("chunk_noise_step", 6)
                 self._params = load_world_params_from_preset(preset, overrides=overrides)
-                log_step("Parametres de monde charges")
-                gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=2048)
-                log_step("WorldGenerator initialise")
-
                 phase_label = None
                 phase_time = time.perf_counter()
 
@@ -232,10 +251,18 @@ class LoadingState:
                         phase_label = current_label
                         phase_time = now_t
 
+                log_step("Parametres de monde charges")
                 rng_seed = seed if seed is not None else self._params.seed
-                log_step(f"Lancement generate_planet (rng_seed={rng_seed})")
-                self._world = gen.generate_planet(self._params, rng_seed=rng_seed, progress=on_progress)
-                log_step("Monde genere")
+                if self._tutorial_mode:
+                    log_step(f"Construction monde tutoriel compact (rng_seed={rng_seed})")
+                    self._world = self._build_tutorial_world(self._params, rng_seed, on_progress)
+                    log_step("Zone tutoriel generee")
+                else:
+                    gen = WorldGenerator(tiles_levels=6, chunk_size=64, cache_chunks=2048)
+                    log_step("WorldGenerator initialise")
+                    log_step(f"Lancement generate_planet (rng_seed={rng_seed})")
+                    self._world = gen.generate_planet(self._params, rng_seed=rng_seed, progress=on_progress)
+                    log_step("Monde genere")
                 try:
                     # Evite que la generation lazy des chunks ecrase la progression UI.
                     self._world._progress = None
@@ -250,7 +277,7 @@ class LoadingState:
                         label,
                     )
 
-                if self._should_full_prewarm(self._world):
+                if not self._tutorial_mode and self._should_full_prewarm(self._world):
                     chunk_targets = self._all_chunk_coords(self._world)
                     if chunk_targets:
                         self._world.cache_chunks = max(int(getattr(self._world, "cache_chunks", 0) or 0), len(chunk_targets))
@@ -321,6 +348,7 @@ class LoadingState:
                 world=self._world,
                 params=self._params,
                 save_path=self._save_path,
+                tutorial_mode=self._tutorial_mode,
             )
             if self._perf_logs_enabled:
                 print("[Perf][Loading] Transition vers PHASE1 (fin)")
@@ -328,7 +356,8 @@ class LoadingState:
     def render(self, screen):
         screen.blit(self.bg, (0, 0))
         # titre
-        title = self.font.render("Generation du monde...", True, (230, 230, 230))
+        title_txt = "Preparation du tutoriel..." if self._tutorial_mode else "Generation du monde..."
+        title = self.font.render(title_txt, True, (230, 230, 230))
         screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - 140))
 
         # panneau + barre

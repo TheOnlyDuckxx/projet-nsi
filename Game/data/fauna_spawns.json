@@ -15,12 +15,7 @@
     "max_despawn_per_cycle": 10,
     "bucket_size_tiles": 16
   },
-  "default": [
-    {
-        "species": "scorpion",
-        "proba": 1
-      }
-  ],
+  "default": [ ],
   "biomes": {
     "ocean": [],
     "lake": [],
@@ -46,11 +41,11 @@
       },
       {
         "species": "champi",
-        "proba": 1
+        "proba": 0.7
       },
       {
         "species": "forest_boss",
-        "proba": 1
+        "proba": 0.05
       }
     ],
     "rainforest": [
@@ -68,7 +63,7 @@
       },
       {
         "species": "forest_boss",
-        "proba": 1
+        "proba": 0.1
       }
     ],
     "savanna": [],
@@ -98,19 +93,25 @@
     ],
     "tundra": [
       {
-        "species": "lapin",
+        "species": "fur",
         "proba": 1
       },
       {
-        "species": "capybara",
-        "proba": 1
-      },
-      {
-        "species": "scorpion",
+        "species": "icecube",
         "proba": 1
       }
     ],
-    "snow": [],
+    "snow": [
+      {
+        "species": "fur",
+        "proba": 1
+      },
+      {
+        "species": "icecube",
+        "proba": 1
+      }
+
+    ],
     "swamp": [],
     "mangrove": [],
     "rock": [],

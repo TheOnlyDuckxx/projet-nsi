@@ -33,6 +33,33 @@ def capybara_definition() -> PassiveFaunaDefinition:
         sprite_base_scale=0.75,
     )
 
+def fur_definition() -> PassiveFaunaDefinition:
+    return PassiveFaunaDefinition(
+        species_name="Fur",
+        entity_name="Fur",
+        move_speed=1.1,
+        hp=300,
+        vision_range=2.0,
+        flee_distance=1.0,
+        sprite_sheet_idle="fur_idle",
+        sprite_sheet_frame_size=(32, 32),
+        sprite_base_scale=0.75,
+    )
+
+def ice_definition() -> AggressiveFaunaDefinition:
+    return AggressiveFaunaDefinition(
+        species_name="Icecube",
+        entity_name="Icecube",
+        move_speed=1.6,
+        hp=170,
+        vision_range=5.0,
+        flee_distance=0.0,
+        attack=4.0,
+        attack_speed=1.2,
+        sprite_sheet_idle="ice_idle",
+        sprite_sheet_frame_size=(32, 32),
+        sprite_base_scale=0.8,
+    )
 
 def scorpion_definition() -> AggressiveFaunaDefinition:
     return AggressiveFaunaDefinition(
@@ -106,6 +133,8 @@ def fauna_definition_catalog() -> dict[str, PassiveFaunaDefinition]:
         "champi": champi_definition(),
         "flamme": flamme_definition(),
         "forest_boss": forest_boss_definition(),
+        "fur": fur_definition(),
+        "icecube": ice_definition(),
     }
 
 

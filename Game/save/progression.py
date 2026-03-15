@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import time
@@ -13,6 +14,10 @@ DEFAULT_PROGRESS_DATA = {
     "player_xp": 0,
     "player_xp_to_next": 100,
     "achievements_data": {},
+    "tutorial": {
+        "completed": False,
+        "prompt_dismissed": False,
+    },
 }
 
 PLAYER_POINTS_PER_LEVEL = 2
@@ -230,12 +235,25 @@ class ProgressionManager:
         self.achievements = AchievementsManager(self)
         self.achievements.update()
 
+    def _merge_dict_defaults(self, defaults, loaded):
+        if not isinstance(defaults, dict):
+            return copy.deepcopy(loaded) if loaded is not None else copy.deepcopy(defaults)
+        loaded = loaded if isinstance(loaded, dict) else {}
+        merged = {}
+        for key, default_value in defaults.items():
+            if isinstance(default_value, dict):
+                merged[key] = self._merge_dict_defaults(default_value, loaded.get(key))
+            elif key in loaded:
+                merged[key] = copy.deepcopy(loaded[key])
+            else:
+                merged[key] = copy.deepcopy(default_value)
+        for key, value in loaded.items():
+            if key not in merged:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
     def _merge_defaults(self, loaded):
-        merged = dict(DEFAULT_PROGRESS_DATA)
-        if isinstance(loaded, dict):
-            for key in merged.keys():
-                if key in loaded:
-                    merged[key] = loaded[key]
+        merged = self._merge_dict_defaults(DEFAULT_PROGRESS_DATA, loaded)
 
         try:
             merged["games_started"] = max(0, int(merged.get("games_started", 0) or 0))
@@ -263,13 +281,20 @@ class ProgressionManager:
             merged["player_xp_to_next"] = 100
         if not isinstance(merged.get("achievements_data"), dict):
             merged["achievements_data"] = {}
+        tutorial = merged.get("tutorial")
+        if not isinstance(tutorial, dict):
+            tutorial = {}
+        merged["tutorial"] = {
+            "completed": bool(tutorial.get("completed", False)),
+            "prompt_dismissed": bool(tutorial.get("prompt_dismissed", False)),
+        }
         return merged
 
     def load(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
         if not os.path.exists(self.path):
-            self.data = dict(DEFAULT_PROGRESS_DATA)
+            self.data = self._merge_defaults({})
             self.save()
             return
 
@@ -277,13 +302,13 @@ class ProgressionManager:
             with open(self.path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if not content:
-                self.data = dict(DEFAULT_PROGRESS_DATA)
+                self.data = self._merge_defaults({})
                 self.save()
                 return
             loaded = json.loads(content)
             self.data = self._merge_defaults(loaded)
         except Exception:
-            self.data = dict(DEFAULT_PROGRESS_DATA)
+            self.data = self._merge_defaults({})
             self.save()
 
     def save(self):
@@ -326,6 +351,41 @@ class ProgressionManager:
         self.add_play_time(dt)
         self.update_achievements()
         self.flush()
+
+    def get_tutorial_state(self) -> dict:
+        tutorial = self.data.get("tutorial")
+        if not isinstance(tutorial, dict):
+            tutorial = {"completed": False, "prompt_dismissed": False}
+            self.data["tutorial"] = tutorial
+        return {
+            "completed": bool(tutorial.get("completed", False)),
+            "prompt_dismissed": bool(tutorial.get("prompt_dismissed", False)),
+        }
+
+    def should_prompt_tutorial(self) -> bool:
+        tutorial = self.get_tutorial_state()
+        if tutorial["completed"] or tutorial["prompt_dismissed"]:
+            return False
+        return int(self.data.get("games_started", 0) or 0) == 0
+
+    def dismiss_tutorial_prompt(self):
+        tutorial = self.get_tutorial_state()
+        if tutorial["prompt_dismissed"]:
+            return
+        self.data.setdefault("tutorial", {})
+        self.data["tutorial"]["prompt_dismissed"] = True
+        self._dirty = True
+        self.flush(force=True)
+
+    def mark_tutorial_completed(self):
+        tutorial = self.get_tutorial_state()
+        if tutorial["completed"] and tutorial["prompt_dismissed"]:
+            return
+        self.data.setdefault("tutorial", {})
+        self.data["tutorial"]["completed"] = True
+        self.data["tutorial"]["prompt_dismissed"] = True
+        self._dirty = True
+        self.flush(force=True)
 
     def update_achievements(self, session: dict | None = None):
         if hasattr(self, "achievements") and self.achievements is not None:

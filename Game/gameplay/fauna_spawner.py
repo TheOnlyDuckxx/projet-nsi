@@ -8,7 +8,7 @@ from typing import Any
 from Game.species.fauna import AggressiveFaunaFactory, PassiveFaunaFactory
 
 try:
-    from world.world_gen import BIOME_ID_TO_NAME
+    from Game.world.world_gen import BIOME_ID_TO_NAME
 except Exception:
     BIOME_ID_TO_NAME = {}
 

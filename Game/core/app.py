@@ -12,6 +12,7 @@ from Game.ui.menu.menu_main import (
     OptionsMenu,
     CreditMenu,
     AchievementsMenu,
+    TutorialIntroMenu,
     WorldCreationMenu,
     SpeciesCreationMenu,
     SaveSelectionMenu,
@@ -91,6 +92,7 @@ class App:
         self.states["OPTIONS"] = OptionsMenu(self)
         self.states["ACHIEVEMENTS"] = AchievementsMenu(self)
         self.states["CREDITS"] = CreditMenu(self)
+        self.states["TUTORIAL_INTRO"] = TutorialIntroMenu(self)
         self.states["PHASE1"] = Phase1(self)
         self.states["LOADING"] = LoadingState(self)
         self.states["CREATION"] = WorldCreationMenu(self)
@@ -146,7 +148,8 @@ class App:
             if prev_key == "PHASE1" and key != "PHASE1":
                 self.progression.flush(force=True)
             if key == "PHASE1" and prev_key != "PHASE1":
-                self.progression.on_game_start()
+                if not bool(kwargs.get("tutorial_mode", False)):
+                    self.progression.on_game_start()
         if perf_enabled:
             print(f"[Perf][App] change_state {prev_key} -> {key} (fin) | total {time.perf_counter() - t0:.3f}s")
 
@@ -170,7 +173,8 @@ class App:
                 self.state.handle_input(events)
             after_input = time.perf_counter()
             if getattr(self, "progression", None):
-                self.progression.tick(dt, active=self.state_key == "PHASE1")
+                tutorial_run = bool(getattr(self.state, "tutorial_mode", False))
+                self.progression.tick(dt, active=self.state_key == "PHASE1" and not tutorial_run)
             after_progression = time.perf_counter()
             if hasattr(self.state, "update"):
                 if trace_frame:

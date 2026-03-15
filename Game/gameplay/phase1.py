@@ -12,12 +12,12 @@ import math
 import time
 from typing import Any, Optional
 from Game.ui.iso_render import IsoMapView, get_prop_sprite_name
-from world.world_gen import BIOME_CORRUPT, load_world_params_from_preset, WorldGenerator
+from Game.world.world_gen import BIOME_CORRUPT, load_world_params_from_preset, WorldGenerator
 from Game.world.tiles import get_ground_sprite_name
 from Game.species.fauna import PassiveFaunaFactory, PassiveFaunaDefinition
 from Game.species.species import Espece, ROLE_CLASS_LABELS
 from Game.save.save import SaveManager
-from Game.core.utils import resource_path
+from Game.core.utils import resource_path, format_key_label
 from Game.ui.hud.bottom_hud import BottomHUD
 from Game.ui.hud.game_hud import (
     draw_inspection_panel,
@@ -59,6 +59,7 @@ from Game.gameplay.phase1_combat import (
     stop_entity_combat,
     update_entity_combat,
 )
+from Game.gameplay.tutorial_controller import TutorialController
 
 _WATER_BIOME_IDS = {1, 3, 4}
 _AUTO_HARVESTABLE_PROP_IDS = {
@@ -286,6 +287,9 @@ class Phase1:
         self._perf_logs_enabled = True
         self._perf_slow_frame_sec = 0.12
         self._perf_trace_frames = 0
+        self.tutorial_mode = False
+        self.tutorial_targets: dict[str, tuple[int, ...]] = {}
+        self.tutorial_controller: TutorialController | None = None
 
     def _perf_enter_start(self, source: str):
         now = time.perf_counter()
@@ -657,6 +661,9 @@ class Phase1:
         self._dragging_selection = False
         self._ui_click_blocked = False
         self._update_frame_id = 0
+        self.tutorial_mode = False
+        self.tutorial_targets = {}
+        self.tutorial_controller = None
 
         # Systèmes à remettre à zéro
         self.day_night = DayNightCycle(cycle_duration=600)
@@ -1687,16 +1694,142 @@ class Phase1:
         return SaveManager(path=self._save_path)
 
     def save(self) -> bool:
+        if self.tutorial_mode:
+            return False
         if not self._save_path:
             self._save_path = SaveManager.create_new_save_path()
         return self._save_manager().save_phase1(self)
 
     def load(self) -> bool:
+        if self.tutorial_mode:
+            return False
         if not self._save_path:
             self._save_path = SaveManager.latest_save_path()
         if not self._save_path:
             return False
         return self._save_manager().load_phase1(self)
+
+    def leave(self):
+        if self.tutorial_controller is not None:
+            try:
+                self.tutorial_controller.leave()
+            except Exception:
+                pass
+
+    def _tutorial_ground_walkable(self, i: int, j: int) -> bool:
+        if not self.world:
+            return False
+        if i < 0 or j < 0 or i >= self.world.width or j >= self.world.height:
+            return False
+        snap = None
+        try:
+            snap = self.world.get_tile_snapshot(i, j, generate=True)
+        except Exception:
+            snap = None
+        if snap is None:
+            return False
+        _lvl, _gid, _overlay, biome_id = snap
+        return int(biome_id) not in _WATER_BIOME_IDS
+
+    def _find_tutorial_anchor(self) -> tuple[int, int]:
+        if not self.world:
+            return (0, 0)
+        sx, sy = getattr(self.world, "spawn", (0, 0))
+        layout = {
+            "p1": (0, 0),
+            "p2": (1, 0),
+            "move": (4, 0),
+            "inspect": (2, 2),
+            "build": (4, 2),
+        }
+        for radius in range(0, 18):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    cx = int(sx) + dx
+                    cy = int(sy) + dy
+                    if all(self._tutorial_ground_walkable(cx + ox, cy + oy) for ox, oy in layout.values()):
+                        return (cx, cy)
+        return (int(sx), int(sy))
+
+    def _clear_tutorial_area(self, anchor: tuple[int, int]) -> None:
+        if not self.world or not getattr(self.world, "overlay", None):
+            return
+        ax, ay = anchor
+        for dx in range(-2, 8):
+            for dy in range(-2, 6):
+                x = ax + dx
+                y = ay + dy
+                if not self._tutorial_ground_walkable(x, y):
+                    continue
+                try:
+                    self.world.overlay[y][x] = 0
+                except Exception:
+                    continue
+
+    def _reset_entity_for_tutorial(self, ent, tile: tuple[int, int]):
+        if ent is None:
+            return
+        ent.x = float(tile[0])
+        ent.y = float(tile[1])
+        if hasattr(ent, "carrying"):
+            ent.carrying = []
+        if hasattr(ent, "work"):
+            ent.work = None
+        if hasattr(ent, "ia") and isinstance(ent.ia, dict):
+            ent.ia["etat"] = "idle"
+            ent.ia["objectif"] = None
+            ent.ia["order_action"] = None
+            ent.ia["target_craft_id"] = None
+            ent.ia["auto_mode"] = None
+        self._ensure_move_runtime(ent)
+        ent.move_path = []
+        ent._move_from = None
+        ent._move_to = None
+        ent._move_t = 0.0
+
+    def _setup_tutorial_world(self):
+        if not self.world:
+            return
+
+        anchor = self._find_tutorial_anchor()
+        self._clear_tutorial_area(anchor)
+        p1 = (anchor[0], anchor[1])
+        p2 = (anchor[0] + 1, anchor[1])
+        move_target = (anchor[0] + 4, anchor[1])
+        inspect_prop = (anchor[0] + 2, anchor[1] + 2, 10)
+        build_target = (anchor[0] + 4, anchor[1] + 2)
+
+        self.world.spawn = p1
+        self._reset_entity_for_tutorial(self.joueur, p1)
+        self._reset_entity_for_tutorial(self.joueur2, p2)
+        self.selected = None
+        self.selected_entities = []
+        self.selected_craft = None
+        self.info_windows = []
+        self.minimap_visible = False
+        self.paused = False
+        self.ui_menu_open = False
+
+        try:
+            self.world.overlay[int(inspect_prop[1])][int(inspect_prop[0])] = int(inspect_prop[2])
+        except Exception:
+            pass
+        try:
+            self.world.overlay[int(build_target[1])][int(build_target[0])] = 0
+        except Exception:
+            pass
+
+        self.tutorial_targets = {
+            "move_target": move_target,
+            "inspect_prop": inspect_prop,
+            "build_target": build_target,
+        }
+        self.view.set_world(self.world)
+        if self.fog is None:
+            self.fog = FogOfWar(self.world.width, self.world.height, chunk_size=64)
+        self.view.fog = self.fog
 
     def _ensure_move_runtime(self, ent):
         """S'assure que l'entité a tout le runtime nécessaire au déplacement."""
@@ -2669,6 +2802,11 @@ class Phase1:
         self.view.cam_x = float(nearest[0])
         self.view.cam_y = float(nearest[1])
         self.view.mouse_pan_active = False
+        if self.tutorial_controller is not None:
+            try:
+                self.tutorial_controller.on_focus_used()
+            except Exception:
+                pass
         return True
 
     def _has_player_species_entities(self) -> bool:
@@ -2742,6 +2880,9 @@ class Phase1:
         return max(10, int(xp))
 
     def _trigger_end_game(self, reason: str):
+        if self.tutorial_mode and self.tutorial_controller is not None:
+            self.tutorial_controller._open_summary("failed")
+            return
         if self._game_end_pending:
             # Si on est encore dans PHASE1 malgré le flag, forcer l'écran de fin.
             if getattr(self.app, "state_key", None) == "PHASE1" and self._game_end_summary:
@@ -2878,9 +3019,10 @@ class Phase1:
     def enter(self, **kwargs):
         self._perf_update_settings()
         self._perf_trace_frames = 120 if self._perf_logs_enabled else 0
+        tutorial_mode = bool(kwargs.get("tutorial_mode", False))
         requested_save_path = kwargs.get("save_path")
-        load_save = bool(kwargs.get("load_save", False))
-        source = "new_world"
+        load_save = bool(kwargs.get("load_save", False)) and not tutorial_mode
+        source = "tutorial_world" if tutorial_mode else "new_world"
         if load_save:
             source = "load_save"
         elif kwargs.get("world", None) is not None:
@@ -2890,8 +3032,11 @@ class Phase1:
         # Toujours repartir sur un etat propre avant d'appliquer une sauvegarde
         # ou de generer un nouveau monde.
         self._reset_session_state()
+        self.tutorial_mode = tutorial_mode
         self._perf_enter_mark(perf, "Etat de session reset")
-        if requested_save_path:
+        if self.tutorial_mode:
+            self._save_path = None
+        elif requested_save_path:
             self._save_path = str(requested_save_path)
         elif load_save:
             self._save_path = SaveManager.latest_save_path()
@@ -2986,10 +3131,17 @@ class Phase1:
             else:
                 self.bottom_hud.species = self.espece
                 self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
+            if self.tutorial_mode:
+                self._setup_tutorial_world()
+                self._perf_enter_mark(perf, "Monde tutoriel configure")
+            else:
+                self._ensure_weather_system()
+                self._seed_corruption_for_new_world()
             self._perf_enter_mark(perf, "Entree terminee (monde pre-genere)")            
-            self._ensure_weather_system()
-            self._seed_corruption_for_new_world()
             self._gameplay_ready = True
+            if self.tutorial_mode:
+                self.tutorial_controller = TutorialController(self)
+                self.tutorial_controller.enter()
             self._endgame_debug(
                 f"enter(pre_world) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
                 f"living={self._count_living_species_members()} pending={self._game_end_pending}"
@@ -3088,10 +3240,17 @@ class Phase1:
             self._perf_enter_mark(perf, "BottomHUD espece mise a jour")
         self._set_cursor(self.default_cursor_path)
         self._perf_enter_mark(perf, "Curseur initialise")
-        self._ensure_weather_system()
-        self._seed_corruption_for_new_world()
+        if self.tutorial_mode:
+            self._setup_tutorial_world()
+            self._perf_enter_mark(perf, "Monde tutoriel configure")
+        else:
+            self._ensure_weather_system()
+            self._seed_corruption_for_new_world()
         self._refresh_craft_gate_state(force=False)
         self._gameplay_ready = True
+        if self.tutorial_mode:
+            self.tutorial_controller = TutorialController(self)
+            self.tutorial_controller.enter()
         self._endgame_debug(
             f"enter(new) entities={len(self.entities)} species={getattr(self.espece,'nom',None)} "
             f"living={self._count_living_species_members()} pending={self._game_end_pending}"
@@ -3115,6 +3274,28 @@ class Phase1:
             "map_toggle": self._control_key("controls.map_toggle", pygame.K_m),
         }
 
+    def get_control_label(self, path: str, fallback: int) -> str:
+        return format_key_label(self._control_key(path, fallback))
+
+    def get_craft_button_rect(self, craft_id: str) -> pygame.Rect | None:
+        if self.bottom_hud is None:
+            return None
+        getter = getattr(self.bottom_hud, "get_craft_button_rect", None)
+        if callable(getter):
+            return getter(craft_id)
+        return None
+
+    def get_left_hud_button_rect(self, menu_key: str) -> pygame.Rect | None:
+        if self.right_hud is None:
+            return None
+        getter = getattr(self.right_hud, "get_button_rect", None)
+        if callable(getter):
+            return getter(menu_key)
+        return None
+
+    def get_minimap_panel_rect(self) -> pygame.Rect | None:
+        return self._get_minimap_panel_rect()
+
     # ---------- INPUT ----------
     def handle_input(self, events):
         controls = self._control_keys()
@@ -3126,6 +3307,9 @@ class Phase1:
         if self.espece and self.espece.lvl_up.active:
             for e in events:
                 self.espece.lvl_up.handle_event(e, self.screen)
+            return
+
+        if self.tutorial_controller and self.tutorial_controller.handle_input(events):
             return
 
         # Le menu latéral a priorité : s'il est ouvert il consomme tout l'input.
@@ -3179,7 +3363,7 @@ class Phase1:
                     if self.minimap_visible:
                         self._minimap_refresh_cd = 0.0
                         self._update_minimap_cache(0.0, force=True)
-                elif e.key == pygame.K_F6:
+                elif e.key == pygame.K_F6 and not self.tutorial_mode:
                     self._ensure_weather_system()
                     if self.weather_system:
                         self.weather_system.force_weather("rain", duration_minutes=30.0)
@@ -3390,14 +3574,18 @@ class Phase1:
             if self._perf_trace_frames > 0:
                 self._perf_trace_frames -= 1
             return
+        if self.tutorial_controller is not None:
+            self.tutorial_controller.update(dt)
         self._sync_tech_tree_main_class()
         if bool(getattr(self, "_tech_effects_dirty", False)):
             self._recompute_tech_effects()
-        if self.paused or self.ui_menu_open:
+        tutorial_blocks = bool(self.tutorial_controller and self.tutorial_controller.blocks_world_update())
+        if self.paused or self.ui_menu_open or tutorial_blocks:
             # Meme en pause on continue les timers d'evenements
             if self.quest_manager:
                 self.quest_manager.update(dt)
-            self.event_manager.update(dt, self)
+            if not self.tutorial_mode:
+                self.event_manager.update(dt, self)
             mark("Sortie rapide pause/menu")
             if self._perf_trace_frames > 0:
                 self._perf_trace_frames -= 1
@@ -3409,7 +3597,8 @@ class Phase1:
         if self.quest_manager:
             self.quest_manager.update(dt)
         mark("Quest manager update")
-        self.event_manager.update(dt, self)
+        if not self.tutorial_mode:
+            self.event_manager.update(dt, self)
         mark("Event manager update")
 
         # Mettre a jour le cycle jour/nuit
@@ -3418,15 +3607,16 @@ class Phase1:
             int(self._run_stats.get("max_innovation", 0) or 0),
             int(getattr(getattr(self, "tech_tree", None), "innovations", 0) or 0),
         )
-        if self.weather_system and self.joueur:
+        if not self.tutorial_mode and self.weather_system and self.joueur:
             self.weather_system.update(
                 dt,
                 int(self.joueur.x),
                 int(self.joueur.y),
             )
-        self._update_horde_state()
-        self._update_weather_vfx(dt)
-        self._update_corruption(dt)
+        if not self.tutorial_mode:
+            self._update_horde_state()
+            self._update_weather_vfx(dt)
+            self._update_corruption(dt)
         mark("Day/night update")
 
         if self.tech_tree:
@@ -3480,7 +3670,7 @@ class Phase1:
             mark("Fog recreate")
         self.view.fog = self.fog
 
-        if self.fauna_spawner:
+        if self.fauna_spawner and not self.tutorial_mode:
             self.fauna_spawner.update(dt, self)
         mark("Fauna spawner update")
 
@@ -3526,7 +3716,8 @@ class Phase1:
             if self.save_message_timer <= 0:
                 self.save_message = ""
 
-        self._update_achievements()
+        if not self.tutorial_mode:
+            self._update_achievements()
 
         total = time.perf_counter() - t0
         if self._perf_logs_enabled and (should_trace or total >= self._perf_slow_frame_sec):
@@ -3535,51 +3726,55 @@ class Phase1:
             self._perf_trace_frames -= 1
 
     def draw_pause_screen(self, screen):
-            """Affiche l'écran de pause avec le bouton de retour au menu"""
-            # Overlay semi-transparent
-            overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 180))
-            screen.blit(overlay, (0, 0))
-            
-            # Titre "PAUSE"
-            font_title = pygame.font.SysFont(None, 60)
-            text = font_title.render("PAUSE", True, (255, 255, 255))
-            text_rect = text.get_rect(center=(screen.get_width() / 2, screen.get_height() / 2 - 200))
-            screen.blit(text, text_rect)
-            
-            # Boutons
-            button_width = 320
-            button_height = 60
-            button_x = screen.get_width() / 2 - button_width / 2
-            gap = 14
-            total_h = button_height * 3 + gap * 2
-            top_y = screen.get_height() / 2 - total_h / 2
-            end_button_y = top_y
-            achievements_button_y = top_y + button_height + gap
-            menu_button_y = achievements_button_y + button_height + gap
+        """Affiche l'écran de pause avec le bouton de retour au menu."""
+        W, H = screen.get_size()
 
-            self.end_run_button_rect = pygame.Rect(button_x, end_button_y, button_width, button_height)
-            self.achievements_button_rect = pygame.Rect(button_x, achievements_button_y, button_width, button_height)
-            self.menu_button_rect = pygame.Rect(button_x, menu_button_y, button_width, button_height)
+        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 188))
+        screen.blit(overlay, (0, 0))
 
-            mouse_pos = pygame.mouse.get_pos()
-            font_button = pygame.font.SysFont(None, 36)
+        panel_w = min(int(W * 0.44), 560)
+        panel_h = min(int(H * 0.48), 420)
+        panel = pygame.Rect(W // 2 - panel_w // 2, H // 2 - panel_h // 2, panel_w, panel_h)
 
-            for rect, label in (
-                (self.end_run_button_rect, "Terminer la partie"),
-                (self.achievements_button_rect, "Succes"),
-                (self.menu_button_rect, "Retour au menu principal"),
-            ):
-                is_hover = rect.collidepoint(mouse_pos)
-                button_color = (80, 80, 120) if is_hover else (60, 60, 90)
-                border_color = (150, 150, 200) if is_hover else (100, 100, 150)
+        pygame.draw.rect(screen, (22, 28, 38), panel, border_radius=18)
+        pygame.draw.rect(screen, (106, 130, 162), panel, 2, border_radius=18)
 
-                pygame.draw.rect(screen, button_color, rect, border_radius=10)
-                pygame.draw.rect(screen, border_color, rect, 3, border_radius=10)
+        title_font = self.assets.get_font("MightySouly", max(38, int(H * 0.075)))
+        info_font = self.assets.get_font("KiwiSoda", max(16, int(H * 0.022)))
+        button_font = self.assets.get_font("KiwiSoda", max(22, int(H * 0.028)))
 
-                button_text = font_button.render(label, True, (255, 255, 255))
-                button_text_rect = button_text.get_rect(center=rect.center)
-                screen.blit(button_text, button_text_rect)
+        title = title_font.render("Pause", True, (238, 242, 246))
+        screen.blit(title, (panel.centerx - title.get_width() // 2, panel.y + 26))
+
+        subtitle = info_font.render("Echap pour reprendre la partie.", True, (182, 194, 210))
+        screen.blit(subtitle, (panel.centerx - subtitle.get_width() // 2, panel.y + 92))
+
+        button_width = min(int(panel.width * 0.76), 360)
+        button_height = max(52, min(62, int(H * 0.07)))
+        button_x = panel.centerx - button_width // 2
+        gap = 14
+        total_h = button_height * 3 + gap * 2
+        top_y = panel.bottom - 32 - total_h
+
+        self.end_run_button_rect = pygame.Rect(button_x, top_y, button_width, button_height)
+        self.achievements_button_rect = pygame.Rect(button_x, top_y + button_height + gap, button_width, button_height)
+        self.menu_button_rect = pygame.Rect(button_x, top_y + (button_height + gap) * 2, button_width, button_height)
+
+        mouse_pos = pygame.mouse.get_pos()
+        for rect, label in (
+            (self.end_run_button_rect, "Terminer la partie"),
+            (self.achievements_button_rect, "Succes"),
+            (self.menu_button_rect, "Retour au menu principal"),
+        ):
+            hovered = rect.collidepoint(mouse_pos)
+            fill = (66, 80, 102) if hovered else (48, 60, 78)
+            border = (156, 180, 210) if hovered else (104, 124, 150)
+            pygame.draw.rect(screen, fill, rect, border_radius=12)
+            pygame.draw.rect(screen, border, rect, 2, border_radius=12)
+
+            text = button_font.render(label, True, (244, 246, 248))
+            screen.blit(text, text.get_rect(center=rect.center))
 
     def _build_achievement_session_context(self) -> dict:
         run_stats = getattr(self, "_run_stats", {}) or {}
@@ -3806,6 +4001,9 @@ class Phase1:
                     self.info_windows.remove(win)
                     continue
                 win.draw(screen)
+
+        if self.tutorial_controller is not None:
+            self.tutorial_controller.draw(screen)
 
 
     # ---------- SELECTION HELPERS ----------
@@ -4304,6 +4502,11 @@ class Phase1:
         mx, my = pygame.mouse.get_pos()
         win = DraggableWindow(title_surf, body_surfs, (mx, my))
         self.info_windows.append(win)
+        if self.tutorial_controller is not None:
+            try:
+                self.tutorial_controller.on_prop_described((int(i), int(j), int(pid)))
+            except Exception:
+                pass
 
     def _handle_single_left_click(self, mx: int, my: int):
         hit = self.view.pick_at(mx, my)
